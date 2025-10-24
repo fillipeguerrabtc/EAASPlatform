@@ -578,7 +578,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.warn("STRIPE_SECRET_KEY not found - payment processing disabled");
   }
   
-  // Create Stripe Payment Intent for checkout
+  // Create Stripe Checkout Session (Payment Link approach - no public key needed)
   app.post("/api/create-payment-intent", async (req: Request, res: Response) => {
     try {
       if (!stripe) {
@@ -591,19 +591,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Valid amount is required" });
       }
       
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100), // Convert to cents
-        currency: "usd",
-        description: description || "EAAS Platform Payment",
+      const tenantId = getTenantId(req);
+      
+      // Create Stripe Checkout Session (hosted payment page)
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: description || "EAAS Platform Service",
+              },
+              unit_amount: Math.round(amount * 100), // Convert to cents
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        success_url: `${req.headers.origin || "http://localhost:5000"}/checkout?success=true`,
+        cancel_url: `${req.headers.origin || "http://localhost:5000"}/checkout?canceled=true`,
         metadata: {
           customerId: customerId || "guest",
-          tenantId: getTenantId(req),
+          tenantId,
         },
       });
       
-      res.json({ clientSecret: paymentIntent.client_secret });
+      res.json({ 
+        sessionId: session.id,
+        url: session.url, // Stripe hosted checkout URL
+      });
     } catch (error: any) {
-      console.error("Stripe payment intent error:", error);
+      console.error("Stripe checkout error:", error);
       res.status(500).json({ error: error.message });
     }
   });

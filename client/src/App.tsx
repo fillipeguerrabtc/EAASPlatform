@@ -13,6 +13,7 @@ import CRM from "@/pages/crm";
 import Omnichat from "@/pages/omnichat";
 import KnowledgeBasePage from "@/pages/knowledge-base";
 import Tenants from "@/pages/tenants";
+import Checkout from "@/pages/checkout";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/crm" component={CRM} />
       <Route path="/omnichat" component={Omnichat} />
       <Route path="/knowledge-base" component={KnowledgeBasePage} />
+      <Route path="/checkout" component={Checkout} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -5,6 +5,7 @@ import {
   MessageSquare, 
   Book, 
   Building2,
+  CreditCard,
   Settings
 } from "lucide-react";
 import {
@@ -49,6 +50,11 @@ const menuItems = [
     title: "Knowledge Base",
     url: "/knowledge-base",
     icon: Book,
+  },
+  {
+    title: "Checkout",
+    url: "/checkout",
+    icon: CreditCard,
   },
 ];
 
