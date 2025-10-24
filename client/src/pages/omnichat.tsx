@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { MessageSquare, Phone, Facebook, Instagram } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { MessageSquare, Send, Sparkles, Facebook, Instagram } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Conversation, Message } from "@shared/schema";
 
 const channelIcons = {
@@ -24,6 +28,8 @@ const channelColors = {
 
 export default function Omnichat() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [newMessage, setNewMessage] = useState("");
+  const { toast } = useToast();
 
   const { data: conversations, isLoading } = useQuery<Conversation[]>({
     queryKey: ["/api/conversations"],
@@ -33,6 +39,35 @@ export default function Omnichat() {
     queryKey: ["/api/conversations", selectedConversation, "messages"],
     enabled: !!selectedConversation,
   });
+  
+  const sendMessageMutation = useMutation({
+    mutationFn: async (message: string) => {
+      return await apiRequest("/api/ai/chat", "POST", {
+        message,
+        conversationId: selectedConversation,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", selectedConversation, "messages"] });
+      setNewMessage("");
+      toast({
+        title: "Message sent",
+        description: "AI response received",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleSendMessage = () => {
+    if (!newMessage.trim()) return;
+    sendMessageMutation.mutate(newMessage);
+  };
 
   return (
     <div className="p-8 space-y-8">
@@ -104,15 +139,23 @@ export default function Omnichat() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle className="text-sm">Messages</CardTitle>
+        <Card className="col-span-2 flex flex-col">
+          <CardHeader className="flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Messages</CardTitle>
+              {selectedConversation && (
+                <Badge variant="outline" className="gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  AI Enabled
+                </Badge>
+              )}
+            </div>
           </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[calc(100vh-20rem)]">
+          <CardContent className="flex-1 flex flex-col min-h-0">
+            <ScrollArea className="flex-1 mb-4">
               {selectedConversation ? (
                 messages && messages.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-4 pr-4">
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
@@ -148,6 +191,31 @@ export default function Omnichat() {
                 </div>
               )}
             </ScrollArea>
+            
+            {selectedConversation && (
+              <div className="flex gap-2 flex-shrink-0">
+                <Input
+                  placeholder="Type your message..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  disabled={sendMessageMutation.isPending}
+                  data-testid="input-chat-message"
+                />
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={sendMessageMutation.isPending || !newMessage.trim()}
+                  data-testid="button-send-message"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -487,9 +487,188 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
-  // PAYMENTS (Stripe Integration - will be expanded later)
+  // AI CHAT (Knowledge Base + OpenAI Fallback)
   // ========================================
+  
+  app.post("/api/ai/chat", async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const { message, conversationId } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+      
+      // 1. Search Knowledge Base for similar content (simple text matching for MVP)
+      const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
+      const matchedItem = knowledgeBaseItems.find(item => 
+        item.title.toLowerCase().includes(message.toLowerCase()) ||
+        item.content.toLowerCase().includes(message.toLowerCase())
+      );
+      
+      let response: string;
+      let source: "knowledge_base" | "openai";
+      
+      if (matchedItem) {
+        // Found answer in KB
+        response = matchedItem.content;
+        source = "knowledge_base";
+      } else {
+        // Fallback to OpenAI
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({
+          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+        });
+        
+        // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+        const completion = await openai.chat.completions.create({
+          model: "gpt-5",
+          messages: [
+            { role: "system", content: "You are a helpful AI assistant. Provide concise, professional responses." },
+            { role: "user", content: message }
+          ],
+          max_completion_tokens: 500,
+        });
+        
+        response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        source = "openai";
+      }
+      
+      // 3. Optionally save message to conversation if conversationId provided
+      if (conversationId) {
+        // Validate conversation belongs to tenant
+        const conversation = await storage.getConversation(conversationId, tenantId);
+        if (conversation) {
+          await storage.createMessage({
+            conversationId,
+            tenantId,
+            senderType: "customer",
+            content: message,
+          }, tenantId);
+          
+          await storage.createMessage({
+            conversationId,
+            tenantId,
+            senderType: "ai",
+            content: response,
+          }, tenantId);
+        }
+      }
+      
+      res.json({ response, source });
+    } catch (error: any) {
+      console.error("AI Chat error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
+  // ========================================
+  // PAYMENTS & STRIPE INTEGRATION
+  // ========================================
+  
+  // Initialize Stripe client (from blueprint:javascript_stripe)
+  let stripe: any = null;
+  if (process.env.STRIPE_SECRET_KEY) {
+    const Stripe = (await import("stripe")).default;
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2023-10-16" as any,
+    });
+  } else {
+    console.warn("STRIPE_SECRET_KEY not found - payment processing disabled");
+  }
+  
+  // Create Stripe Payment Intent for checkout
+  app.post("/api/create-payment-intent", async (req: Request, res: Response) => {
+    try {
+      if (!stripe) {
+        return res.status(503).json({ error: "Stripe not configured" });
+      }
+      
+      const { amount, customerId, description } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: "Valid amount is required" });
+      }
+      
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: "usd",
+        description: description || "EAAS Platform Payment",
+        metadata: {
+          customerId: customerId || "guest",
+          tenantId: getTenantId(req),
+        },
+      });
+      
+      res.json({ clientSecret: paymentIntent.client_secret });
+    } catch (error: any) {
+      console.error("Stripe payment intent error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Stripe Webhook Handler (for payment confirmations)
+  app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async (req: Request, res: Response) => {
+    try {
+      if (!stripe) {
+        return res.status(503).json({ error: "Stripe not configured" });
+      }
+      
+      const sig = req.headers["stripe-signature"];
+      
+      if (!sig) {
+        return res.status(400).json({ error: "Missing stripe-signature header" });
+      }
+      
+      // In production, set STRIPE_WEBHOOK_SECRET
+      // For now, we'll process events without signature verification in dev
+      let event;
+      try {
+        event = stripe.webhooks.constructEvent(
+          req.body,
+          sig,
+          process.env.STRIPE_WEBHOOK_SECRET || ""
+        );
+      } catch (err: any) {
+        console.log("Webhook signature verification failed:", err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
+      
+      // Handle different event types
+      switch (event.type) {
+        case "payment_intent.succeeded":
+          const paymentIntent = event.data.object;
+          console.log("PaymentIntent succeeded:", paymentIntent.id);
+          
+          // Save payment to database
+          const tenantId = paymentIntent.metadata.tenantId || "default";
+          await storage.createPayment({
+            tenantId,
+            customerId: paymentIntent.metadata.customerId || null,
+            amount: paymentIntent.amount / 100, // Convert from cents
+            currency: paymentIntent.currency,
+            status: "completed",
+            stripePaymentIntentId: paymentIntent.id,
+          });
+          break;
+          
+        case "payment_intent.payment_failed":
+          console.log("PaymentIntent failed:", event.data.object.id);
+          break;
+          
+        default:
+          console.log(`Unhandled event type: ${event.type}`);
+      }
+      
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error("Webhook error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  // Payment CRUD routes
   app.post("/api/payments", async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
