@@ -4,9 +4,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, Mail, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "react-i18next";
 import type { Customer } from "@shared/schema";
 
+const formatCurrency = (value: number | null | undefined, locale: string): string => {
+  if (!value) return new Intl.NumberFormat(locale, { style: 'currency', currency: locale === 'pt-BR' ? 'BRL' : 'USD' }).format(0);
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: locale === 'pt-BR' ? 'BRL' : 'USD' }).format(value);
+};
+
 export default function CRM() {
+  const { t, i18n } = useTranslation();
+  
   const { data: customers, isLoading } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
   });
@@ -15,10 +23,10 @@ export default function CRM() {
     <div className="p-8 space-y-8">
       <div>
         <h1 className="text-4xl font-bold" data-testid="text-crm-title">
-          CRM 360°
+          {t('crm.title')}
         </h1>
         <p className="text-muted-foreground mt-2">
-          Complete customer relationship management
+          {t('crm.subtitle')}
         </p>
       </div>
 
@@ -26,7 +34,7 @@ export default function CRM() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Customers
+            {t('crm.customers')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -40,11 +48,11 @@ export default function CRM() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Segment</TableHead>
-                  <TableHead className="text-right">Lifetime Value</TableHead>
+                  <TableHead>{t('common.name')}</TableHead>
+                  <TableHead>{t('crm.email')}</TableHead>
+                  <TableHead>{t('crm.phone')}</TableHead>
+                  <TableHead>{t('crm.tags')}</TableHead>
+                  <TableHead className="text-right">{t('crm.lifetimeValue')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -79,7 +87,7 @@ export default function CRM() {
                       )}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
-                      ${customer.lifetimeValue || "0.00"}
+                      {formatCurrency(customer.lifetimeValue, i18n.language)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -88,7 +96,7 @@ export default function CRM() {
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No customers yet</p>
+              <p>{t('crm.noCustomers')}</p>
             </div>
           )}
         </CardContent>

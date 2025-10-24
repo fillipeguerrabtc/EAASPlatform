@@ -33,7 +33,9 @@
     "active": "Active",
     "inactive": "Inactive",
     "created": "Created",
-    "updated": "Updated"
+    "updated": "Updated",
+    "creating": "Creating...",
+    "sending": "Sending..."
   },
   "dashboard": {
     "title": "Control Panel",
@@ -81,6 +83,7 @@
   },
   "crm": {
     "title": "CRM 360°",
+    "subtitle": "Complete customer relationship management",
     "customers": "Customers",
     "addCustomer": "Add Customer",
     "editCustomer": "Edit Customer",
@@ -93,10 +96,12 @@
     "interactions": "Interactions",
     "noCustomers": "No customers registered",
     "lastContact": "Last Contact",
-    "totalOrders": "Total Orders"
+    "totalOrders": "Total Orders",
+    "lifetimeValue": "Lifetime Value"
   },
   "omnichat": {
     "title": "Unified Omnichat",
+    "subtitle": "Unified communication center",
     "conversations": "Conversations",
     "channels": {
       "web": "Web Chat",
@@ -110,10 +115,22 @@
     "aiHandled": "AI Handled",
     "humanHandled": "Human Handled",
     "unread": "Unread",
-    "selectConversation": "Select a conversation"
+    "selectConversation": "Select a conversation",
+    "whatsappDialog": "Send WhatsApp Message (Twilio Sandbox)",
+    "phoneNumber": "Phone Number",
+    "phoneNumberPlaceholder": "+5511999999999",
+    "phoneHelper": "Include country code (e.g., +1 for US)",
+    "message": "Message",
+    "messagePlaceholder": "Type your message...",
+    "messageSent": "Message sent",
+    "aiResponse": "AI response received",
+    "whatsappSuccess": "WhatsApp message sent!",
+    "whatsappSuccessDetail": "Message sent to {phone} successfully",
+    "whatsappError": "WhatsApp Error"
   },
   "knowledgeBase": {
     "title": "Knowledge Base",
+    "subtitle": "Manage AI training data and documentation",
     "add": "Add Article",
     "edit": "Edit Article",
     "articleTitle": "Article Title",
@@ -123,7 +140,10 @@
     "published": "Published",
     "draft": "Draft",
     "noArticles": "No articles registered",
-    "searchKb": "Search Knowledge Base"
+    "searchKb": "Search Knowledge Base",
+    "createSuccess": "Item created successfully",
+    "createError": "Failed to create item",
+    "deleteSuccess": "Item deleted successfully"
   },
   "payments": {
     "title": "Payment Management",

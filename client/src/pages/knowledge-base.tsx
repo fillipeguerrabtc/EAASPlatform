@@ -13,6 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertKnowledgeBaseSchema, type KnowledgeBase } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useTranslation } from "react-i18next";
 
 const kbFormSchema = insertKnowledgeBaseSchema.omit({ tenantId: true, vectorId: true });
 
@@ -20,6 +21,7 @@ type KBFormData = typeof kbFormSchema._type;
 
 export default function KnowledgeBasePage() {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const { data: items, isLoading } = useQuery<KnowledgeBase[]>({
@@ -46,14 +48,14 @@ export default function KnowledgeBasePage() {
       setOpen(false);
       form.reset();
       toast({
-        title: "Success",
-        description: "Knowledge base item created successfully",
+        title: t('common.success'),
+        description: t('knowledgeBase.createSuccess'),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Failed to create item",
+        title: t('common.error'),
+        description: error.message || t('knowledgeBase.createError'),
         variant: "destructive",
       });
     },
@@ -66,8 +68,8 @@ export default function KnowledgeBasePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/knowledge-base"] });
       toast({
-        title: "Success",
-        description: "Item deleted successfully",
+        title: t('common.success'),
+        description: t('knowledgeBase.deleteSuccess'),
       });
     },
   });
@@ -81,21 +83,21 @@ export default function KnowledgeBasePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold" data-testid="text-kb-title">
-            Knowledge Base
+            {t('knowledgeBase.title')}
           </h1>
           <p className="text-muted-foreground mt-2">
-            Manage AI training data and documentation
+            {t('knowledgeBase.subtitle')}
           </p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-kb-item">
-              <Plus className="mr-2 h-4 w-4" /> Add Item
+              <Plus className="mr-2 h-4 w-4" /> {t('knowledgeBase.add')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Create Knowledge Base Item</DialogTitle>
+              <DialogTitle>{t('knowledgeBase.add')}</DialogTitle>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -104,9 +106,9 @@ export default function KnowledgeBasePage() {
                   name="title"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Title</FormLabel>
+                      <FormLabel>{t('knowledgeBase.articleTitle')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Item title" data-testid="input-kb-title" {...field} />
+                        <Input placeholder={t('knowledgeBase.articleTitle')} data-testid="input-kb-title" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -117,9 +119,9 @@ export default function KnowledgeBasePage() {
                   name="content"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Content</FormLabel>
+                      <FormLabel>{t('knowledgeBase.content')}</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Knowledge content..." rows={8} data-testid="input-kb-content" {...field} />
+                        <Textarea placeholder={t('knowledgeBase.content')} rows={8} data-testid="input-kb-content" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -130,9 +132,9 @@ export default function KnowledgeBasePage() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category (Optional)</FormLabel>
+                      <FormLabel>{t('knowledgeBase.category')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Product Info, FAQs" data-testid="input-kb-category" {...field} value={field.value || ""} />
+                        <Input placeholder={t('knowledgeBase.category')} data-testid="input-kb-category" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -140,10 +142,10 @@ export default function KnowledgeBasePage() {
                 />
                 <div className="flex justify-end gap-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setOpen(false)} data-testid="button-cancel-kb">
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-kb">
-                    {createMutation.isPending ? "Creating..." : "Create Item"}
+                    {createMutation.isPending ? t('common.loading') : t('common.save')}
                   </Button>
                 </div>
               </form>
@@ -199,12 +201,12 @@ export default function KnowledgeBasePage() {
       ) : (
         <Card className="p-12 text-center">
           <Book className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No knowledge base items yet</h3>
+          <h3 className="text-lg font-semibold mb-2">{t('knowledgeBase.noArticles')}</h3>
           <p className="text-muted-foreground mb-4">
-            Create your first knowledge base item to train your AI
+            {t('knowledgeBase.subtitle')}
           </p>
           <Button onClick={() => setOpen(true)} data-testid="button-create-first-kb">
-            <Plus className="mr-2 h-4 w-4" /> Create Item
+            <Plus className="mr-2 h-4 w-4" /> {t('knowledgeBase.add')}
           </Button>
         </Card>
       )}

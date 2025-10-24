@@ -12,6 +12,7 @@ import { MessageSquare, Send, Sparkles, Facebook, Instagram, Plus } from "lucide
 import { SiWhatsapp } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 import type { Conversation, Message } from "@shared/schema";
 
 const channelIcons = {
@@ -34,6 +35,7 @@ export default function Omnichat() {
   const [whatsappPhone, setWhatsappPhone] = useState("");
   const [whatsappMessage, setWhatsappMessage] = useState("");
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const { t } = useTranslation();
   const { toast } = useToast();
 
   const { data: conversations, isLoading } = useQuery<Conversation[]>({
@@ -56,13 +58,13 @@ export default function Omnichat() {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", selectedConversation, "messages"] });
       setNewMessage("");
       toast({
-        title: "Message sent",
-        description: "AI response received",
+        title: t('omnichat.messageSent'),
+        description: t('omnichat.aiResponse'),
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Error",
+        title: t('common.error'),
         description: error.message,
         variant: "destructive",
       });
@@ -87,13 +89,13 @@ export default function Omnichat() {
       setWhatsappMessage("");
       setWhatsappDialogOpen(false);
       toast({
-        title: "WhatsApp message sent!",
-        description: `Message sent to ${whatsappPhone} successfully`,
+        title: t('omnichat.whatsappSuccess'),
+        description: t('omnichat.whatsappSuccessDetail', { phone: whatsappPhone }),
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "WhatsApp Error",
+        title: t('omnichat.whatsappError'),
         description: error.message,
         variant: "destructive",
       });
@@ -105,10 +107,10 @@ export default function Omnichat() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold" data-testid="text-omnichat-title">
-            Omnichat
+            {t('omnichat.title')}
           </h1>
           <p className="text-muted-foreground mt-2">
-            Unified communication center
+            {t('omnichat.subtitle')}
           </p>
         </div>
         
@@ -116,35 +118,35 @@ export default function Omnichat() {
           <DialogTrigger asChild>
             <Button className="gap-2" data-testid="button-new-whatsapp">
               <SiWhatsapp className="h-4 w-4" />
-              Send WhatsApp
+              {t('omnichat.sendMessage')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Send WhatsApp Message</DialogTitle>
+              <DialogTitle>{t('omnichat.sendMessage')}</DialogTitle>
               <DialogDescription>
-                Send a message via WhatsApp (Twilio Sandbox)
+                {t('omnichat.whatsappDialog')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="phone">Phone Number</Label>
+                <Label htmlFor="phone">{t('omnichat.phoneNumber')}</Label>
                 <Input
                   id="phone"
-                  placeholder="+1234567890"
+                  placeholder={t('omnichat.phoneNumberPlaceholder')}
                   value={whatsappPhone}
                   onChange={(e) => setWhatsappPhone(e.target.value)}
                   data-testid="input-whatsapp-phone"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Include country code (e.g., +1 for US)
+                  {t('omnichat.phoneHelper')}
                 </p>
               </div>
               <div>
-                <Label htmlFor="message">Message</Label>
+                <Label htmlFor="message">{t('omnichat.message')}</Label>
                 <Input
                   id="message"
-                  placeholder="Type your message..."
+                  placeholder={t('omnichat.messagePlaceholder')}
                   value={whatsappMessage}
                   onChange={(e) => setWhatsappMessage(e.target.value)}
                   data-testid="input-whatsapp-message"
@@ -156,7 +158,7 @@ export default function Omnichat() {
                 className="w-full"
                 data-testid="button-send-whatsapp"
               >
-                {sendWhatsAppMutation.isPending ? "Sending..." : "Send WhatsApp Message"}
+                {sendWhatsAppMutation.isPending ? t('common.loading') : t('omnichat.sendMessage')}
               </Button>
             </div>
           </DialogContent>
@@ -166,7 +168,7 @@ export default function Omnichat() {
       <div className="grid grid-cols-3 gap-6 h-[calc(100vh-16rem)]">
         <Card className="col-span-1">
           <CardHeader>
-            <CardTitle className="text-sm">Conversations</CardTitle>
+            <CardTitle className="text-sm">{t('omnichat.conversations')}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <ScrollArea className="h-[calc(100vh-20rem)]">
