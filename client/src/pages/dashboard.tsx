@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "react-i18next";
 import {
   ShoppingCart,
   Users,
@@ -9,6 +10,8 @@ import {
 } from "lucide-react";
 
 export default function Dashboard() {
+  const { t } = useTranslation();
+  
   const { data: products, isLoading: productsLoading } = useQuery({
     queryKey: ["/api/products"],
   });
@@ -27,28 +30,32 @@ export default function Dashboard() {
 
   const stats = [
     {
-      title: "Total Products",
+      title: t('marketplace.products'),
       value: products?.length || 0,
       icon: ShoppingCart,
       loading: productsLoading,
+      testId: "total-products",
     },
     {
-      title: "Total Customers",
+      title: t('crm.customers'),
       value: customers?.length || 0,
       icon: Users,
       loading: customersLoading,
+      testId: "total-customers",
     },
     {
-      title: "Active Conversations",
+      title: t('omnichat.conversations'),
       value: conversations?.filter((c: any) => c.status === "open").length || 0,
       icon: MessageSquare,
       loading: conversationsLoading,
+      testId: "active-conversations",
     },
     {
-      title: "Total Orders",
+      title: t('dashboard.metrics.orders'),
       value: orders?.length || 0,
       icon: DollarSign,
       loading: ordersLoading,
+      testId: "total-orders",
     },
   ];
 
@@ -56,10 +63,10 @@ export default function Dashboard() {
     <div className="p-8 space-y-8">
       <div>
         <h1 className="text-4xl font-bold" data-testid="text-dashboard-title">
-          Dashboard
+          {t('dashboard.title')}
         </h1>
         <p className="text-muted-foreground mt-2">
-          Welcome to your EAAS control center
+          {t('dashboard.welcome')}
         </p>
       </div>
 
@@ -78,7 +85,7 @@ export default function Dashboard() {
                 {stat.loading ? (
                   <Skeleton className="h-8 w-16" />
                 ) : (
-                  <div className="text-3xl font-bold" data-testid={`stat-${stat.title.toLowerCase().replace(" ", "-")}`}>
+                  <div className="text-3xl font-bold" data-testid={`stat-${stat.testId}`}>
                     {stat.value}
                   </div>
                 )}

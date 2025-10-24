@@ -19,47 +19,56 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Link, useLocation } from "wouter";
-
-const menuItems = [
-  {
-    title: "Dashboard",
-    url: "/",
-    icon: Home,
-  },
-  {
-    title: "Tenants",
-    url: "/tenants",
-    icon: Building2,
-  },
-  {
-    title: "Marketplace",
-    url: "/marketplace",
-    icon: ShoppingCart,
-  },
-  {
-    title: "CRM 360°",
-    url: "/crm",
-    icon: Users,
-  },
-  {
-    title: "Omnichat",
-    url: "/omnichat",
-    icon: MessageSquare,
-  },
-  {
-    title: "Knowledge Base",
-    url: "/knowledge-base",
-    icon: Book,
-  },
-  {
-    title: "Checkout",
-    url: "/checkout",
-    icon: CreditCard,
-  },
-];
+import { useTranslation } from "react-i18next";
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { t } = useTranslation();
+
+  const menuItems = [
+    {
+      title: t('nav.dashboard'),
+      url: "/",
+      icon: Home,
+      testId: "dashboard",
+    },
+    {
+      title: t('nav.tenants'),
+      url: "/tenants",
+      icon: Building2,
+      testId: "tenants",
+    },
+    {
+      title: t('nav.marketplace'),
+      url: "/marketplace",
+      icon: ShoppingCart,
+      testId: "marketplace",
+    },
+    {
+      title: t('nav.crm'),
+      url: "/crm",
+      icon: Users,
+      testId: "crm",
+    },
+    {
+      title: t('nav.omnichat'),
+      url: "/omnichat",
+      icon: MessageSquare,
+      testId: "omnichat",
+    },
+    {
+      title: t('nav.knowledgeBase'),
+      url: "/knowledge-base",
+      icon: Book,
+      testId: "knowledge-base",
+    },
+    {
+      title: t('nav.payments'),
+      url: "/checkout",
+      icon: CreditCard,
+      testId: "checkout",
+    },
+  ];
 
   return (
     <Sidebar>
@@ -73,8 +82,8 @@ export function AppSidebar() {
               {menuItems.map((item) => {
                 const isActive = location === item.url;
                 return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive} data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, "-")}`}>
+                  <SidebarMenuItem key={item.testId}>
+                    <SidebarMenuButton asChild isActive={isActive} data-testid={`link-${item.testId}`}>
                       <Link href={item.url}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
