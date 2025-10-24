@@ -1,269 +1,369 @@
-# EAAS 360 Design Guidelines
+# EAAS Design System
+## Premium Branding Guidelines
 
-## Design Approach
-
-**Selected Approach**: Modern Enterprise SaaS Design System - Drawing inspiration from Linear's precision, Stripe's restraint, and Notion's modularity.
-
-**Design Philosophy**: 
-The EAAS 360 interface embodies "silent sophistication" - a system that feels inevitable and timeless. Every element serves a clear purpose in managing complexity with clarity. The design should never compete with data; it should elevate it.
-
-**Core Principles**:
-- **Clarity Over Decoration**: Information density without visual noise
-- **Consistent Rhythm**: Predictable patterns across all modules
-- **Hierarchical Precision**: Clear visual weight for decision-making
-- **Adaptive Complexity**: Progressive disclosure of advanced features
-- **Universal Neutrality**: Business-agnostic aesthetic that works for any sector
+**Last Updated**: October 24, 2025  
+**Inspired by**: Tesla, OpenAI, Apple, Airbnb, Google
 
 ---
 
-## Typography System
+## 🎯 Brand Identity
 
-**Font Stack**:
-- **Primary**: Inter (via Google Fonts CDN) - weights 400, 500, 600, 700
-- **Monospace**: JetBrains Mono - for data, codes, and technical content
+**Philosophy**: "Simplicidade é a infraestrutura da expansão"
 
-**Type Scale**:
-- **Display**: text-4xl (36px) / font-bold - Dashboard headers, module titles
-- **Headline**: text-2xl (24px) / font-semibold - Section headers, card titles
-- **Subheading**: text-lg (18px) / font-medium - Subsections, table headers
-- **Body**: text-base (16px) / font-normal - Primary content, form labels
-- **Small**: text-sm (14px) / font-normal - Secondary info, metadata
-- **Micro**: text-xs (12px) / font-medium - Badges, tags, timestamps
+EAAS represents the convergence of technology, clarity, and scalability. Our design breathes, listens, and guides—never dominates. The result: a serene, global, and monumentally simple aesthetic.
 
-**Line Heights**: Use leading-tight for headings, leading-normal for body text, leading-relaxed for long-form content.
+**Core Values**:
+- **Timeless**: Designs that age gracefully, never trendy
+- **Precise**: Every pixel serves a purpose
+- **Inevitable**: Feels like it always existed
+- **Silent Sophistication**: Power without noise
 
 ---
 
-## Layout System
+## 🎨 Color Palette
 
-**Spacing Primitives**: Use Tailwind units of **2, 4, 6, 8, 12, 16** consistently.
+### Primary Colors
 
-**Grid Foundation**:
-- **Dashboard Layouts**: 12-column grid (grid-cols-12) with responsive breakpoints
-- **Card Grids**: 1-3 columns (grid-cols-1 md:grid-cols-2 lg:grid-cols-3)
-- **Sidebar Width**: Fixed 64px (collapsed) / 256px (expanded)
-- **Content Max-Width**: max-w-7xl for primary content areas
+**Emerald Green** (#10A37F) - Innovation & Growth
+- Inspired by OpenAI's brand
+- Represents growth, trust, and forward momentum
+- Use for: Primary actions, success states, active elements
 
-**Container Strategy**:
-- Full-width backgrounds with max-w-7xl inner containers
-- Consistent horizontal padding: px-6 on mobile, px-8 on desktop
-- Vertical section spacing: py-12 to py-16
+**Deep Slate** (#1C1C1E) - Sophistication & Foundation
+- Inspired by Tesla/Apple's minimalism
+- Represents stability, professionalism, elegance
+- Use for: Sidebar, navigation, headers
 
-**Vertical Rhythm**:
-- Component spacing: space-y-6 for related elements
-- Section breaks: mb-12 between major sections
-- Form field spacing: space-y-4
+**Vibrant Purple** (#8B5CF6) - Innovation & Tech
+- Inspired by modern SaaS platforms
+- Represents creativity, innovation, premium
+- Use for: Accents, highlights, special features
 
----
+### Neutral Colors
 
-## Component Library
+**Pure White** (#FFFFFF) - Clarity
+**Absolute Black** (#0A0A0B) - Depth (dark mode)
+**Slate Grays** (900→50) - Hierarchy & Balance
 
-### Navigation & Structure
+### Semantic Colors
 
-**Top Navigation Bar**:
-- Height: h-16 (64px)
-- Contains: Logo, global search, notifications, user menu
-- Background: Subtle border-b with minimal shadow
-- Layout: Flex with justify-between
+- **Success**: Emerald Green (#10A37F)
+- **Warning**: Amber (#F59E0B)
+- **Error**: Red (#EF4444)
+- **Info**: Blue (#3B82F6)
 
-**Sidebar Navigation**:
-- Collapsible design (icon-only ↔ full labels)
-- Module groupings: Marketplace, CRM, ERP, AI, Payments, Calendar, Settings
-- Active state: Subtle background highlight
-- Icons: Heroicons outline (default), solid (active)
+### Chart Colors
 
-**Breadcrumbs**: 
-- Above page headers for deep navigation
-- Separator: Heroicons chevron-right (size-4)
-
-### Data Display
-
-**Tables**:
-- Sticky headers with subtle shadow on scroll
-- Alternating row backgrounds for readability (optional subtle stripe)
-- Column sorting indicators
-- Row hover states for interactivity
-- Compact padding: px-4 py-3
-- Action columns (right-aligned): dropdowns, quick actions
-
-**Cards**:
-- Rounded corners: rounded-lg
-- Borders: border with subtle shadow (shadow-sm)
-- Padding: p-6
-- Header/Body/Footer sections with clear separation
-- Hover state: subtle shadow elevation (shadow-md)
-
-**Stats/Metrics**:
-- Large number display: text-3xl font-bold
-- Label below: text-sm with muted treatment
-- Trend indicators: arrows with percentage change
-- 2-4 column grids for dashboard KPIs
-
-**Charts & Graphs**:
-- Use Recharts or similar library
-- Clean, minimal grid lines
-- Tooltips with precise data
-- Legend placement: top-right or bottom
-
-### Forms & Inputs
-
-**Input Fields**:
-- Height: h-10 (40px) for text inputs
-- Rounded: rounded-md
-- Border: border with focus ring (ring-2)
-- Padding: px-4 py-2
-- Labels: text-sm font-medium, mb-2
-- Helper text: text-xs, mt-1
-
-**Buttons**:
-- **Primary**: Solid background, white text, shadow-sm, h-10, px-6, rounded-md
-- **Secondary**: Border style, hover with subtle background
-- **Tertiary**: Text only, hover underline
-- Loading states with spinner
-- Icon + Text combinations with gap-2
-
-**Dropdowns/Select**:
-- Match input field height and styling
-- Chevron indicator (Heroicons chevron-down)
-- Dropdown menu: shadow-lg, rounded-md, py-2
-
-**Search**:
-- Prominent placement in top nav
-- Icon prefix (Heroicons magnifying-glass)
-- Placeholder: "Search across all modules..."
-- Keyboard shortcut hint (⌘K)
-
-### Interactive Elements
-
-**Modals/Dialogs**:
-- Overlay: backdrop-blur with opacity
-- Container: max-w-2xl, rounded-lg, shadow-2xl
-- Header with title and close button
-- Footer with action buttons (right-aligned)
-- Padding: p-8
-
-**Toasts/Notifications**:
-- Corner placement: top-right
-- Auto-dismiss after 5s
-- Icon + Message + Close button
-- Types: Success, Error, Warning, Info
-
-**Tabs**:
-- Underline style (border-b active state)
-- Horizontal layout with equal spacing
-- Active indicator: border-b-2 with accent
-- Text: font-medium
-
-**Badges/Tags**:
-- Small, rounded-full or rounded-md
-- Padding: px-3 py-1
-- Text: text-xs font-medium
-- Variants: Status (success, warning, error), Category, Count
+1. **Chart-1**: Emerald (#10A37F) - Primary data
+2. **Chart-2**: Purple (#8B5CF6) - Secondary data
+3. **Chart-3**: Yellow (#EAB308) - Tertiary data
+4. **Chart-4**: Rose (#FB7185) - Quaternary data
+5. **Chart-5**: Blue (#60A5FA) - Quinary data
 
 ---
 
-## Module-Specific Patterns
+## 🔤 Typography System
+
+### Font Families
+
+**Primary**: **Inter** (Google/Vercel style)
+- Clean, modern, highly legible
+- Weights: 400 (Regular), 500 (Medium), 600 (Semibold), 700 (Bold)
+- Use for: Body text, UI elements, forms
+
+**Monospace**: **JetBrains Mono**
+- Technical content, code blocks
+- Use for: API responses, IDs, technical data
+
+### Type Scale
+
+```
+Display: 36px / font-bold - Dashboard headers
+Headline: 24px / font-semibold - Section headers
+Subheading: 18px / font-medium - Subsections
+Body: 16px / font-normal - Primary content
+Small: 14px / font-normal - Secondary info
+Micro: 12px / font-medium - Badges, timestamps
+```
+
+### Line Heights
+
+- **Tight** (leading-tight): Headings
+- **Normal** (leading-normal): Body text
+- **Relaxed** (leading-relaxed): Long-form content
+
+---
+
+## 📐 Layout & Spacing
+
+### Spacing Scale
+
+Use **multiples of 4**: 4, 8, 12, 16, 24, 32, 48, 64px
+
+**Small**: 8px - Tight spacing (form fields, list items)
+**Medium**: 16px - Standard spacing (cards, sections)
+**Large**: 32px - Generous spacing (page sections)
+
+### Grid System
+
+- **Dashboard**: 12-column grid
+- **Cards**: 1-3 columns responsive
+- **Sidebar**: 256px expanded / 64px collapsed
+- **Max Content Width**: 1400px (max-w-7xl)
+
+### Borders & Radii
+
+- **Border Radius**: 8px (rounded-md) - Consistent across all components
+- **Border Width**: 1px - Subtle, never heavy
+- **Border Style**: Solid, minimal opacity
+
+---
+
+## 🎭 Visual Style
+
+### Shadows (Elevation)
+
+Inspired by Apple's subtle depth:
+
+```
+Level 1 (shadow-sm): Cards, inputs
+Level 2 (shadow-md): Dropdowns, hover states  
+Level 3 (shadow-lg): Modals, popovers
+Level 4 (shadow-2xl): Critical alerts
+```
+
+### Iconography
+
+**Library**: Lucide React (outline style)
+- **Size**: 20px (default), 24px (standalone)
+- **Style**: Consistent stroke weight
+- **Usage**: Signify actions, provide visual cues
+
+**Company Logos**: react-icons/si
+
+### Dark Mode
+
+**Philosophy**: True black OLED-style (inspired by Tesla)
+
+- Absolute blacks (#0A0A0B) for premium feel
+- Subtle elevation with grays
+- Emerald green pops beautifully on dark
+- Automatic contrast adjustments
+
+---
+
+## 🧩 Component Patterns
+
+### Navigation
+
+**Sidebar** (Inspired by Linear/Vercel):
+- Dark background (#1C1C1E)
+- Collapsible design
+- Active states with emerald accent
+- Grouped sections
+
+**Top Header**:
+- Minimal, 64px height
+- Sidebar toggle + Theme toggle
+- No clutter
+
+### Cards
+
+- Clean borders, subtle shadows
+- Hover states with elevation
+- Consistent padding (24px)
+- White background (light) / Dark slate (dark)
+
+### Buttons
+
+**Primary**: Emerald green, white text
+**Secondary**: Light gray, dark text
+**Ghost**: Transparent, hover elevate
+**Outline**: Border only, hover fill
+
+Sizes: sm (32px), default (40px), lg (48px), icon (40px square)
+
+### Forms
+
+- Clean inputs with borders
+- Focus ring in emerald
+- Labels above inputs
+- Helpful error messages below
+
+### Tables
+
+- Sticky headers
+- Row hover states
+- Alternating row backgrounds (optional)
+- Right-aligned numbers
+
+---
+
+## 🌐 Responsive Design
+
+### Breakpoints
+
+- **Mobile**: < 768px
+- **Tablet**: 768px - 1024px  
+- **Desktop**: > 1024px
+
+### Mobile Adaptations
+
+- Hamburger menu
+- Stacked layouts
+- Full-width cards
+- Touch-friendly targets (min 44px)
+
+---
+
+## ♿ Accessibility
+
+- **Contrast**: WCAG AA minimum (4.5:1)
+- **Focus Indicators**: Visible ring on all interactive elements
+- **ARIA Labels**: All buttons, links, inputs
+- **Keyboard Nav**: Full support (Tab, Enter, Escape)
+- **Screen Readers**: Proper announcements
+
+---
+
+## 🔍 SEO Best Practices
+
+### Meta Tags (Every Page)
+
+```html
+<title>EAAS - Everything As A Service Platform</title>
+<meta name="description" content="All-in-one PaaS platform with AI, CRM, ERP, Marketplace, and Omnichat. Simplify, scale, and automate your business operations." />
+<meta name="keywords" content="paas, all-in-one platform, ai platform, crm, erp, marketplace, omnichat, business automation" />
+```
+
+### Open Graph
+
+```html
+<meta property="og:type" content="website" />
+<meta property="og:title" content="EAAS - Everything As A Service" />
+<meta property="og:description" content="Revolutionary all-in-one PaaS platform" />
+<meta property="og:image" content="/og-image.png" />
+```
+
+### Structured Data
+
+- Organization schema
+- SoftwareApplication schema
+- BreadcrumbList for navigation
+
+---
+
+## 🎯 Design Principles
+
+### 1. Clarity Over Decoration
+Information density without visual noise. Every element earns its place.
+
+### 2. Consistent Rhythm
+Predictable patterns across all modules. Users learn once, apply everywhere.
+
+### 3. Hierarchical Precision
+Clear visual weight for decision-making. Important = obvious.
+
+### 4. Adaptive Complexity
+Progressive disclosure. Simple by default, powerful when needed.
+
+### 5. Universal Neutrality
+Business-agnostic aesthetic. Works for tourism, e-commerce, services, real estate.
+
+---
+
+## 📱 Module-Specific Patterns
+
+### Dashboard
+- KPI cards in 4-column grid
+- Charts with emerald primary color
+- Recent activity timeline
+- Quick actions
 
 ### Marketplace
-- Product cards with image placeholder, title, price, CTA
-- Grid layout: 3-4 columns on desktop
-- Filters sidebar (left) with category tree
-- Large hero section with search overlay (if landing page)
+- Product cards 3-4 columns
+- Image placeholders
+- Price emphasis
+- Quick add to cart
 
 ### CRM 360°
-- Kanban board for pipeline stages (drag-drop)
-- Contact detail panels (slide-out from right)
-- Activity timeline (vertical, chronological)
-- Quick actions toolbar above tables
-
-### ERP Modules
-- Dashboard with metric cards and charts
-- Data-dense tables with sorting, filtering, pagination
-- Form-heavy interfaces with clear section breaks
-- Multi-step wizards for complex workflows
-
-### AI Chat Interface
-- Chat bubbles: User (right-aligned), AI (left-aligned)
-- Message timestamps (text-xs, muted)
-- Typing indicator animation
-- Knowledge base editor: Monaco or similar code editor
+- Kanban board (drag-drop)
+- Customer detail panels (slide-out)
+- Activity timeline
+- Quick contact actions
 
 ### Omnichat
-- Channel switcher (WhatsApp, Facebook, Instagram, Web)
-- Conversation list (left panel, 320px width)
-- Message thread (center, full height)
-- Customer info panel (right, collapsible)
+- Channel switcher (WhatsApp, Facebook, Web)
+- Conversation list (320px)
+- Message thread (full height)
+- Customer info panel (collapsible)
 
-### Calendar
-- Monthly/Weekly/Daily views
-- Event blocks with status indicators
-- Resource allocation visualization
-- Drag-to-create and resize events
-
----
-
-## Visual Treatment
-
-**Elevation/Depth**:
-- Level 1: shadow-sm (cards, inputs)
-- Level 2: shadow-md (dropdowns, hover states)
-- Level 3: shadow-lg (modals, popovers)
-- Level 4: shadow-2xl (critical alerts)
-
-**Borders & Dividers**:
-- Subtle borders throughout (border opacity ~10-20%)
-- Section dividers: border-t with py-6 spacing
-- Card outlines instead of heavy shadows
-
-**Iconography**:
-- Heroicons (outline for inactive, solid for active)
-- Size: w-5 h-5 for inline, w-6 h-6 for standalone
-- Consistent stroke weight across interface
-
-**Empty States**:
-- Centered illustration/icon (w-48)
-- Headline + description + CTA
-- Encouraging tone ("Get started by...")
+### Knowledge Base
+- Document list
+- Rich text editor
+- Category tags
+- Search prominent
 
 ---
 
-## Responsive Behavior
+## 🚀 Animation & Interactions
 
-**Breakpoints**:
-- Mobile: < 768px - Stack layouts, full-width cards, bottom navigation
-- Tablet: 768px - 1024px - 2-column grids, condensed sidebars
-- Desktop: > 1024px - Full experience, 3-4 column grids
+### Micro-interactions
 
-**Mobile Adaptations**:
-- Hamburger menu for navigation
-- Swipeable tabs and cards
-- Bottom sheet modals instead of centered
-- Touch-friendly tap targets (min 44px)
+- **Hover**: Subtle elevation (3-5% brightness change)
+- **Active**: Slight scale down (98%)
+- **Focus**: Emerald ring (2px)
+- **Loading**: Skeleton screens, not spinners
 
----
+### Transitions
 
-## Accessibility
-
-- ARIA labels on all interactive elements
-- Keyboard navigation support (Tab, Enter, Escape)
-- Focus indicators (ring-2) on all focusable elements
-- Sufficient contrast ratios (WCAG AA minimum)
-- Screen reader announcements for dynamic content
-- Form validation messages programmatically linked to inputs
+- **Duration**: 150-200ms (fast and crisp)
+- **Easing**: ease-out (natural deceleration)
+- **Properties**: opacity, transform (GPU-accelerated)
 
 ---
 
-## Images
+## 🎨 Inspiration Sources
 
-**Hero Section** (Marketing/Landing Pages Only):
-- Large hero image: Full-width, 60-80vh height
-- Abstract tech/business imagery or dashboard mockup
-- Gradient overlay for text readability
-- Blurred background buttons (backdrop-blur-sm bg-white/20)
+- **Tesla**: Radical minimalism, black/white contrast
+- **OpenAI**: Emerald green, modern gradients
+- **Apple**: Precise spacing, sophisticated grays
+- **Airbnb**: Warmth, approachability
+- **Google**: Organized multi-color, Material Design
+- **Vercel**: Clean typography, dark sidebar
+- **Linear**: Keyboard-first, dark mode excellence
 
-**Product/Feature Imagery**:
-- Dashboard screenshots with subtle shadow
-- Icon illustrations for feature cards (256x256px)
-- Team photos in About/Team sections (circular crop, 160x160px)
+---
 
-**No hero images needed** for internal application dashboards - focus on data density and functionality.
+## 📝 Code Examples
+
+### Button Usage
+
+```tsx
+<Button variant="default">Primary Action</Button>
+<Button variant="outline">Secondary</Button>
+<Button variant="ghost">Tertiary</Button>
+```
+
+### Card Usage
+
+```tsx
+<Card className="hover-elevate">
+  <CardHeader>
+    <CardTitle>Title</CardTitle>
+  </CardHeader>
+  <CardContent>Content</CardContent>
+</Card>
+```
+
+### Color Usage
+
+```tsx
+<div className="bg-primary text-primary-foreground">
+<div className="bg-accent text-accent-foreground">
+<div className="text-muted-foreground">
+```
+
+---
+
+**Remember**: Silent sophistication. Timeless. Precise. Inevitable.
