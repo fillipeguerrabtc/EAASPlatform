@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import {
@@ -18,6 +19,12 @@ import { z } from "zod";
 function getTenantId(req: Request): string {
   const tenantHeader = req.headers["x-tenant-id"] as string;
   return tenantHeader || "default";
+}
+
+// Strict tenant resolution (no fallback) - for webhooks and multi-tenant enforcement
+function getTenantIdStrict(req: Request): string | null {
+  const tenantHeader = req.headers["x-tenant-id"] as string;
+  return tenantHeader || null;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -713,6 +720,195 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payment);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // WHATSAPP INTEGRATION (TWILIO)
+  // ========================================
+  
+  // Initialize Twilio client
+  let twilioClient: any = null;
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    const twilio = await import("twilio");
+    twilioClient = twilio.default(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+    console.log("✅ Twilio WhatsApp client initialized");
+  } else {
+    console.warn("⚠️  TWILIO credentials not found - WhatsApp messaging disabled");
+  }
+  
+  // Send WhatsApp message
+  app.post("/api/whatsapp/send", async (req: Request, res: Response) => {
+    try {
+      if (!twilioClient || !process.env.TWILIO_WHATSAPP_NUMBER) {
+        return res.status(503).json({ error: "WhatsApp service not configured" });
+      }
+      
+      const tenantId = getTenantId(req);
+      const { to, message } = req.body;
+      
+      if (!to || !message) {
+        return res.status(400).json({ error: "Phone number and message are required" });
+      }
+      
+      // Find or create customer by phone
+      let customer = (await storage.listCustomers(tenantId)).find(
+        c => c.phone === to
+      );
+      
+      if (!customer) {
+        customer = await storage.createCustomer({
+          tenantId,
+          name: to,
+          email: `${to}@whatsapp.temp`,
+          phone: to,
+        });
+      }
+      
+      // Find or create WhatsApp conversation
+      let conversation = (await storage.listConversations(tenantId)).find(
+        c => c.customerId === customer!.id && c.channel === "whatsapp"
+      );
+      
+      if (!conversation) {
+        conversation = await storage.createConversation({
+          tenantId,
+          customerId: customer.id,
+          channel: "whatsapp",
+          status: "open",
+        });
+      }
+      
+      // Send via Twilio FIRST (fail fast if Twilio errors)
+      const twilioMessage = await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+        to: `whatsapp:${to}`,
+        body: message,
+      });
+      
+      // Only save message AFTER Twilio succeeds
+      if (twilioMessage.status !== "failed") {
+        await storage.createMessage({
+          conversationId: conversation.id,
+          tenantId,
+          senderType: "agent",
+          content: message,
+        }, tenantId);
+      }
+      
+      res.json({ 
+        success: true,
+        messageId: twilioMessage.sid,
+        status: twilioMessage.status,
+        conversationId: conversation.id,
+      });
+    } catch (error: any) {
+      console.error("WhatsApp send error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Webhook to receive incoming WhatsApp messages
+  // IMPORTANT: Twilio sends application/x-www-form-urlencoded, handled by express.urlencoded()
+  app.post("/api/whatsapp/webhook", express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+    try {
+      const { From, Body, MessageSid, To } = req.body;
+      
+      // MANDATORY: Validate Twilio signature for security (BEFORE any processing)
+      const twilioSignature = req.headers["x-twilio-signature"] as string;
+      const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+      
+      if (!twilioSignature || !twilioAuthToken) {
+        console.error("🚫 WhatsApp webhook: Missing Twilio signature or auth token - rejecting request");
+        return res.status(403).send("<Response></Response>");
+      }
+      
+      // Validate signature using Twilio SDK
+      const twilio = await import("twilio");
+      const url = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+      const isValid = twilio.default.validateRequest(
+        twilioAuthToken,
+        twilioSignature,
+        url,
+        req.body
+      );
+      
+      if (!isValid) {
+        console.error("🚫 Invalid Twilio signature - potential spoofing attempt - rejecting");
+        console.error(`   Signature: ${twilioSignature}`);
+        console.error(`   URL: ${url}`);
+        return res.status(403).send("<Response></Response>");
+      }
+      
+      console.log("📱 WhatsApp message received (validated):", { From, Body, MessageSid, To });
+      
+      if (!From || !Body) {
+        return res.status(400).send("Missing required fields");
+      }
+      
+      // Extract phone numbers (remove whatsapp: prefix)
+      const phoneNumber = From.replace("whatsapp:", "");
+      const toNumber = To?.replace("whatsapp:", "") || "";
+      
+      // PRODUCTION-READY: Map Twilio number → tenantId using database
+      const tenant = await storage.getTenantByTwilioNumber(toNumber);
+      
+      if (!tenant) {
+        console.error(`🚫 WhatsApp webhook: Unknown Twilio number ${toNumber} - rejecting request`);
+        console.error(`   Register this Twilio number in tenant configuration`);
+        console.error(`   Update tenant.twilioWhatsappNumber = "${toNumber}"`);
+        return res.status(400).send("Unknown Twilio number - not mapped to any tenant");
+      }
+      
+      const tenantId = tenant.id;
+      console.log(`✅ WhatsApp webhook: Mapped ${toNumber} → Tenant ${tenant.name} (${tenantId})`);
+      
+      // Find or create customer
+      let customer = (await storage.listCustomers(tenantId)).find(
+        c => c.phone === phoneNumber
+      );
+      
+      if (!customer) {
+        customer = await storage.createCustomer({
+          tenantId,
+          name: phoneNumber, // Use phone as name initially
+          email: `${phoneNumber}@whatsapp.temp`,
+          phone: phoneNumber,
+        });
+      }
+      
+      // Find or create conversation
+      let conversation = (await storage.listConversations(tenantId)).find(
+        c => c.customerId === customer!.id && c.channel === "whatsapp"
+      );
+      
+      if (!conversation) {
+        conversation = await storage.createConversation({
+          tenantId,
+          customerId: customer.id,
+          channel: "whatsapp",
+          status: "open",
+        });
+      }
+      
+      // Save incoming message
+      await storage.createMessage({
+        conversationId: conversation.id,
+        tenantId,
+        senderType: "customer",
+        content: Body,
+      }, tenantId);
+      
+      // Respond with TwiML (required by Twilio)
+      res.type("text/xml");
+      res.send("<Response></Response>");
+      
+    } catch (error: any) {
+      console.error("WhatsApp webhook error:", error);
+      res.status(500).send("<Response></Response>");
     }
   });
 

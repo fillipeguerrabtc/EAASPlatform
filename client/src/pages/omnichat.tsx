@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageSquare, Send, Sparkles, Facebook, Instagram } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { MessageSquare, Send, Sparkles, Facebook, Instagram, Plus } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +31,9 @@ const channelColors = {
 export default function Omnichat() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState("");
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: conversations, isLoading } = useQuery<Conversation[]>({
@@ -68,16 +73,94 @@ export default function Omnichat() {
     if (!newMessage.trim()) return;
     sendMessageMutation.mutate(newMessage);
   };
+  
+  const sendWhatsAppMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/whatsapp/send", "POST", {
+        to: whatsappPhone,
+        message: whatsappMessage,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      setWhatsappPhone("");
+      setWhatsappMessage("");
+      setWhatsappDialogOpen(false);
+      toast({
+        title: "WhatsApp message sent!",
+        description: `Message sent to ${whatsappPhone} successfully`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "WhatsApp Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold" data-testid="text-omnichat-title">
-          Omnichat
-        </h1>
-        <p className="text-muted-foreground mt-2">
-          Unified communication center
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold" data-testid="text-omnichat-title">
+            Omnichat
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Unified communication center
+          </p>
+        </div>
+        
+        <Dialog open={whatsappDialogOpen} onOpenChange={setWhatsappDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2" data-testid="button-new-whatsapp">
+              <SiWhatsapp className="h-4 w-4" />
+              Send WhatsApp
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Send WhatsApp Message</DialogTitle>
+              <DialogDescription>
+                Send a message via WhatsApp (Twilio Sandbox)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  placeholder="+1234567890"
+                  value={whatsappPhone}
+                  onChange={(e) => setWhatsappPhone(e.target.value)}
+                  data-testid="input-whatsapp-phone"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Include country code (e.g., +1 for US)
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="message">Message</Label>
+                <Input
+                  id="message"
+                  placeholder="Type your message..."
+                  value={whatsappMessage}
+                  onChange={(e) => setWhatsappMessage(e.target.value)}
+                  data-testid="input-whatsapp-message"
+                />
+              </div>
+              <Button
+                onClick={() => sendWhatsAppMutation.mutate()}
+                disabled={sendWhatsAppMutation.isPending || !whatsappPhone || !whatsappMessage}
+                className="w-full"
+                data-testid="button-send-whatsapp"
+              >
+                {sendWhatsAppMutation.isPending ? "Sending..." : "Send WhatsApp Message"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid grid-cols-3 gap-6 h-[calc(100vh-16rem)]">

@@ -44,6 +44,7 @@ export interface IStorage {
   // Tenants
   getTenant(id: string): Promise<Tenant | undefined>;
   getTenantBySubdomain(subdomain: string): Promise<Tenant | undefined>;
+  getTenantByTwilioNumber(twilioNumber: string): Promise<Tenant | undefined>;
   listTenants(): Promise<Tenant[]>;
   createTenant(tenant: InsertTenant): Promise<Tenant>;
   updateTenant(id: string, data: Partial<InsertTenant>): Promise<Tenant | undefined>;
@@ -131,6 +132,11 @@ export class DbStorage implements IStorage {
 
   async getTenantBySubdomain(subdomain: string): Promise<Tenant | undefined> {
     const result = await db.select().from(tenants).where(eq(tenants.subdomain, subdomain)).limit(1);
+    return result[0];
+  }
+
+  async getTenantByTwilioNumber(twilioNumber: string): Promise<Tenant | undefined> {
+    const result = await db.select().from(tenants).where(eq(tenants.twilioWhatsappNumber, twilioNumber)).limit(1);
     return result[0];
   }
 

@@ -25,6 +25,7 @@ export const tenants = pgTable("tenants", {
   subdomain: text("subdomain").notNull().unique(),
   logo: text("logo"),
   primaryColor: text("primary_color").default("#2563EB"),
+  twilioWhatsappNumber: text("twilio_whatsapp_number"),
   status: text("status").default("active"),
   settings: jsonb("settings").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
