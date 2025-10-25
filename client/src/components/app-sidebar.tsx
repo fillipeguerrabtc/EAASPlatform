@@ -6,7 +6,9 @@ import {
   Book, 
   Building2,
   CreditCard,
-  Settings
+  Settings,
+  Calendar,
+  Package
 } from "lucide-react";
 import {
   Sidebar,
@@ -17,9 +19,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
+import { EaasLogo } from "@/components/eaas-logo";
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -63,19 +67,36 @@ export function AppSidebar() {
       testId: "knowledge-base",
     },
     {
+      title: "Pedidos",
+      url: "/orders",
+      icon: Package,
+      testId: "orders",
+    },
+    {
+      title: "Calendário",
+      url: "/calendar",
+      icon: Calendar,
+      testId: "calendar",
+    },
+    {
       title: t('nav.payments'),
-      url: "/checkout",
+      url: "/payments",
       icon: CreditCard,
-      testId: "checkout",
+      testId: "payments",
     },
   ];
 
   return (
     <Sidebar>
+      <SidebarHeader className="p-4 border-b">
+        <Link href="/">
+          <EaasLogo size="md" variant="full" />
+        </Link>
+      </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-lg font-bold px-4">
-            EAAS
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-4">
+            Menu Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>

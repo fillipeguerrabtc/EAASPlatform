@@ -21,6 +21,8 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Product } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EaasLogo } from "@/components/eaas-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const productTypeIcons = {
   product: Package,
@@ -189,44 +191,59 @@ export default function Shop() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <h2 className="text-2xl font-bold">EAAS</h2>
-            <Button variant="ghost" onClick={() => navigate("/shop")} data-testid="button-nav-shop">
-              {t('shop.title')}
-            </Button>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="outline" 
-              onClick={() => navigate("/cart")}
-              className="relative"
-              data-testid="button-header-cart"
-            >
-              <ShoppingCart className="h-4 w-4 mr-2" />
-              {t('cart.title')}
-              {cartItemCount > 0 && (
-                <Badge className="ml-2 px-2 py-0.5 text-xs" data-testid="badge-cart-count">
-                  {cartItemCount}
-                </Badge>
-              )}
-            </Button>
+      {/* Premium Header */}
+      <header className="border-b sticky top-0 bg-background/80 backdrop-blur-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4 sm:gap-6">
+              <div className="cursor-pointer" onClick={() => navigate("/")}>
+                <EaasLogo size="md" variant="full" />
+              </div>
+              <Button variant="ghost" onClick={() => navigate("/shop")} data-testid="button-nav-shop">
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                {t('shop.title')}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <ThemeToggle />
+              <Button 
+                variant="outline" 
+                onClick={() => navigate("/cart")}
+                className="relative min-h-11"
+                data-testid="button-header-cart"
+              >
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                {t('cart.title')}
+                {cartItemCount > 0 && (
+                  <Badge className="ml-2 px-2 py-0.5 text-xs" data-testid="badge-cart-count">
+                    {cartItemCount}
+                  </Badge>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b">
-        <div className="max-w-7xl mx-auto px-4 py-12">
-          <h1 className="text-5xl font-bold mb-4" data-testid="text-shop-title">
-            {t('shop.title')}
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl">
-            {t('shop.subtitle')}
-          </p>
+      {/* Premium Hero Section */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-emerald-50/50 via-purple-50/30 to-blue-50/50 dark:from-emerald-950/20 dark:via-purple-950/10 dark:to-blue-950/20 border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
+              <Package className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
+              <span className="text-sm font-medium">Marketplace Público</span>
+            </div>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 tracking-tight" data-testid="text-shop-title">
+              <span className="bg-gradient-to-r from-emerald-600 via-purple-600 to-blue-600 bg-clip-text text-transparent dark:from-emerald-500 dark:via-purple-500 dark:to-blue-500">
+                {t('shop.title')}
+              </span>
+            </h1>
+            <p className="text-lg sm:text-xl text-muted-foreground">
+              {t('shop.subtitle')}
+            </p>
+          </div>
         </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent pointer-events-none" />
       </div>
 
       {/* Filters Section */}
