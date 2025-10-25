@@ -22,6 +22,7 @@ import Payments from "@/pages/payments";
 import CalendarPage from "@/pages/calendar";
 import Shop from "@/pages/shop";
 import CartPage from "@/pages/cart";
+import OrdersPage from "@/pages/orders";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -52,12 +53,14 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/tenants" component={Tenants} />
           <Route path="/marketplace" component={Marketplace} />
+          <Route path="/customers" component={CRM} />
           <Route path="/crm" component={CRM} />
           <Route path="/omnichat" component={Omnichat} />
           <Route path="/knowledge-base" component={KnowledgeBasePage} />
           <Route path="/checkout" component={Checkout} />
           <Route path="/payments" component={Payments} />
           <Route path="/calendar" component={CalendarPage} />
+          <Route path="/orders" component={OrdersPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>
@@ -101,15 +104,15 @@ function AuthenticatedLayout({ style, children }: { style: React.CSSProperties; 
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between p-4 border-b">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <div className="flex items-center gap-2">
+          <header className="flex items-center justify-between px-3 sm:px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+            <SidebarTrigger data-testid="button-sidebar-toggle" className="min-h-9 min-w-9" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <LanguageToggle />
               <ThemeToggle />
               <UserMenu />
             </div>
           </header>
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto bg-gradient-to-br from-background via-background to-muted/10">
             {children}
           </main>
         </div>
