@@ -1504,6 +1504,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // FINANCIAL TRANSACTIONS
+  // ========================================
+
+  app.get("/api/financial-transactions", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const { type, startDate, endDate } = req.query;
+      
+      const filters: any = {};
+      if (type) filters.type = type;
+      if (startDate) filters.startDate = new Date(startDate as string);
+      if (endDate) filters.endDate = new Date(endDate as string);
+      
+      const transactions = await storage.listFinancialTransactions(tenantId, filters);
+      res.json(transactions);
+    } catch (error: any) {
+      console.error("Error listing financial transactions:", error);
+      res.status(500).json({ message: "Failed to list transactions" });
+    }
+  });
+
+  app.get("/api/financial-transactions/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const transaction = await storage.getFinancialTransaction(req.params.id, tenantId);
+      
+      if (!transaction) {
+        return res.status(404).json({ message: "Transaction not found" });
+      }
+      
+      res.json(transaction);
+    } catch (error: any) {
+      console.error("Error getting financial transaction:", error);
+      res.status(500).json({ message: "Failed to get transaction" });
+    }
+  });
+
+  app.post("/api/financial-transactions", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      // Validate request body with Zod
+      const { insertFinancialTransactionSchema } = await import("@shared/schema");
+      const validatedData = insertFinancialTransactionSchema.parse({
+        ...req.body,
+        tenantId,
+        date: new Date(req.body.date),
+      });
+      
+      const transaction = await storage.createFinancialTransaction(validatedData);
+      res.json(transaction);
+    } catch (error: any) {
+      console.error("Error creating financial transaction:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create transaction" });
+    }
+  });
+
+  app.patch("/api/financial-transactions/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      // Validate update data with Zod (partial validation)
+      const { insertFinancialTransactionSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.date) {
+        updateData.date = new Date(req.body.date);
+      }
+      
+      // Validate only provided fields (partial)
+      const validatedData = insertFinancialTransactionSchema.partial().parse(updateData);
+      
+      const transaction = await storage.updateFinancialTransaction(req.params.id, tenantId, validatedData);
+      
+      if (!transaction) {
+        return res.status(404).json({ message: "Transaction not found" });
+      }
+      
+      res.json(transaction);
+    } catch (error: any) {
+      console.error("Error updating financial transaction:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update transaction" });
+    }
+  });
+
+  app.delete("/api/financial-transactions/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteFinancialTransaction(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting financial transaction:", error);
+      res.status(500).json({ message: "Failed to delete transaction" });
+    }
+  });
+
+  // ========================================
+  // FINANCIAL ACCOUNTS
+  // ========================================
+
+  app.get("/api/financial-accounts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const accounts = await storage.listFinancialAccounts(tenantId);
+      res.json(accounts);
+    } catch (error: any) {
+      console.error("Error listing financial accounts:", error);
+      res.status(500).json({ message: "Failed to list accounts" });
+    }
+  });
+
+  app.post("/api/financial-accounts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      // Validate request body with Zod
+      const { insertFinancialAccountSchema } = await import("@shared/schema");
+      const validatedData = insertFinancialAccountSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const account = await storage.createFinancialAccount(validatedData);
+      res.json(account);
+    } catch (error: any) {
+      console.error("Error creating financial account:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

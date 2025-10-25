@@ -270,9 +270,6 @@ export const calendarEvents = pgTable("calendar_events", {
 // ERP - FINANCIAL MODULE
 // ========================================
 
-export const transactionTypeEnum = pgEnum("transaction_type", ["income", "expense", "transfer"]);
-export const transactionCategoryEnum = pgEnum("transaction_category", ["sales", "purchase", "salary", "rent", "utilities", "tax", "other"]);
-
 // Financial Accounts (Bank Accounts, Cash, etc.)
 export const financialAccounts = pgTable("financial_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -288,17 +285,19 @@ export const financialAccounts = pgTable("financial_accounts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Financial Transactions
+// Financial Transactions (Simplified for MVP - flexible fields)
 export const financialTransactions = pgTable("financial_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  accountId: varchar("account_id").references(() => financialAccounts.id, { onDelete: "cascade" }).notNull(),
-  type: transactionTypeEnum("type").notNull(),
-  category: transactionCategoryEnum("category").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  accountId: varchar("account_id").references(() => financialAccounts.id, { onDelete: "cascade" }), // optional for MVP
+  type: text("type").notNull(), // revenue, expense, transfer
+  category: text("category"), // flexible category
+  amount: text("amount").notNull(), // stored as text to preserve precision
   description: text("description").notNull(),
   date: timestamp("date").notNull(),
+  paymentMethod: text("payment_method"), // cash, credit_card, pix, etc
   reference: text("reference"),
+  notes: text("notes"),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -378,11 +377,6 @@ export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
 
-// User-Tenant Membership
-export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
-export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
-export type UserTenant = typeof userTenants.$inferSelect;
-
 // Financial Accounts
 export const insertFinancialAccountSchema = createInsertSchema(financialAccounts).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertFinancialAccount = z.infer<typeof insertFinancialAccountSchema>;
@@ -392,3 +386,8 @@ export type FinancialAccount = typeof financialAccounts.$inferSelect;
 export const insertFinancialTransactionSchema = createInsertSchema(financialTransactions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
 export type FinancialTransaction = typeof financialTransactions.$inferSelect;
+
+// User-Tenant Membership
+export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
+export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
+export type UserTenant = typeof userTenants.$inferSelect;

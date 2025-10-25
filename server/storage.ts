@@ -25,6 +25,10 @@ import {
   type InsertCalendarEvent,
   type Category,
   type InsertCategory,
+  type FinancialTransaction,
+  type InsertFinancialTransaction,
+  type FinancialAccount,
+  type InsertFinancialAccount,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -41,6 +45,8 @@ import {
   userTenants,
   calendarEvents,
   categories,
+  financialTransactions,
+  financialAccounts,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -124,6 +130,20 @@ export interface IStorage {
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: string, tenantId: string, data: Partial<InsertCategory>): Promise<Category | undefined>;
   deleteCategory(id: string, tenantId: string): Promise<void>;
+  
+  // Financial Accounts
+  listFinancialAccounts(tenantId: string): Promise<FinancialAccount[]>;
+  getFinancialAccount(id: string, tenantId: string): Promise<FinancialAccount | undefined>;
+  createFinancialAccount(account: InsertFinancialAccount): Promise<FinancialAccount>;
+  updateFinancialAccount(id: string, tenantId: string, data: Partial<InsertFinancialAccount>): Promise<FinancialAccount | undefined>;
+  deleteFinancialAccount(id: string, tenantId: string): Promise<void>;
+  
+  // Financial Transactions
+  listFinancialTransactions(tenantId: string, filters?: { type?: string; startDate?: Date; endDate?: Date }): Promise<FinancialTransaction[]>;
+  getFinancialTransaction(id: string, tenantId: string): Promise<FinancialTransaction | undefined>;
+  createFinancialTransaction(transaction: InsertFinancialTransaction): Promise<FinancialTransaction>;
+  updateFinancialTransaction(id: string, tenantId: string, data: Partial<InsertFinancialTransaction>): Promise<FinancialTransaction | undefined>;
+  deleteFinancialTransaction(id: string, tenantId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -534,6 +554,85 @@ export class DbStorage implements IStorage {
   async deleteCategory(id: string, tenantId: string): Promise<void> {
     await db.delete(categories)
       .where(and(eq(categories.id, id), eq(categories.tenantId, tenantId)));
+  }
+
+  // ========================================
+  // FINANCIAL ACCOUNTS
+  // ========================================
+
+  async listFinancialAccounts(tenantId: string): Promise<FinancialAccount[]> {
+    return await db.select().from(financialAccounts)
+      .where(eq(financialAccounts.tenantId, tenantId))
+      .orderBy(financialAccounts.name);
+  }
+
+  async getFinancialAccount(id: string, tenantId: string): Promise<FinancialAccount | undefined> {
+    const result = await db.select().from(financialAccounts)
+      .where(and(eq(financialAccounts.id, id), eq(financialAccounts.tenantId, tenantId)))
+      .limit(1);
+    return result[0];
+  }
+
+  async createFinancialAccount(account: InsertFinancialAccount): Promise<FinancialAccount> {
+    const result = await db.insert(financialAccounts).values(account).returning();
+    return result[0];
+  }
+
+  async updateFinancialAccount(id: string, tenantId: string, data: Partial<InsertFinancialAccount>): Promise<FinancialAccount | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const result = await db.update(financialAccounts)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(financialAccounts.id, id), eq(financialAccounts.tenantId, tenantId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteFinancialAccount(id: string, tenantId: string): Promise<void> {
+    await db.delete(financialAccounts)
+      .where(and(eq(financialAccounts.id, id), eq(financialAccounts.tenantId, tenantId)));
+  }
+
+  // ========================================
+  // FINANCIAL TRANSACTIONS
+  // ========================================
+
+  async listFinancialTransactions(tenantId: string, filters?: { type?: string; startDate?: Date; endDate?: Date }): Promise<FinancialTransaction[]> {
+    let query = db.select().from(financialTransactions)
+      .where(eq(financialTransactions.tenantId, tenantId))
+      .$dynamic();
+
+    // Apply filters if provided
+    if (filters?.type) {
+      query = query.where(eq(financialTransactions.type, filters.type as any));
+    }
+
+    return await query.orderBy(desc(financialTransactions.date));
+  }
+
+  async getFinancialTransaction(id: string, tenantId: string): Promise<FinancialTransaction | undefined> {
+    const result = await db.select().from(financialTransactions)
+      .where(and(eq(financialTransactions.id, id), eq(financialTransactions.tenantId, tenantId)))
+      .limit(1);
+    return result[0];
+  }
+
+  async createFinancialTransaction(transaction: InsertFinancialTransaction): Promise<FinancialTransaction> {
+    const result = await db.insert(financialTransactions).values(transaction).returning();
+    return result[0];
+  }
+
+  async updateFinancialTransaction(id: string, tenantId: string, data: Partial<InsertFinancialTransaction>): Promise<FinancialTransaction | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const result = await db.update(financialTransactions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(financialTransactions.id, id), eq(financialTransactions.tenantId, tenantId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteFinancialTransaction(id: string, tenantId: string): Promise<void> {
+    await db.delete(financialTransactions)
+      .where(and(eq(financialTransactions.id, id), eq(financialTransactions.tenantId, tenantId)));
   }
 }
 
