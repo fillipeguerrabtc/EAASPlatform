@@ -23,6 +23,7 @@ import { type Product } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SEO } from "@/components/seo";
 
 const productTypeIcons = {
   product: Package,
@@ -190,7 +191,16 @@ export default function Shop() {
   const [, navigate] = useLocation();
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
+      <SEO
+        title="Marketplace - EAAS | Browse Products & Services"
+        description="Explore our universal marketplace with products, services, tours, experiences, real estate, and vehicles. Powered by AI-driven recommendations and secure checkout."
+        keywords="marketplace, online store, products, services, e-commerce, buy online, shop, ai marketplace"
+        canonical="https://eaas.com/shop"
+        ogTitle="EAAS Marketplace - Everything You Need"
+        ogDescription="Universal marketplace platform with AI-powered shopping experience"
+      />
+      <div className="min-h-screen bg-background">
       {/* Premium Header */}
       <header className="border-b sticky top-0 bg-background/80 backdrop-blur-lg z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -332,5 +342,6 @@ export default function Shop() {
         )}
       </div>
     </div>
+    </>
   );
 }

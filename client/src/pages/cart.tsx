@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect } from "react";
 import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SEO } from "@/components/seo";
 
 interface CartItem {
   productId: string;
@@ -99,7 +100,16 @@ export default function CartPage() {
   const subtotal = parseFloat(cart?.total || "0");
 
   return (
-    <div className="min-h-screen bg-background">
+    <>
+      <SEO
+        title="Shopping Cart - EAAS | Review Your Items"
+        description="Review your shopping cart and proceed to secure checkout. Powered by Stripe with full payment security."
+        keywords="shopping cart, checkout, buy online, secure payment, stripe checkout"
+        canonical="https://eaas.com/cart"
+        ogTitle="Your Shopping Cart - EAAS"
+        ogDescription="Complete your purchase with secure Stripe checkout"
+      />
+      <div className="min-h-screen bg-background">
       {/* Premium Header */}
       <header className="border-b sticky top-0 bg-background/80 backdrop-blur-lg z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -284,5 +294,6 @@ export default function CartPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

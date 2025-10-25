@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Link } from "wouter";
+import { SEO } from "@/components/seo";
 
 export default function Landing() {
   const { t } = useTranslation();
@@ -47,7 +48,16 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen">
+    <>
+      <SEO
+        title="EAAS - Everything As A Service Platform | AI-Powered Business Automation"
+        description="Revolutionary all-in-one PaaS platform with AI, CRM 360°, Complete ERP, Marketplace Universal, Omnichat, and Payment Management. Simplify, scale, and automate your business operations."
+        keywords="paas platform, all-in-one business platform, ai automation, crm 360, erp software, marketplace platform, omnichat, business automation, multi-tenant saas, payment management, knowledge base ai"
+        canonical="https://eaas.com"
+        ogTitle="EAAS - Everything As A Service Platform"
+        ogDescription="Revolutionary all-in-one PaaS platform with AI, CRM 360°, ERP, Marketplace, and Omnichat. Built for scale."
+      />
+      <div className="min-h-screen">
       {/* Premium Header */}
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-lg">
         <div className="container mx-auto px-4 sm:px-6 py-4">
@@ -232,5 +242,6 @@ export default function Landing() {
         </div>
       </footer>
     </div>
+    </>
   );
 }
