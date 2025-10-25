@@ -40,8 +40,9 @@ export async function subdomainMiddleware(
     
     console.log('🌐 Subdomain Middleware - Hostname:', hostname);
 
-    // Development mode: localhost
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    // Development mode: localhost, 127.0.0.1, or Replit URLs
+    const isReplitUrl = hostname.includes('.replit.dev') || hostname.includes('.repl.co');
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || isReplitUrl) {
       console.log('🔧 Development mode - using header/session for tenant');
       req.isCentralMarketplace = false;
       req.isSuperAdminRoute = false;

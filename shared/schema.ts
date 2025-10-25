@@ -65,7 +65,6 @@ export const tenants = pgTable("tenants", {
   primaryColor: text("primary_color").default("#2563EB"),
   customTheme: jsonb("custom_theme"),
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
-  ssoConfig: jsonb("sso_config"),
   status: text("status").default("active"),
   settings: jsonb("settings").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
