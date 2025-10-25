@@ -154,13 +154,24 @@ EAAS is a revolutionary all-in-one PaaS platform that integrates everything a bu
     - Visão geral de módulos (Receitas, Despesas, Relatórios)
     - Pronto para integração com financialTransactions (backend já existe)
 
-11. **WhatsApp Widget + IA Autônoma** ✅ **[CONCLUÍDO]**
-    - Widget flutuante verde do WhatsApp no marketplace público
-    - Cliente clica → abre conversa no WhatsApp
-    - IA responde automaticamente via Twilio webhook
-    - RAG search na knowledge base + GPT-5 fallback
-    - Todas conversas salvas no CRM (customers, conversations, messages)
-    - IA atende 24/7 com personalidade profissional EAAS
+11. **WhatsApp Widget + IA Autônoma** ✅ **[CONCLUÍDO - PRODUCTION-READY]**
+    - **Widget flutuante verde do WhatsApp** no marketplace público (/shop)
+    - Botão circular 56×56px (touch target ≥44px - acessibilidade)
+    - Variant customizado "whatsapp" com CSS variables (dark mode support)
+    - Cliente clica → abre conversa WhatsApp com mensagem pré-formatada
+    - **IA responde automaticamente via Twilio webhook:**
+      - Twilio signature validation (segurança anti-spoofing)
+      - Tenant isolation via twilioWhatsappNumber
+      - RAG search na knowledge base primeiro
+      - GPT-5 fallback se não encontrar na KB
+      - System prompt customizado para EAAS (profissional, prestativo)
+      - Salva resposta APENAS após envio bem-sucedido
+    - **Todas conversas salvas no CRM:**
+      - Auto-cria customer (customers table)
+      - Auto-cria conversation (conversations table)  
+      - Salva mensagens customer + AI (messages table)
+    - IA atende 24/7 com personalidade profissional
+    - **Aprovado pelo architect** (design guidelines compliant)
 
 ### 🚧 In Progress / TODO
 
