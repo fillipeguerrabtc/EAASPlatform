@@ -104,9 +104,9 @@ function AuthenticatedLayout({ style, children }: { style: React.CSSProperties; 
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between px-3 sm:px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-            <SidebarTrigger data-testid="button-sidebar-toggle" className="min-h-9 min-w-9" />
-            <div className="flex items-center gap-1.5 sm:gap-2">
+          <header className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+            <SidebarTrigger data-testid="button-sidebar-toggle" className="min-h-11 min-w-11" />
+            <div className="flex flex-wrap items-center gap-2">
               <LanguageToggle />
               <ThemeToggle />
               <UserMenu />

@@ -83,7 +83,7 @@ export default function Dashboard() {
       {/* Hero Header */}
       <div className="px-4 sm:px-6 lg:px-8 pt-8 pb-6">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-wrap flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight" data-testid="text-dashboard-title">
                 {t('dashboard.title')}
@@ -92,7 +92,7 @@ export default function Dashboard() {
                 {t('dashboard.welcome')}
               </p>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
               <span className="font-medium">Atualizado agora</span>
             </div>
@@ -118,7 +118,7 @@ export default function Dashboard() {
                     {/* Hover overlay */}
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/0 to-primary/0 group-hover:from-primary/5 group-hover:to-primary/10 transition-all duration-300" />
                     
-                    <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-3">
+                    <CardHeader className="relative flex flex-wrap flex-row items-center justify-between gap-2 space-y-0 pb-3">
                       <CardTitle className="text-xs sm:text-sm font-semibold text-muted-foreground group-hover:text-foreground transition-colors">
                         {stat.title}
                       </CardTitle>
@@ -126,7 +126,7 @@ export default function Dashboard() {
                     </CardHeader>
                     
                     <CardContent className="relative">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="space-y-1">
                           {stat.loading ? (
                             <Skeleton className="h-10 w-20" />

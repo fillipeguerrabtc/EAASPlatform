@@ -50,9 +50,9 @@ export default function OrdersPage() {
       {/* Header */}
       <div className="px-4 sm:px-6 lg:px-8 pt-8 pb-6 border-b">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-wrap flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight flex items-center gap-3">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight flex flex-wrap items-center gap-3">
                 <div className="p-2 bg-amber-500/10 rounded-xl">
                   <ShoppingBag className="h-8 w-8 text-amber-600 dark:text-amber-500" />
                 </div>
@@ -62,7 +62,7 @@ export default function OrdersPage() {
                 Gerencie todos os pedidos do marketplace
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="text-sm font-medium">
                 {Array.isArray(orders) ? orders.length : 0} {Array.isArray(orders) && orders.length === 1 ? 'pedido' : 'pedidos'}
               </Badge>
@@ -112,8 +112,8 @@ export default function OrdersPage() {
                   <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary/5 to-transparent rounded-bl-full" />
                   
                   <CardHeader>
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
                         <div className="p-2 bg-primary/10 rounded-lg">
                           <Package className="h-5 w-5 text-primary" />
                         </div>
@@ -175,7 +175,7 @@ export default function OrdersPage() {
                           {order.items.map((item: any, idx: number) => (
                             <div 
                               key={idx}
-                              className="flex items-center justify-between text-sm p-2 bg-muted/30 rounded-md"
+                              className="flex flex-wrap items-center justify-between gap-2 text-sm p-2 bg-muted/30 rounded-md"
                             >
                               <span className="font-medium">{item.productId}</span>
                               <span className="text-muted-foreground">

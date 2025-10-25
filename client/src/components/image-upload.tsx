@@ -121,12 +121,11 @@ export function ImageUpload({ value = [], onChange, maxImages = 5, className }: 
                 <Button
                   type="button"
                   variant="destructive"
-                  size="icon"
                   onClick={(e) => {
                     e.stopPropagation();
                     removeImage(index);
                   }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity min-h-11 min-w-11"
                   data-testid={`button-remove-image-${index}`}
                 >
                   <X className="h-4 w-4" />

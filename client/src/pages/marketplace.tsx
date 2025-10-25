@@ -82,7 +82,7 @@ export default function Marketplace() {
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold" data-testid="text-marketplace-title">
             {t('marketplace.title')}
@@ -274,7 +274,7 @@ export default function Marketplace() {
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
                   {product.description || t('marketplace.noDescription')}
                 </p>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-500" data-testid={`text-price-${product.id}`}>
                     R$ {product.price}
                   </span>
