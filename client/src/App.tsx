@@ -20,6 +20,8 @@ import Tenants from "@/pages/tenants";
 import Checkout from "@/pages/checkout";
 import Payments from "@/pages/payments";
 import CalendarPage from "@/pages/calendar";
+import Shop from "@/pages/shop";
+import CartPage from "@/pages/cart";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -40,7 +42,11 @@ function Router() {
   return (
     <Switch>
       {!isAuthenticated ? (
-        <Route path="/" component={Landing} />
+        <>
+          <Route path="/" component={Landing} />
+          <Route path="/shop" component={Shop} />
+          <Route path="/cart" component={CartPage} />
+        </>
       ) : (
         <>
           <Route path="/" component={Dashboard} />
@@ -52,6 +58,8 @@ function Router() {
           <Route path="/checkout" component={Checkout} />
           <Route path="/payments" component={Payments} />
           <Route path="/calendar" component={CalendarPage} />
+          <Route path="/shop" component={Shop} />
+          <Route path="/cart" component={CartPage} />
         </>
       )}
       <Route component={NotFound} />

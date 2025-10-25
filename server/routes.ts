@@ -483,6 +483,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CARTS
   // ========================================
 
+  // Get or create user's cart
+  app.get("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const customerId = req.user!.id;
+      
+      // Find active cart for this user
+      let cart = await storage.getActiveCart(customerId, tenantId);
+      
+      // Create new cart if none exists
+      if (!cart) {
+        cart = await storage.createCart({
+          tenantId,
+          customerId,
+          items: [],
+          total: "0",
+          metadata: {},
+        });
+      }
+      
+      res.json(cart);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/carts/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -499,9 +525,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
-      const bodyData = insertCartSchema.omit({ tenantId: true }).parse(req.body);
-      const data = { ...bodyData, tenantId };
-      const cart = await storage.createCart(data);
+      const customerId = req.user!.id;
+      const { items } = req.body;
+
+      // SECURITY: Validate items and recalculate total from actual product prices
+      const products = await storage.listProducts(tenantId);
+      const validatedItems = [];
+      let total = 0;
+
+      for (const item of (items || [])) {
+        const product = products.find(p => p.id === item.productId);
+        if (!product) {
+          return res.status(400).json({ error: `Product ${item.productId} not found` });
+        }
+        if (!product.isActive) {
+          return res.status(400).json({ error: `Product ${product.name} is not available` });
+        }
+
+        validatedItems.push({
+          productId: item.productId,
+          quantity: Math.max(1, parseInt(item.quantity) || 1),
+          price: product.price, // Use actual price from database
+        });
+        
+        total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+      }
+
+      const cart = await storage.createCart({
+        tenantId,
+        customerId,
+        items: validatedItems,
+        total: total.toFixed(2),
+        metadata: {},
+      });
+      
       res.status(201).json(cart);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -514,11 +571,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/carts/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
-      const data = insertCartSchema.omit({ tenantId: true }).partial().parse(req.body);
-      const cart = await storage.updateCart(req.params.id, tenantId, data);
+      const { items } = req.body;
+
+      if (!items) {
+        return res.status(400).json({ error: "Items are required" });
+      }
+
+      // SECURITY: Validate items and recalculate total from actual product prices
+      const products = await storage.listProducts(tenantId);
+      const validatedItems = [];
+      let total = 0;
+
+      for (const item of items) {
+        const product = products.find(p => p.id === item.productId);
+        if (!product) {
+          return res.status(400).json({ error: `Product ${item.productId} not found` });
+        }
+        if (!product.isActive) {
+          return res.status(400).json({ error: `Product ${product.name} is not available` });
+        }
+
+        validatedItems.push({
+          productId: item.productId,
+          quantity: Math.max(1, parseInt(item.quantity) || 1),
+          price: product.price, // Use actual price from database
+        });
+        
+        total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+      }
+
+      const cart = await storage.updateCart(req.params.id, tenantId, {
+        items: validatedItems,
+        total: total.toFixed(2),
+      });
+      
       if (!cart) {
         return res.status(404).json({ error: "Cart not found" });
       }
+      
       res.json(cart);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -620,6 +710,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.warn("STRIPE_SECRET_KEY not found - payment processing disabled");
   }
   
+  // Create Stripe Checkout Session from Cart (SECURE - validates server-side)
+  app.post("/api/create-checkout-session", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      if (!stripe) {
+        return res.status(503).json({ error: "Stripe not configured" });
+      }
+      
+      const tenantId = getTenantId(req);
+      const customerId = req.user!.id;
+      
+      // SECURITY: Get user's cart and recalculate total from actual product prices
+      const cart = await storage.getActiveCart(customerId, tenantId);
+      
+      if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+        return res.status(400).json({ error: "Cart is empty" });
+      }
+      
+      // Revalidate cart items and recalculate total
+      const products = await storage.listProducts(tenantId);
+      let total = 0;
+      const lineItems = [];
+      
+      for (const item of (cart.items as any[])) {
+        const product = products.find(p => p.id === item.productId);
+        if (!product || !product.isActive) {
+          return res.status(400).json({ error: `Product not available` });
+        }
+        
+        const price = parseFloat(product.price);
+        const quantity = parseInt(item.quantity) || 1;
+        total += price * quantity;
+        
+        lineItems.push({
+          price_data: {
+            currency: "brl",
+            product_data: {
+              name: product.name,
+              description: product.description || undefined,
+            },
+            unit_amount: Math.round(price * 100), // Convert to cents
+          },
+          quantity,
+        });
+      }
+
+      // Create Stripe Checkout Session (hosted payment page)
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: lineItems,
+        mode: "payment",
+        success_url: `${req.headers.origin || "http://localhost:5000"}/checkout?success=true`,
+        cancel_url: `${req.headers.origin || "http://localhost:5000"}/checkout?canceled=true`,
+        metadata: {
+          customerId,
+          tenantId,
+          cartId: cart.id,
+        },
+      });
+
+      res.json({
+        sessionId: session.id,
+        url: session.url, // Stripe hosted checkout URL
+      });
+    } catch (error: any) {
+      console.error("Stripe checkout error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Create Stripe Checkout Session (Payment Link approach - no public key needed)
   app.post("/api/create-payment-intent", async (req: Request, res: Response) => {
     try {
