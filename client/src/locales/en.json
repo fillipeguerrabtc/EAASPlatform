@@ -51,19 +51,24 @@
   },
   "tenants": {
     "title": "Manage Companies",
+    "subtitle": "Manage companies and organizations",
     "create": "New Company",
     "edit": "Edit Company",
     "list": "Company List",
     "name": "Company Name",
     "subdomain": "Subdomain",
+    "primaryColor": "Primary Color",
     "industry": "Industry",
     "active": "Active",
     "inactive": "Inactive",
     "created": "Created at",
-    "noTenants": "No companies registered",
+    "noTenants": "No companies yet",
+    "getStarted": "Get started by creating your first company",
     "deleteTenant": "Delete Company",
     "deleteConfirm": "Are you sure you want to delete this company?",
-    "twilioNumber": "WhatsApp Number (Twilio)"
+    "twilioNumber": "WhatsApp Number (Twilio)",
+    "createSuccess": "Company created successfully",
+    "createError": "Failed to create company"
   },
   "marketplace": {
     "title": "Universal Marketplace",

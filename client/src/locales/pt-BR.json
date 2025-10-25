@@ -51,19 +51,24 @@
   },
   "tenants": {
     "title": "Gerenciar Empresas",
+    "subtitle": "Gerencie empresas e organizações",
     "create": "Nova Empresa",
     "edit": "Editar Empresa",
     "list": "Lista de Empresas",
     "name": "Nome da Empresa",
     "subdomain": "Subdomínio",
+    "primaryColor": "Cor Principal",
     "industry": "Setor",
     "active": "Ativa",
     "inactive": "Inativa",
     "created": "Criada em",
-    "noTenants": "Nenhuma empresa cadastrada",
+    "noTenants": "Nenhuma empresa ainda",
+    "getStarted": "Comece criando sua primeira empresa",
     "deleteTenant": "Excluir Empresa",
     "deleteConfirm": "Tem certeza que deseja excluir esta empresa?",
-    "twilioNumber": "Número WhatsApp (Twilio)"
+    "twilioNumber": "Número WhatsApp (Twilio)",
+    "createSuccess": "Empresa criada com sucesso",
+    "createError": "Falha ao criar empresa"
   },
   "marketplace": {
     "title": "Marketplace Universal",
