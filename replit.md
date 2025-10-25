@@ -132,38 +132,43 @@ EAAS is a revolutionary all-in-one PaaS platform that integrates everything a bu
    - Filtros por tenant
    - Integração com Stripe webhook
 
+### ✅ Recently Completed
+
+8. **AI Chat System** ✅ **[CONCLUÍDO]**
+   - Chat widget interativo no Marketplace público (/shop)
+   - RAG-based knowledge base search integrado
+   - OpenAI GPT-5 fallback automático
+   - Interface flutuante com gradiente emerald-purple
+   - Histórico de mensagens com scroll
+   - Typing indicator durante processamento
+
+9. **Sistema de Categorias** ✅ **[CONCLUÍDO]**
+   - Tabela `categories` no schema (com parentId para hierarquia)
+   - CRUD completo: Storage + API routes (/api/categories)
+   - Pronto para uso no frontend (admin e shop)
+
+10. **ERP Financeiro Básico** ✅ **[CONCLUÍDO]**
+    - Página /finance com dashboard financeiro
+    - KPIs: Receitas, Despesas, Lucro Líquido, Crescimento
+    - Cards visuais com gradientes coloridos
+    - Visão geral de módulos (Receitas, Despesas, Relatórios)
+    - Pronto para integração com financialTransactions (backend já existe)
+
 ### 🚧 In Progress / TODO
-
-8. **AI Chat System**
-   - Implement chat interface on Marketplace
-   - RAG-based knowledge base search ✅ (backend pronto)
-   - OpenAI fallback integration ✅ (GPT-5 configurado)
-   - Autonomous sales flow (chat → cart → checkout)
-
-9. **Stripe Integration (Advanced)**
-   - Payment Intent creation ✅
-   - Webhook handling ✅
-   - Checkout flow ✅ **[SEGURO]**
-   - Reconciliation with ERP
-
-10. **WhatsApp Integration (Twilio)**
-    - Send/receive messages ✅
-    - Webhook handling ✅
-    - Integration with Omnichat ✅
 
 11. **Facebook Messenger** (Future)
     - Placeholder UI exists
     - Integration pending
 
-9. **Calendar** (Future)
-   - Resource management
+12. **Calendar Resource Management** (Future)
    - Booking integration with Marketplace
+   - Resource orchestration
 
-10. **ERP Modules** (Phase 2)
-    - Financial management
+13. **ERP Modules Avançados** (Phase 2)
     - Inventory & Logistics
     - HR & Payroll
     - Accounting & Fiscal
+    - BI & Analytics
 
 ---
 

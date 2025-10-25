@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SEO } from "@/components/seo";
+import { ChatWidget } from "@/components/chat-widget";
 
 const productTypeIcons = {
   product: Package,
@@ -342,6 +343,9 @@ export default function Shop() {
         )}
       </div>
     </div>
+    
+    {/* AI Chat Widget */}
+    <ChatWidget />
     </>
   );
 }

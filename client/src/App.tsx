@@ -23,6 +23,7 @@ import CalendarPage from "@/pages/calendar";
 import Shop from "@/pages/shop";
 import CartPage from "@/pages/cart";
 import OrdersPage from "@/pages/orders";
+import Finance from "@/pages/finance";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -61,6 +62,7 @@ function Router() {
           <Route path="/payments" component={Payments} />
           <Route path="/calendar" component={CalendarPage} />
           <Route path="/orders" component={OrdersPage} />
+          <Route path="/finance" component={Finance} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

@@ -23,6 +23,8 @@ import {
   type InsertUserTenant,
   type CalendarEvent,
   type InsertCalendarEvent,
+  type Category,
+  type InsertCategory,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -38,6 +40,7 @@ import {
   carts,
   userTenants,
   calendarEvents,
+  categories,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -114,6 +117,13 @@ export interface IStorage {
   createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
   updateCalendarEvent(id: string, tenantId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined>;
   deleteCalendarEvent(id: string, tenantId: string): Promise<void>;
+  
+  // Categories
+  listCategories(tenantId: string): Promise<Category[]>;
+  getCategory(id: string, tenantId: string): Promise<Category | undefined>;
+  createCategory(category: InsertCategory): Promise<Category>;
+  updateCategory(id: string, tenantId: string, data: Partial<InsertCategory>): Promise<Category | undefined>;
+  deleteCategory(id: string, tenantId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -488,6 +498,42 @@ export class DbStorage implements IStorage {
   async deleteCalendarEvent(id: string, tenantId: string): Promise<void> {
     await db.delete(calendarEvents)
       .where(and(eq(calendarEvents.id, id), eq(calendarEvents.tenantId, tenantId)));
+  }
+
+  // ========================================
+  // CATEGORIES
+  // ========================================
+
+  async listCategories(tenantId: string): Promise<Category[]> {
+    return await db.select().from(categories)
+      .where(eq(categories.tenantId, tenantId))
+      .orderBy(categories.name);
+  }
+
+  async getCategory(id: string, tenantId: string): Promise<Category | undefined> {
+    const result = await db.select().from(categories)
+      .where(and(eq(categories.id, id), eq(categories.tenantId, tenantId)))
+      .limit(1);
+    return result[0];
+  }
+
+  async createCategory(insertCategory: InsertCategory): Promise<Category> {
+    const result = await db.insert(categories).values(insertCategory).returning();
+    return result[0];
+  }
+
+  async updateCategory(id: string, tenantId: string, data: Partial<InsertCategory>): Promise<Category | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const result = await db.update(categories)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(categories.id, id), eq(categories.tenantId, tenantId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCategory(id: string, tenantId: string): Promise<void> {
+    await db.delete(categories)
+      .where(and(eq(categories.id, id), eq(categories.tenantId, tenantId)));
   }
 }
 

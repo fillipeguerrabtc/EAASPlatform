@@ -8,7 +8,8 @@ import {
   CreditCard,
   Settings,
   Calendar,
-  Package
+  Package,
+  DollarSign
 } from "lucide-react";
 import {
   Sidebar,
@@ -83,6 +84,12 @@ export function AppSidebar() {
       url: "/payments",
       icon: CreditCard,
       testId: "payments",
+    },
+    {
+      title: "Finanças",
+      url: "/finance",
+      icon: DollarSign,
+      testId: "finance",
     },
   ];
 

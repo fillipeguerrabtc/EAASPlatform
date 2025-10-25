@@ -13,6 +13,7 @@ import {
   insertOrderSchema,
   insertCartSchema,
   insertCalendarEventSchema,
+  insertCategorySchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
@@ -998,6 +999,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const tenantId = getTenantId(req);
       await storage.deleteCalendarEvent(req.params.id, tenantId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // CATEGORIES
+  // ========================================
+
+  app.get("/api/categories", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const categories = await storage.listCategories(tenantId);
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/categories", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const bodyData = insertCategorySchema.omit({ tenantId: true }).parse(req.body);
+      const data = { ...bodyData, tenantId };
+      const category = await storage.createCategory(data);
+      res.status(201).json(category);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/categories/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const bodyData = insertCategorySchema.omit({ tenantId: true }).partial().parse(req.body);
+      const category = await storage.updateCategory(req.params.id, tenantId, bodyData);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json(category);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/categories/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteCategory(req.params.id, tenantId);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message });
