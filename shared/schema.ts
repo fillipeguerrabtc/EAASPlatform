@@ -146,11 +146,12 @@ export const categories = pgTable("categories", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Shopping Cart
+// Shopping Cart (supports anonymous + authenticated users)
 export const carts = pgTable("carts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }), // Nullable for anonymous carts
+  sessionId: text("session_id"), // For anonymous users (session-based)
   items: jsonb("items").default([]).notNull(),
   total: decimal("total", { precision: 10, scale: 2 }).default("0").notNull(),
   metadata: jsonb("metadata").default({}),
