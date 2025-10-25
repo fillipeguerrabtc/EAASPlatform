@@ -15,6 +15,7 @@ import Dashboard from "@/pages/dashboard";
 import Marketplace from "@/pages/marketplace";
 import CRM from "@/pages/crm";
 import Omnichat from "@/pages/omnichat";
+import OmnichatAdmin from "@/pages/omnichat-admin";
 import KnowledgeBasePage from "@/pages/knowledge-base";
 import Tenants from "@/pages/tenants";
 import Checkout from "@/pages/checkout";
@@ -57,6 +58,7 @@ function Router() {
           <Route path="/customers" component={CRM} />
           <Route path="/crm" component={CRM} />
           <Route path="/omnichat" component={Omnichat} />
+          <Route path="/omnichat-admin" component={OmnichatAdmin} />
           <Route path="/knowledge-base" component={KnowledgeBasePage} />
           <Route path="/checkout" component={Checkout} />
           <Route path="/payments" component={Payments} />

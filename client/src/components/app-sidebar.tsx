@@ -56,10 +56,10 @@ export function AppSidebar() {
       testId: "crm",
     },
     {
-      title: t('nav.omnichat'),
-      url: "/omnichat",
+      title: "Omnichat Admin",
+      url: "/omnichat-admin",
       icon: MessageSquare,
-      testId: "omnichat",
+      testId: "omnichat-admin",
     },
     {
       title: t('nav.knowledgeBase'),

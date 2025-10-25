@@ -273,7 +273,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const tenantId = getTenantId(req);
       const conversationsList = await storage.listConversations(tenantId);
-      res.json(conversationsList);
+      
+      // Enrich with customer data
+      const enrichedConversations = await Promise.all(
+        conversationsList.map(async (conv) => {
+          const customer = await storage.getCustomer(conv.customerId, tenantId);
+          return {
+            ...conv,
+            customer: customer ? {
+              id: customer.id,
+              name: customer.name,
+              phone: customer.phone,
+              email: customer.email,
+            } : null,
+          };
+        })
+      );
+      
+      res.json(enrichedConversations);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -348,6 +365,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET messages by conversationId (query param for admin dashboard)
+  app.get("/api/messages", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const conversationId = req.query.conversationId as string;
+      
+      if (!conversationId) {
+        return res.status(400).json({ error: "conversationId query parameter is required" });
+      }
+      
+      const messages = await storage.listMessages(conversationId, tenantId);
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // OMNICHAT ADMIN - TAKEOVER & MANAGEMENT
+  // ========================================
+
+  // Takeover conversation (assign to current user, disable AI)
+  app.post("/api/conversations/:id/takeover", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const userId = (req.user as any).userId;
+      
+      const conversation = await storage.updateConversation(req.params.id, tenantId, {
+        assignedTo: userId,
+        isAiHandled: false,
+      });
+      
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      console.log(`🎯 Takeover: Conversation ${req.params.id} assigned to user ${userId} (AI disabled)`);
+      res.json(conversation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Release conversation back to AI
+  app.post("/api/conversations/:id/release", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const conversation = await storage.updateConversation(req.params.id, tenantId, {
+        assignedTo: null,
+        isAiHandled: true,
+      });
+      
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      console.log(`🤖 Release: Conversation ${req.params.id} returned to AI control`);
+      res.json(conversation);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Send manual reply via WhatsApp
+  app.post("/api/conversations/:id/reply", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const { message } = req.body;
+      
+      if (!message || !message.trim()) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+      
+      // Get conversation to verify it exists and get customer info
+      const conversation = await storage.getConversation(req.params.id, tenantId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      // Verify conversation is in manual mode
+      if (conversation.isAiHandled) {
+        return res.status(403).json({ error: "Conversation is in AI mode. Take over first." });
+      }
+      
+      // Get customer phone
+      const customer = await storage.getCustomer(conversation.customerId, tenantId);
+      if (!customer || !customer.phone) {
+        return res.status(404).json({ error: "Customer phone not found" });
+      }
+      
+      // Send via Twilio
+      if (!twilioClient) {
+        return res.status(503).json({ error: "WhatsApp not configured" });
+      }
+      
+      const twilioResponse = await twilioClient.messages.create({
+        from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+        to: `whatsapp:${customer.phone}`,
+        body: message.trim(),
+      });
+      
+      // Save message only if Twilio send was successful
+      if (twilioResponse.status !== "failed") {
+        await storage.createMessage({
+          conversationId: req.params.id,
+          senderType: "agent",
+          content: message.trim(),
+        }, tenantId);
+        
+        console.log(`✉️ Manual reply sent: ${req.params.id} → ${customer.phone}`);
+        res.json({ success: true, messageId: twilioResponse.sid });
+      } else {
+        res.status(500).json({ error: "Failed to send WhatsApp message" });
+      }
+    } catch (error: any) {
+      console.error("Manual reply error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -1239,8 +1377,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, tenantId);
       
       // ========================================
-      // AI AUTO-RESPONSE via WhatsApp
+      // SMART ESCALATION - Detect frustration and escalate to human
       // ========================================
+      
+      const frustrationKeywords = [
+        "cancelar", "cancel", "não funciona", "doesn't work", "péssimo", "terrible",
+        "horrível", "horrible", "ruim", "bad", "irritado", "angry", "frustrado", "frustrated",
+        "desistir", "give up", "sair", "leave", "reclamar", "complain",
+        "não resolve", "não ajuda", "inútil", "useless", "falar com humano", "talk to human",
+        "atendente", "agent", "pessoa", "person"
+      ];
+      
+      const needsEscalation = frustrationKeywords.some(keyword => 
+        Body.toLowerCase().includes(keyword)
+      );
+      
+      if (needsEscalation && conversation.isAiHandled) {
+        // Escalate to human
+        await storage.updateConversation(conversation.id, tenantId, {
+          isAiHandled: false,
+          assignedTo: null, // Will be assigned when agent takes over
+        });
+        
+        const escalationMessage = "Entendo sua situação. Vou transferir você para um de nossos especialistas que poderá ajudar melhor. Por favor, aguarde um momento. 👤";
+        
+        if (twilioClient) {
+          const twilioResponse = await twilioClient.messages.create({
+            from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+            to: From,
+            body: escalationMessage,
+          });
+          
+          if (twilioResponse.status !== "failed") {
+            await storage.createMessage({
+              conversationId: conversation.id,
+              senderType: "ai",
+              content: escalationMessage,
+            }, tenantId);
+            
+            console.log(`🚨 ESCALATION: Conversation ${conversation.id} escalated to human (frustration detected)`);
+          }
+        }
+        
+        // Don't process AI response - wait for human takeover
+        res.type("text/xml");
+        return res.send("<Response></Response>");
+      }
+      
+      // ========================================
+      // AI AUTO-RESPONSE via WhatsApp (only if not escalated)
+      // ========================================
+      
+      // Skip AI response if conversation is in manual mode
+      if (!conversation.isAiHandled) {
+        console.log(`⏸️ Skipping AI response: Conversation ${conversation.id} is in manual mode`);
+        res.type("text/xml");
+        return res.send("<Response></Response>");
+      }
       
       // Process message with AI (Knowledge Base + GPT-5 fallback)
       const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
