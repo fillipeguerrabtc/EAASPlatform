@@ -91,6 +91,12 @@ export function AppSidebar() {
       icon: DollarSign,
       testId: "finance",
     },
+    {
+      title: "Categorias",
+      url: "/categories",
+      icon: Package,
+      testId: "categories",
+    },
   ];
 
   return (
