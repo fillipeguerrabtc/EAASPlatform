@@ -9,7 +9,8 @@ import {
   Settings,
   Calendar,
   Package,
-  DollarSign
+  DollarSign,
+  Shield
 } from "lucide-react";
 import {
   Sidebar,
@@ -96,6 +97,12 @@ export function AppSidebar() {
       url: "/categories",
       icon: Package,
       testId: "categories",
+    },
+    {
+      title: "Funções e Permissões",
+      url: "/rbac",
+      icon: Shield,
+      testId: "rbac",
     },
     {
       title: "Configurações",

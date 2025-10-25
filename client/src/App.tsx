@@ -31,6 +31,7 @@ import FinanceExpenses from "@/pages/finance-expenses";
 import FinanceReports from "@/pages/finance-reports";
 import CategoriesPage from "@/pages/categories";
 import TenantSettings from "@/pages/tenant-settings";
+import RBAC from "@/pages/rbac";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -76,6 +77,7 @@ function Router() {
           <Route path="/finance/reports" component={FinanceReports} />
           <Route path="/categories" component={CategoriesPage} />
           <Route path="/tenant-settings" component={TenantSettings} />
+          <Route path="/rbac" component={RBAC} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

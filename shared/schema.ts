@@ -13,6 +13,17 @@ export const conversationStatusEnum = pgEnum("conversation_status", ["open", "in
 export const productTypeEnum = pgEnum("product_type", ["product", "service", "experience", "real_estate", "vehicle"]);
 export const paymentStatusEnum = pgEnum("payment_status", ["pending", "processing", "succeeded", "failed", "refunded"]);
 export const orderStatusEnum = pgEnum("order_status", ["draft", "pending", "confirmed", "processing", "completed", "cancelled"]);
+export const accessLevelEnum = pgEnum("access_level", ["no_access", "read", "write", "admin"]);
+export const featureEnum = pgEnum("feature", [
+  "finance",        // Financial Management (revenues/expenses/reports)
+  "products",       // Marketplace Products
+  "customers",      // CRM 360
+  "conversations",  // Omnichat
+  "calendar",       // Smart Calendar
+  "ai",             // AI Knowledge Base
+  "payments",       // Payment Management
+  "settings"        // Tenant Settings (branding, etc)
+]);
 
 // ========================================
 // AUTHENTICATION (Replit Auth)
@@ -49,6 +60,17 @@ export const tenants = pgTable("tenants", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// RBAC Tables Forward Declaration (needed for users table reference)
+export const roles = pgTable("roles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Users (Multi-tenant aware)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -57,6 +79,7 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   avatar: text("avatar"),
   role: userRoleEnum("role").default("customer").notNull(),
+  customRoleId: varchar("custom_role_id").references(() => roles.id, { onDelete: "set null" }),
   password: text("password"),
   replitAuthId: text("replit_auth_id").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -307,6 +330,20 @@ export const financialTransactions = pgTable("financial_transactions", {
 });
 
 // ========================================
+// RBAC - ROLE-BASED ACCESS CONTROL
+// ========================================
+
+// Role Permissions (feature-level access control)
+export const rolePermissions = pgTable("role_permissions", {
+  roleId: varchar("role_id").references(() => roles.id, { onDelete: "cascade" }).notNull(),
+  feature: featureEnum("feature").notNull(),
+  accessLevel: accessLevelEnum("access_level").default("no_access").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.roleId, table.feature] }),
+}));
+
+// ========================================
 // CUSTOM TYPES
 // ========================================
 
@@ -439,3 +476,13 @@ export type FinancialTransaction = typeof financialTransactions.$inferSelect;
 export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
 export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
 export type UserTenant = typeof userTenants.$inferSelect;
+
+// Roles
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type Role = typeof roles.$inferSelect;
+
+// Role Permissions
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ createdAt: true });
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;

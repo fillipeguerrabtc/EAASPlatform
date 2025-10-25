@@ -14,6 +14,8 @@ import {
   insertCartSchema,
   insertCalendarEventSchema,
   insertCategorySchema,
+  insertRoleSchema,
+  insertRolePermissionSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
@@ -241,6 +243,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: "Failed to scan brand colors",
         details: error.message 
       });
+    }
+  });
+
+  // ========================================
+  // RBAC (Roles & Permissions)
+  // ========================================
+
+  // List roles for current tenant
+  app.get("/api/roles", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const rolesList = await storage.listRoles(tenantId);
+      res.json(rolesList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create role
+  app.post("/api/roles", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const data = insertRoleSchema.parse({ ...req.body, tenantId });
+      const role = await storage.createRole(data);
+      res.status(201).json(role);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update role
+  app.patch("/api/roles/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const data = insertRoleSchema.omit({ tenantId: true }).partial().parse(req.body);
+      const role = await storage.updateRole(req.params.id, tenantId, data);
+      if (!role) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      res.json(role);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete role
+  app.delete("/api/roles/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const success = await storage.deleteRole(req.params.id, tenantId);
+      if (!success) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get role permissions
+  app.get("/api/roles/:id/permissions", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const role = await storage.getRole(req.params.id);
+      if (!role || role.tenantId !== tenantId) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      const permissions = await storage.getRolePermissions(req.params.id);
+      res.json(permissions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update role permission
+  app.patch("/api/roles/:roleId/permissions/:feature", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      // Verify role ownership
+      const role = await storage.getRole(req.params.roleId);
+      if (!role || role.tenantId !== tenantId) {
+        return res.status(404).json({ error: "Role not found" });
+      }
+      
+      // Validate request body with Zod
+      const permissionData = insertRolePermissionSchema.omit({ id: true, createdAt: true, roleId: true }).parse({
+        feature: req.params.feature,
+        accessLevel: req.body.accessLevel
+      });
+      
+      const permission = await storage.updateRolePermission(req.params.roleId, permissionData.feature, permissionData.accessLevel);
+      if (!permission) {
+        // Create if doesn't exist
+        const newPermission = await storage.createRolePermission({
+          roleId: req.params.roleId,
+          feature: permissionData.feature as any,
+          accessLevel: permissionData.accessLevel as any
+        });
+        return res.json(newPermission);
+      }
+      res.json(permission);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
     }
   });
 

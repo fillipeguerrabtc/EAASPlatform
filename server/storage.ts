@@ -29,6 +29,10 @@ import {
   type InsertFinancialTransaction,
   type FinancialAccount,
   type InsertFinancialAccount,
+  type Role,
+  type InsertRole,
+  type RolePermission,
+  type InsertRolePermission,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -47,6 +51,8 @@ import {
   categories,
   financialTransactions,
   financialAccounts,
+  roles,
+  rolePermissions,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -144,6 +150,18 @@ export interface IStorage {
   createFinancialTransaction(transaction: InsertFinancialTransaction): Promise<FinancialTransaction>;
   updateFinancialTransaction(id: string, tenantId: string, data: Partial<InsertFinancialTransaction>): Promise<FinancialTransaction | undefined>;
   deleteFinancialTransaction(id: string, tenantId: string): Promise<void>;
+  
+  // RBAC
+  createRole(role: InsertRole): Promise<Role>;
+  updateRole(id: string, tenantId: string, role: Partial<InsertRole>): Promise<Role | undefined>;
+  deleteRole(id: string, tenantId: string): Promise<boolean>;
+  listRoles(tenantId: string): Promise<Role[]>;
+  getRole(id: string): Promise<Role | undefined>;
+  
+  createRolePermission(permission: InsertRolePermission): Promise<RolePermission>;
+  updateRolePermission(roleId: string, feature: string, accessLevel: string): Promise<RolePermission | undefined>;
+  deleteRolePermission(roleId: string, feature: string): Promise<boolean>;
+  getRolePermissions(roleId: string): Promise<RolePermission[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -633,6 +651,61 @@ export class DbStorage implements IStorage {
   async deleteFinancialTransaction(id: string, tenantId: string): Promise<void> {
     await db.delete(financialTransactions)
       .where(and(eq(financialTransactions.id, id), eq(financialTransactions.tenantId, tenantId)));
+  }
+
+  // ========================================
+  // RBAC METHODS
+  // ========================================
+
+  async createRole(role: InsertRole): Promise<Role> {
+    const [newRole] = await db.insert(roles).values(role).returning();
+    return newRole;
+  }
+
+  async updateRole(id: string, tenantId: string, role: Partial<InsertRole>): Promise<Role | undefined> {
+    const { tenantId: _, ...updateData } = role;
+    const [updated] = await db.update(roles)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(roles.id, id), eq(roles.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteRole(id: string, tenantId: string): Promise<boolean> {
+    const result = await db.delete(roles).where(and(eq(roles.id, id), eq(roles.tenantId, tenantId)));
+    return result.rowCount !== undefined && result.rowCount > 0;
+  }
+
+  async listRoles(tenantId: string): Promise<Role[]> {
+    return db.select().from(roles).where(eq(roles.tenantId, tenantId));
+  }
+
+  async getRole(id: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.id, id));
+    return role;
+  }
+
+  async createRolePermission(permission: InsertRolePermission): Promise<RolePermission> {
+    const [newPermission] = await db.insert(rolePermissions).values(permission).returning();
+    return newPermission;
+  }
+
+  async updateRolePermission(roleId: string, feature: string, accessLevel: string): Promise<RolePermission | undefined> {
+    const [updated] = await db.update(rolePermissions)
+      .set({ accessLevel: accessLevel as any })
+      .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.feature, feature as any)))
+      .returning();
+    return updated;
+  }
+
+  async deleteRolePermission(roleId: string, feature: string): Promise<boolean> {
+    const result = await db.delete(rolePermissions)
+      .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.feature, feature as any)));
+    return result.rowCount !== undefined && result.rowCount > 0;
+  }
+
+  async getRolePermissions(roleId: string): Promise<RolePermission[]> {
+    return db.select().from(rolePermissions).where(eq(rolePermissions.roleId, roleId));
   }
 }
 
