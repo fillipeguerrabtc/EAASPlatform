@@ -16,7 +16,21 @@ import {
   insertCategorySchema,
   insertRoleSchema,
   insertRolePermissionSchema,
+  insertPasswordResetTokenSchema,
+  insertPipelineStageSchema,
+  insertDealSchema,
+  insertCustomerSegmentSchema,
+  insertActivitySchema,
 } from "@shared/schema";
+import {
+  hashPassword,
+  verifyPassword,
+  generatePasswordResetToken,
+  getPasswordResetTokenExpiry,
+  isPasswordResetTokenValid,
+  isValidEmail,
+  isStrongPassword,
+} from "./auth";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
 
@@ -1862,6 +1876,460 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid request data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create account" });
+    }
+  });
+
+  // ========================================
+  // ENHANCED AUTHENTICATION - EMAIL/PASSWORD
+  // ========================================
+
+  // Register with email/password
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    try {
+      const { email, password, name, tenantId, companyName } = req.body;
+      
+      // Validate email
+      if (!isValidEmail(email)) {
+        return res.status(400).json({ message: "Email inválido" });
+      }
+      
+      // Validate password strength
+      const passwordValidation = isStrongPassword(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ message: passwordValidation.message });
+      }
+      
+      // Check if user already exists GLOBALLY (email must be unique across all tenants)
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Este email já está cadastrado" });
+      }
+      
+      // Auto-create tenant if not provided
+      let finalTenantId = tenantId;
+      let isNewTenant = false;
+      
+      if (!finalTenantId) {
+        const subdomain = companyName 
+          ? companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30)
+          : email.split('@')[0];
+        
+        const newTenant = await storage.createTenant({
+          name: companyName || `${name}'s Company`,
+          subdomain,
+          primaryColor: "#10A37F",
+        });
+        
+        finalTenantId = newTenant.id;
+        isNewTenant = true;
+      }
+      
+      // Hash password
+      const hashedPassword = await hashPassword(password);
+      
+      // Create user
+      // SECURITY: Only assign tenant_admin role if creating a new tenant
+      // For existing tenants, default to least-privilege role (agent)
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        name,
+        tenantId: finalTenantId,
+        emailVerified: false,
+        role: isNewTenant ? "tenant_admin" : "agent",
+      });
+      
+      // Create session
+      (req as any).session.userId = user.id;
+      (req as any).session.tenantId = user.tenantId;
+      
+      res.status(201).json({ message: "Usuário criado com sucesso", user: { id: user.id, email: user.email, name: user.name } });
+    } catch (error: any) {
+      console.error("Error registering user:", error);
+      res.status(500).json({ message: "Erro ao criar usuário" });
+    }
+  });
+
+  // Login with email/password
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Find user (search across all tenants)
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: "Email ou senha inválidos" });
+      }
+      
+      // Verify password
+      const isValid = await verifyPassword(password, user.password);
+      if (!isValid) {
+        return res.status(401).json({ message: "Email ou senha inválidos" });
+      }
+      
+      // Create session
+      (req as any).session.userId = user.id;
+      (req as any).session.tenantId = user.tenantId;
+      
+      res.json({ message: "Login realizado com sucesso", user: { id: user.id, email: user.email, name: user.name } });
+    } catch (error: any) {
+      console.error("Error logging in:", error);
+      res.status(500).json({ message: "Erro ao fazer login" });
+    }
+  });
+
+  // Forgot password - request reset token
+  app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
+    try {
+      const { email, tenantId } = req.body;
+      
+      // Find user
+      const user = await storage.getUserByEmail(email, tenantId);
+      if (!user) {
+        // Don't reveal if user exists
+        return res.json({ message: "Se o email existir, um link de recuperação será enviado" });
+      }
+      
+      // Generate reset token
+      const token = generatePasswordResetToken();
+      const expiresAt = getPasswordResetTokenExpiry();
+      
+      // Store token
+      await storage.createPasswordResetToken({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+      
+      // TODO: Send email with reset link
+      // For now, just return success (in production, send actual email)
+      console.log(`Password reset token for ${email}: ${token}`);
+      
+      res.json({ message: "Se o email existir, um link de recuperação será enviado" });
+    } catch (error: any) {
+      console.error("Error requesting password reset:", error);
+      res.status(500).json({ message: "Erro ao solicitar recuperação de senha" });
+    }
+  });
+
+  // Reset password with token
+  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+    try {
+      const { token, newPassword } = req.body;
+      
+      // Validate password strength
+      const passwordValidation = isStrongPassword(newPassword);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ message: passwordValidation.message });
+      }
+      
+      // Find and validate token
+      const resetToken = await storage.getPasswordResetToken(token);
+      if (!resetToken) {
+        return res.status(400).json({ message: "Token inválido ou expirado" });
+      }
+      
+      if (!isPasswordResetTokenValid(resetToken.expiresAt)) {
+        return res.status(400).json({ message: "Token expirado" });
+      }
+      
+      // Hash new password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update user password
+      await storage.updateUser(resetToken.userId, { password: hashedPassword });
+      
+      // Mark token as used
+      await storage.markPasswordResetTokenUsed(token);
+      
+      res.json({ message: "Senha atualizada com sucesso" });
+    } catch (error: any) {
+      console.error("Error resetting password:", error);
+      res.status(500).json({ message: "Erro ao redefinir senha" });
+    }
+  });
+
+  // ========================================
+  // PIPELINE STAGES
+  // ========================================
+
+  app.get("/api/pipeline-stages", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const stages = await storage.listPipelineStages(tenantId);
+      res.json(stages);
+    } catch (error: any) {
+      console.error("Error listing pipeline stages:", error);
+      res.status(500).json({ message: "Erro ao listar estágios do pipeline" });
+    }
+  });
+
+  app.post("/api/pipeline-stages", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertPipelineStageSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const stage = await storage.createPipelineStage(validatedData);
+      res.status(201).json(stage);
+    } catch (error: any) {
+      console.error("Error creating pipeline stage:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar estágio do pipeline" });
+    }
+  });
+
+  app.patch("/api/pipeline-stages/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertPipelineStageSchema.partial().parse(req.body);
+      
+      const stage = await storage.updatePipelineStage(req.params.id, tenantId, validatedData);
+      if (!stage) {
+        return res.status(404).json({ message: "Estágio não encontrado" });
+      }
+      
+      res.json(stage);
+    } catch (error: any) {
+      console.error("Error updating pipeline stage:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar estágio do pipeline" });
+    }
+  });
+
+  app.delete("/api/pipeline-stages/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deletePipelineStage(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting pipeline stage:", error);
+      res.status(500).json({ message: "Erro ao deletar estágio do pipeline" });
+    }
+  });
+
+  // ========================================
+  // DEALS
+  // ========================================
+
+  app.get("/api/deals", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const deals = await storage.listDeals(tenantId);
+      res.json(deals);
+    } catch (error: any) {
+      console.error("Error listing deals:", error);
+      res.status(500).json({ message: "Erro ao listar negócios" });
+    }
+  });
+
+  app.get("/api/deals/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const deal = await storage.getDeal(req.params.id, tenantId);
+      
+      if (!deal) {
+        return res.status(404).json({ message: "Negócio não encontrado" });
+      }
+      
+      res.json(deal);
+    } catch (error: any) {
+      console.error("Error getting deal:", error);
+      res.status(500).json({ message: "Erro ao buscar negócio" });
+    }
+  });
+
+  app.post("/api/deals", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertDealSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const deal = await storage.createDeal(validatedData);
+      res.status(201).json(deal);
+    } catch (error: any) {
+      console.error("Error creating deal:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar negócio" });
+    }
+  });
+
+  app.patch("/api/deals/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertDealSchema.partial().parse(req.body);
+      
+      const deal = await storage.updateDeal(req.params.id, tenantId, validatedData);
+      if (!deal) {
+        return res.status(404).json({ message: "Negócio não encontrado" });
+      }
+      
+      res.json(deal);
+    } catch (error: any) {
+      console.error("Error updating deal:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar negócio" });
+    }
+  });
+
+  app.delete("/api/deals/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteDeal(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting deal:", error);
+      res.status(500).json({ message: "Erro ao deletar negócio" });
+    }
+  });
+
+  // ========================================
+  // CUSTOMER SEGMENTS
+  // ========================================
+
+  app.get("/api/customer-segments", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const segments = await storage.listCustomerSegments(tenantId);
+      res.json(segments);
+    } catch (error: any) {
+      console.error("Error listing customer segments:", error);
+      res.status(500).json({ message: "Erro ao listar segmentos" });
+    }
+  });
+
+  app.post("/api/customer-segments", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertCustomerSegmentSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const segment = await storage.createCustomerSegment(validatedData);
+      res.status(201).json(segment);
+    } catch (error: any) {
+      console.error("Error creating customer segment:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar segmento" });
+    }
+  });
+
+  app.patch("/api/customer-segments/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertCustomerSegmentSchema.partial().parse(req.body);
+      
+      const segment = await storage.updateCustomerSegment(req.params.id, tenantId, validatedData);
+      if (!segment) {
+        return res.status(404).json({ message: "Segmento não encontrado" });
+      }
+      
+      res.json(segment);
+    } catch (error: any) {
+      console.error("Error updating customer segment:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar segmento" });
+    }
+  });
+
+  app.delete("/api/customer-segments/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteCustomerSegment(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting customer segment:", error);
+      res.status(500).json({ message: "Erro ao deletar segmento" });
+    }
+  });
+
+  // ========================================
+  // ACTIVITIES
+  // ========================================
+
+  app.get("/api/activities", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const filters = {
+        customerId: req.query.customerId as string | undefined,
+        dealId: req.query.dealId as string | undefined,
+      };
+      
+      const activities = await storage.listActivities(tenantId, filters);
+      res.json(activities);
+    } catch (error: any) {
+      console.error("Error listing activities:", error);
+      res.status(500).json({ message: "Erro ao listar atividades" });
+    }
+  });
+
+  app.post("/api/activities", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const userId = getUserIdFromSession(req);
+      
+      const validatedData = insertActivitySchema.parse({
+        ...req.body,
+        tenantId,
+        createdBy: userId,
+      });
+      
+      const activity = await storage.createActivity(validatedData);
+      res.status(201).json(activity);
+    } catch (error: any) {
+      console.error("Error creating activity:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar atividade" });
+    }
+  });
+
+  app.patch("/api/activities/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const validatedData = insertActivitySchema.partial().parse(req.body);
+      
+      const activity = await storage.updateActivity(req.params.id, tenantId, validatedData);
+      if (!activity) {
+        return res.status(404).json({ message: "Atividade não encontrada" });
+      }
+      
+      res.json(activity);
+    } catch (error: any) {
+      console.error("Error updating activity:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar atividade" });
+    }
+  });
+
+  app.delete("/api/activities/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteActivity(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting activity:", error);
+      res.status(500).json({ message: "Erro ao deletar atividade" });
     }
   });
 

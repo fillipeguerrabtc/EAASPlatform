@@ -10,7 +10,11 @@ import {
   Calendar,
   Package,
   DollarSign,
-  Shield
+  Shield,
+  LayoutDashboard,
+  Target,
+  Activity,
+  Tag
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,10 +55,34 @@ export function AppSidebar() {
       testId: "marketplace",
     },
     {
-      title: t('nav.crm'),
+      title: "CRM - Dashboard",
       url: "/crm",
+      icon: LayoutDashboard,
+      testId: "crm-dashboard",
+    },
+    {
+      title: "CRM - Clientes",
+      url: "/crm/customers",
       icon: Users,
-      testId: "crm",
+      testId: "crm-customers",
+    },
+    {
+      title: "CRM - Pipeline",
+      url: "/crm/pipeline",
+      icon: Target,
+      testId: "crm-pipeline",
+    },
+    {
+      title: "CRM - Atividades",
+      url: "/crm/activities",
+      icon: Activity,
+      testId: "crm-activities",
+    },
+    {
+      title: "CRM - Segmentos",
+      url: "/crm/segments",
+      icon: Tag,
+      testId: "crm-segments",
     },
     {
       title: "Omnichat Admin",

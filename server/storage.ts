@@ -33,6 +33,16 @@ import {
   type InsertRole,
   type RolePermission,
   type InsertRolePermission,
+  type PasswordResetToken,
+  type InsertPasswordResetToken,
+  type PipelineStage,
+  type InsertPipelineStage,
+  type Deal,
+  type InsertDeal,
+  type CustomerSegment,
+  type InsertCustomerSegment,
+  type Activity,
+  type InsertActivity,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -53,6 +63,11 @@ import {
   financialAccounts,
   roles,
   rolePermissions,
+  passwordResetTokens,
+  pipelineStages,
+  deals,
+  customerSegments,
+  activities,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -162,6 +177,40 @@ export interface IStorage {
   updateRolePermission(roleId: string, feature: string, accessLevel: string): Promise<RolePermission | undefined>;
   deleteRolePermission(roleId: string, feature: string): Promise<boolean>;
   getRolePermissions(roleId: string): Promise<RolePermission[]>;
+  
+  // Password Reset Tokens
+  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenUsed(token: string): Promise<void>;
+  deleteExpiredPasswordResetTokens(): Promise<void>;
+  
+  // Pipeline Stages
+  listPipelineStages(tenantId: string): Promise<PipelineStage[]>;
+  getPipelineStage(id: string, tenantId: string): Promise<PipelineStage | undefined>;
+  createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage>;
+  updatePipelineStage(id: string, tenantId: string, data: Partial<InsertPipelineStage>): Promise<PipelineStage | undefined>;
+  deletePipelineStage(id: string, tenantId: string): Promise<void>;
+  
+  // Deals
+  listDeals(tenantId: string): Promise<Deal[]>;
+  getDeal(id: string, tenantId: string): Promise<Deal | undefined>;
+  createDeal(deal: InsertDeal): Promise<Deal>;
+  updateDeal(id: string, tenantId: string, data: Partial<InsertDeal>): Promise<Deal | undefined>;
+  deleteDeal(id: string, tenantId: string): Promise<void>;
+  
+  // Customer Segments
+  listCustomerSegments(tenantId: string): Promise<CustomerSegment[]>;
+  getCustomerSegment(id: string, tenantId: string): Promise<CustomerSegment | undefined>;
+  createCustomerSegment(segment: InsertCustomerSegment): Promise<CustomerSegment>;
+  updateCustomerSegment(id: string, tenantId: string, data: Partial<InsertCustomerSegment>): Promise<CustomerSegment | undefined>;
+  deleteCustomerSegment(id: string, tenantId: string): Promise<void>;
+  
+  // Activities
+  listActivities(tenantId: string, filters?: { customerId?: string; dealId?: string }): Promise<Activity[]>;
+  getActivity(id: string, tenantId: string): Promise<Activity | undefined>;
+  createActivity(activity: InsertActivity): Promise<Activity>;
+  updateActivity(id: string, tenantId: string, data: Partial<InsertActivity>): Promise<Activity | undefined>;
+  deleteActivity(id: string, tenantId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -706,6 +755,189 @@ export class DbStorage implements IStorage {
 
   async getRolePermissions(roleId: string): Promise<RolePermission[]> {
     return db.select().from(rolePermissions).where(eq(rolePermissions.roleId, roleId));
+  }
+  
+  // ========================================
+  // PASSWORD RESET TOKENS
+  // ========================================
+  
+  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
+    const [newToken] = await db.insert(passwordResetTokens).values(token).returning();
+    return newToken;
+  }
+  
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [resetToken] = await db.select().from(passwordResetTokens)
+      .where(and(eq(passwordResetTokens.token, token), eq(passwordResetTokens.usedAt, null as any)));
+    return resetToken;
+  }
+  
+  async markPasswordResetTokenUsed(token: string): Promise<void> {
+    await db.update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.token, token));
+  }
+  
+  async deleteExpiredPasswordResetTokens(): Promise<void> {
+    await db.delete(passwordResetTokens)
+      .where(and(
+        eq(passwordResetTokens.usedAt, null as any),
+        desc(passwordResetTokens.expiresAt) as any
+      ));
+  }
+  
+  // ========================================
+  // PIPELINE STAGES
+  // ========================================
+  
+  async listPipelineStages(tenantId: string): Promise<PipelineStage[]> {
+    return await db.select().from(pipelineStages)
+      .where(eq(pipelineStages.tenantId, tenantId))
+      .orderBy(pipelineStages.order);
+  }
+  
+  async getPipelineStage(id: string, tenantId: string): Promise<PipelineStage | undefined> {
+    const [stage] = await db.select().from(pipelineStages)
+      .where(and(eq(pipelineStages.id, id), eq(pipelineStages.tenantId, tenantId)))
+      .limit(1);
+    return stage;
+  }
+  
+  async createPipelineStage(stage: InsertPipelineStage): Promise<PipelineStage> {
+    const [newStage] = await db.insert(pipelineStages).values(stage).returning();
+    return newStage;
+  }
+  
+  async updatePipelineStage(id: string, tenantId: string, data: Partial<InsertPipelineStage>): Promise<PipelineStage | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(pipelineStages)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(pipelineStages.id, id), eq(pipelineStages.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deletePipelineStage(id: string, tenantId: string): Promise<void> {
+    await db.delete(pipelineStages)
+      .where(and(eq(pipelineStages.id, id), eq(pipelineStages.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // DEALS
+  // ========================================
+  
+  async listDeals(tenantId: string): Promise<Deal[]> {
+    return await db.select().from(deals)
+      .where(eq(deals.tenantId, tenantId))
+      .orderBy(desc(deals.createdAt));
+  }
+  
+  async getDeal(id: string, tenantId: string): Promise<Deal | undefined> {
+    const [deal] = await db.select().from(deals)
+      .where(and(eq(deals.id, id), eq(deals.tenantId, tenantId)))
+      .limit(1);
+    return deal;
+  }
+  
+  async createDeal(deal: InsertDeal): Promise<Deal> {
+    const [newDeal] = await db.insert(deals).values(deal).returning();
+    return newDeal;
+  }
+  
+  async updateDeal(id: string, tenantId: string, data: Partial<InsertDeal>): Promise<Deal | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(deals)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(deals.id, id), eq(deals.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteDeal(id: string, tenantId: string): Promise<void> {
+    await db.delete(deals)
+      .where(and(eq(deals.id, id), eq(deals.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // CUSTOMER SEGMENTS
+  // ========================================
+  
+  async listCustomerSegments(tenantId: string): Promise<CustomerSegment[]> {
+    return await db.select().from(customerSegments)
+      .where(eq(customerSegments.tenantId, tenantId))
+      .orderBy(customerSegments.name);
+  }
+  
+  async getCustomerSegment(id: string, tenantId: string): Promise<CustomerSegment | undefined> {
+    const [segment] = await db.select().from(customerSegments)
+      .where(and(eq(customerSegments.id, id), eq(customerSegments.tenantId, tenantId)))
+      .limit(1);
+    return segment;
+  }
+  
+  async createCustomerSegment(segment: InsertCustomerSegment): Promise<CustomerSegment> {
+    const [newSegment] = await db.insert(customerSegments).values(segment).returning();
+    return newSegment;
+  }
+  
+  async updateCustomerSegment(id: string, tenantId: string, data: Partial<InsertCustomerSegment>): Promise<CustomerSegment | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(customerSegments)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(customerSegments.id, id), eq(customerSegments.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteCustomerSegment(id: string, tenantId: string): Promise<void> {
+    await db.delete(customerSegments)
+      .where(and(eq(customerSegments.id, id), eq(customerSegments.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // ACTIVITIES
+  // ========================================
+  
+  async listActivities(tenantId: string, filters?: { customerId?: string; dealId?: string }): Promise<Activity[]> {
+    let query = db.select().from(activities)
+      .where(eq(activities.tenantId, tenantId))
+      .$dynamic();
+    
+    if (filters?.customerId) {
+      query = query.where(eq(activities.customerId, filters.customerId));
+    }
+    
+    if (filters?.dealId) {
+      query = query.where(eq(activities.dealId, filters.dealId));
+    }
+    
+    return await query.orderBy(desc(activities.createdAt));
+  }
+  
+  async getActivity(id: string, tenantId: string): Promise<Activity | undefined> {
+    const [activity] = await db.select().from(activities)
+      .where(and(eq(activities.id, id), eq(activities.tenantId, tenantId)))
+      .limit(1);
+    return activity;
+  }
+  
+  async createActivity(activity: InsertActivity): Promise<Activity> {
+    const [newActivity] = await db.insert(activities).values(activity).returning();
+    return newActivity;
+  }
+  
+  async updateActivity(id: string, tenantId: string, data: Partial<InsertActivity>): Promise<Activity | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(activities)
+      .set(updateData)
+      .where(and(eq(activities.id, id), eq(activities.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteActivity(id: string, tenantId: string): Promise<void> {
+    await db.delete(activities)
+      .where(and(eq(activities.id, id), eq(activities.tenantId, tenantId)));
   }
 }
 

@@ -15,6 +15,14 @@ import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Marketplace from "@/pages/marketplace";
 import CRM from "@/pages/crm";
+import CRMDashboard from "@/pages/crm-dashboard";
+import CRMPipeline from "@/pages/crm-pipeline";
+import CRMActivities from "@/pages/crm-activities";
+import CRMSegments from "@/pages/crm-segments";
+import LoginPage from "@/pages/login";
+import RegisterPage from "@/pages/register";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import Omnichat from "@/pages/omnichat";
 import OmnichatAdmin from "@/pages/omnichat-admin";
 import KnowledgeBasePage from "@/pages/knowledge-base";
@@ -54,6 +62,10 @@ function Router() {
       {!isAuthenticated ? (
         <>
           <Route path="/" component={Landing} />
+          <Route path="/login" component={LoginPage} />
+          <Route path="/register" component={RegisterPage} />
+          <Route path="/forgot-password" component={ForgotPasswordPage} />
+          <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>
@@ -63,7 +75,11 @@ function Router() {
           <Route path="/tenants" component={Tenants} />
           <Route path="/marketplace" component={Marketplace} />
           <Route path="/customers" component={CRM} />
-          <Route path="/crm" component={CRM} />
+          <Route path="/crm" component={CRMDashboard} />
+          <Route path="/crm/customers" component={CRM} />
+          <Route path="/crm/pipeline" component={CRMPipeline} />
+          <Route path="/crm/activities" component={CRMActivities} />
+          <Route path="/crm/segments" component={CRMSegments} />
           <Route path="/omnichat" component={Omnichat} />
           <Route path="/omnichat-admin" component={OmnichatAdmin} />
           <Route path="/knowledge-base" component={KnowledgeBasePage} />

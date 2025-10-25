@@ -24,6 +24,7 @@ export const featureEnum = pgEnum("feature", [
   "payments",       // Payment Management
   "settings"        // Tenant Settings (branding, etc)
 ]);
+export const activityTypeEnum = pgEnum("activity_type", ["call", "email", "meeting", "note", "task", "other"]);
 
 // ========================================
 // AUTHENTICATION (Replit Auth)
@@ -38,6 +39,16 @@ export const sessions = pgTable(
   },
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
+
+// Password Reset Tokens
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // ========================================
 // MULTI-TENANT CORE
@@ -54,6 +65,7 @@ export const tenants = pgTable("tenants", {
   primaryColor: text("primary_color").default("#2563EB"),
   customTheme: jsonb("custom_theme"),
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
+  ssoConfig: jsonb("sso_config"),
   status: text("status").default("active"),
   settings: jsonb("settings").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -82,6 +94,9 @@ export const users = pgTable("users", {
   customRoleId: varchar("custom_role_id").references(() => roles.id, { onDelete: "set null" }),
   password: text("password"),
   replitAuthId: text("replit_auth_id").unique(),
+  googleId: text("google_id").unique(),
+  appleId: text("apple_id").unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -172,6 +187,7 @@ export const customers = pgTable("customers", {
   whatsapp: text("whatsapp"),
   tags: text("tags").array(),
   segment: text("segment"),
+  lifecycleStage: text("lifecycle_stage").default("lead").notNull(),
   lifetimeValue: decimal("lifetime_value", { precision: 10, scale: 2 }).default("0").notNull(),
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -187,6 +203,65 @@ export const interactions = pgTable("interactions", {
   channel: conversationChannelEnum("channel"),
   content: text("content"),
   metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ========================================
+// CRM ADVANCED - PIPELINE & DEALS
+// ========================================
+
+// Pipeline Stages
+export const pipelineStages = pgTable("pipeline_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  order: integer("order").notNull(),
+  color: text("color").default("#3B82F6"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Deals/Opportunities
+export const deals = pgTable("deals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
+  title: text("title").notNull(),
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(),
+  stageId: varchar("stage_id").references(() => pipelineStages.id).notNull(),
+  probability: integer("probability").default(50).notNull(),
+  expectedCloseDate: timestamp("expected_close_date"),
+  actualCloseDate: timestamp("actual_close_date"),
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Customer Segments
+export const customerSegments = pgTable("customer_segments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  filters: jsonb("filters").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Activities
+export const activities = pgTable("activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }),
+  type: activityTypeEnum("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -486,3 +561,28 @@ export type Role = typeof roles.$inferSelect;
 export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ createdAt: true });
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+
+// Password Reset Tokens
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({ id: true, createdAt: true });
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// Pipeline Stages
+export const insertPipelineStageSchema = createInsertSchema(pipelineStages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPipelineStage = z.infer<typeof insertPipelineStageSchema>;
+export type PipelineStage = typeof pipelineStages.$inferSelect;
+
+// Deals
+export const insertDealSchema = createInsertSchema(deals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDeal = z.infer<typeof insertDealSchema>;
+export type Deal = typeof deals.$inferSelect;
+
+// Customer Segments
+export const insertCustomerSegmentSchema = createInsertSchema(customerSegments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCustomerSegment = z.infer<typeof insertCustomerSegmentSchema>;
+export type CustomerSegment = typeof customerSegments.$inferSelect;
+
+// Activities
+export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type Activity = typeof activities.$inferSelect;
