@@ -15,11 +15,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProductSchema, type Product } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { ImageUpload } from "@/components/image-upload";
 import { z } from "zod";
 
 const productFormSchema = insertProductSchema.extend({
   price: z.string().min(1, "Price is required"),
   inventory: z.string().optional(),
+  images: z.array(z.string()).optional(),
 }).omit({ tenantId: true });
 
 type ProductFormData = z.infer<typeof productFormSchema>;
@@ -42,6 +44,7 @@ export default function Marketplace() {
       type: "product",
       category: "",
       inventory: "",
+      images: [],
       isActive: true,
     },
   });
@@ -94,7 +97,7 @@ export default function Marketplace() {
               <Plus className="mr-2 h-4 w-4" /> {t('marketplace.addProduct')}
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{t('marketplace.addProduct')}</DialogTitle>
             </DialogHeader>
@@ -121,6 +124,23 @@ export default function Marketplace() {
                       <FormLabel>{t('common.description')}</FormLabel>
                       <FormControl>
                         <Textarea placeholder={t('marketplace.descriptionPlaceholder')} data-testid="input-product-description" {...field} value={field.value || ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="images"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Imagens do Produto</FormLabel>
+                      <FormControl>
+                        <ImageUpload
+                          value={field.value}
+                          onChange={field.onChange}
+                          maxImages={5}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -223,22 +243,42 @@ export default function Marketplace() {
       ) : products && products.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (
-            <Card key={product.id} className="hover-elevate" data-testid={`card-product-${product.id}`}>
+            <Card key={product.id} className="group hover-elevate overflow-hidden" data-testid={`card-product-${product.id}`}>
+              {/* Product Image */}
+              {product.images && product.images.length > 0 ? (
+                <div className="relative aspect-video overflow-hidden bg-muted">
+                  <img
+                    src={product.images[0]}
+                    alt={product.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  {product.images.length > 1 && (
+                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-md">
+                      +{product.images.length - 1} fotos
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="relative aspect-video bg-muted flex items-center justify-center">
+                  <Package className="h-12 w-12 text-muted-foreground/50" />
+                </div>
+              )}
+              
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  {product.name}
+                <CardTitle className="flex items-center justify-between gap-2">
+                  <span className="line-clamp-1">{product.name}</span>
+                  <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground line-clamp-2">
+                <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
                   {product.description || t('marketplace.noDescription')}
                 </p>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-2xl font-bold" data-testid={`text-price-${product.id}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-500" data-testid={`text-price-${product.id}`}>
                     R$ {product.price}
                   </span>
-                  <span className="text-xs text-muted-foreground capitalize">
+                  <span className="text-xs text-muted-foreground capitalize bg-muted px-2 py-1 rounded-md">
                     {product.type === 'product' && t('marketplace.types.product')}
                     {product.type === 'service' && t('marketplace.types.service')}
                     {product.type === 'experience' && t('marketplace.types.experience')}
