@@ -32,6 +32,7 @@ import Payments from "@/pages/payments";
 import CalendarPage from "@/pages/calendar";
 import Shop from "@/pages/shop";
 import CartPage from "@/pages/cart";
+import CustomerArea from "@/pages/customer-area";
 import OrdersPage from "@/pages/orders";
 import Finance from "@/pages/finance";
 import FinanceRevenues from "@/pages/finance-revenues";
@@ -70,6 +71,7 @@ function Router() {
           <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
+          <Route path="/my-account" component={CustomerArea} />
         </>
       ) : (
         <>
@@ -100,6 +102,7 @@ function Router() {
           <Route path="/hr" component={HRPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
+          <Route path="/my-account" component={CustomerArea} />
         </>
       )}
       <Route component={NotFound} />

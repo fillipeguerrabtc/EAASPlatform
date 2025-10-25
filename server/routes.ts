@@ -207,7 +207,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Brand Scanner: Extract colors from logo using AI
+  // Brand Scanner: Full website brand extraction with Puppeteer
+  app.post("/api/tenants/:id/scan-brand", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const requestedTenantId = req.params.id;
+      const userTenantId = getTenantId(req);
+      
+      if (requestedTenantId !== userTenantId) {
+        return res.status(403).json({ error: "Forbidden: Cannot access other tenants' data" });
+      }
+
+      const { websiteUrl } = req.body;
+      
+      if (!websiteUrl) {
+        return res.status(400).json({ error: "websiteUrl is required" });
+      }
+
+      // Use Puppeteer to scan the full website
+      const { scanWebsiteBrand } = await import("./brandScanner");
+      const brandAnalysis = await scanWebsiteBrand(websiteUrl);
+
+      // Update tenant with new brand colors and assets
+      await storage.updateTenant(requestedTenantId, {
+        brandColors: brandAnalysis.colors,
+        logoUrl: brandAnalysis.assets?.logo,
+        faviconUrl: brandAnalysis.assets?.favicon,
+      });
+
+      res.json({ success: true, brand: brandAnalysis });
+    } catch (error: any) {
+      console.error("Brand scanner error:", error);
+      res.status(500).json({ 
+        error: "Failed to scan website brand",
+        details: error.message 
+      });
+    }
+  });
+
+  // Brand Scanner (Legacy): Extract colors from logo using AI
   app.post("/api/tenants/:id/scan-brand-colors", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const requestedTenantId = req.params.id;
