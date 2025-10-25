@@ -11,6 +11,7 @@ import {
   TrendingUp,
   ArrowUpRight,
 } from "lucide-react";
+import { SEO } from "@/components/seo";
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -79,7 +80,16 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-full bg-gradient-to-br from-background via-background to-muted/20">
+    <>
+      <SEO
+        title="Dashboard - EAAS | Real-time Business Metrics"
+        description="Monitor your business performance with real-time metrics, analytics, and insights. Track products, customers, conversations, and orders."
+        keywords="dashboard, business analytics, real-time metrics, business intelligence, kpi tracking"
+        canonical="https://eaas.com/dashboard"
+        ogTitle="EAAS Dashboard - Business Command Center"
+        ogDescription="Real-time business metrics and analytics at your fingertips"
+      />
+      <div className="min-h-full bg-gradient-to-br from-background via-background to-muted/20">
       {/* Hero Header */}
       <div className="px-4 sm:px-6 lg:px-8 pt-8 pb-6">
         <div className="max-w-7xl mx-auto">
@@ -153,5 +163,6 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    </>
   );
 }

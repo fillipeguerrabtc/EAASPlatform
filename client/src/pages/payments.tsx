@@ -7,6 +7,7 @@ import { CreditCard, ArrowUpRight, CheckCircle2, XCircle, Clock, RotateCcw } fro
 import type { Payment } from "@shared/schema";
 import { format } from "date-fns";
 import { ptBR, enUS } from "date-fns/locale";
+import { SEO } from "@/components/seo";
 
 export default function Payments() {
   const { t, i18n } = useTranslation();

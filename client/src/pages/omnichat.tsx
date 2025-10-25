@@ -14,6 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import type { Conversation, Message } from "@shared/schema";
+import { SEO } from "@/components/seo";
 
 const channelIcons = {
   web: MessageSquare,
@@ -103,7 +104,16 @@ export default function Omnichat() {
   });
 
   return (
-    <div className="p-8 space-y-8">
+    <>
+      <SEO
+        title="Omnichat - EAAS | Unified Communication Hub"
+        description="Manage all customer communications in one place. WhatsApp, Facebook, Instagram, and Web chat unified inbox with AI-powered responses."
+        keywords="omnichat, unified inbox, whatsapp business, multi-channel chat, customer support, messaging platform"
+        canonical="https://eaas.com/omnichat"
+        ogTitle="EAAS Omnichat - All Channels, One Place"
+        ogDescription="Unified communication hub with WhatsApp, Facebook, Instagram & Web"
+      />
+      <div className="p-8 space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold" data-testid="text-omnichat-title">
@@ -305,5 +315,6 @@ export default function Omnichat() {
         </Card>
       </div>
     </div>
+    </>
   );
 }

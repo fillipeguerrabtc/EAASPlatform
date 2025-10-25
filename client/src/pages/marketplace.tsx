@@ -17,6 +17,7 @@ import { insertProductSchema, type Product } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { ImageUpload } from "@/components/image-upload";
 import { z } from "zod";
+import { SEO } from "@/components/seo";
 
 const productFormSchema = insertProductSchema.extend({
   price: z.string().min(1, "Price is required"),

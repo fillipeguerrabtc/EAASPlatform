@@ -18,6 +18,7 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { ptBR, enUS } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
+import { SEO } from "@/components/seo";
 
 const eventFormSchema = insertCalendarEventSchema.extend({
   startTime: z.string(),

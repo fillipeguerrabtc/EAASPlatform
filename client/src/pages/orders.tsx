@@ -11,6 +11,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { format } from "date-fns";
+import { SEO } from "@/components/seo";
 
 export default function OrdersPage() {
   const { t } = useTranslation();

@@ -14,6 +14,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertKnowledgeBaseSchema, type KnowledgeBase } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useTranslation } from "react-i18next";
+import { SEO } from "@/components/seo";
 
 const kbFormSchema = insertKnowledgeBaseSchema.omit({ tenantId: true, vectorId: true });
 
@@ -79,7 +80,16 @@ export default function KnowledgeBasePage() {
   };
 
   return (
-    <div className="p-8 space-y-8">
+    <>
+      <SEO
+        title="Knowledge Base - EAAS | AI Training & Documentation"
+        description="Manage your AI knowledge base with editable training data, categories, tags, and RAG-powered search. Train your autonomous AI assistant."
+        keywords="knowledge base, ai training, rag, vector search, documentation, ai assistant, chatbot training"
+        canonical="https://eaas.com/knowledge-base"
+        ogTitle="EAAS Knowledge Base - AI Brain"
+        ogDescription="Editable AI knowledge base with RAG-powered search"
+      />
+      <div className="p-8 space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold" data-testid="text-kb-title">
@@ -211,5 +221,6 @@ export default function KnowledgeBasePage() {
         </Card>
       )}
     </div>
+    </>
   );
 }

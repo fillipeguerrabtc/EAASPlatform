@@ -6,6 +6,7 @@ import { Users, Mail, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "react-i18next";
 import type { Customer } from "@shared/schema";
+import { SEO } from "@/components/seo";
 
 const formatCurrency = (value: number | null | undefined, locale: string): string => {
   if (!value) return new Intl.NumberFormat(locale, { style: 'currency', currency: locale === 'pt-BR' ? 'BRL' : 'USD' }).format(0);
@@ -20,7 +21,16 @@ export default function CRM() {
   });
 
   return (
-    <div className="p-8 space-y-8">
+    <>
+      <SEO
+        title="CRM 360° - EAAS | Complete Customer Relationship Management"
+        description="Manage your customer relationships with complete lifecycle tracking, interactions, tags, and lifetime value analytics."
+        keywords="crm, customer relationship management, customer lifecycle, customer analytics, sales tracking"
+        canonical="https://eaas.com/customers"
+        ogTitle="EAAS CRM 360° - Customer Excellence"
+        ogDescription="Complete customer relationship management with advanced analytics"
+      />
+      <div className="p-8 space-y-8">
       <div>
         <h1 className="text-4xl font-bold" data-testid="text-crm-title">
           {t('crm.title')}
@@ -102,5 +112,6 @@ export default function CRM() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }
