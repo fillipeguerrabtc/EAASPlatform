@@ -1000,51 +1000,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ai/chat", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
-      const { message, conversationId } = req.body;
+      const customerId = (req.user as any).userId;
       
-      if (!message) {
-        return res.status(400).json({ error: "Message is required" });
-      }
+      // Validate request body with Zod
+      const aiChatSchema = z.object({
+        message: z.string().min(1, "Message cannot be empty"),
+        conversationId: z.string().optional(),
+      });
       
-      // 1. Search Knowledge Base for similar content (simple text matching for MVP)
-      const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
-      const matchedItem = knowledgeBaseItems.find(item => 
-        item.title.toLowerCase().includes(message.toLowerCase()) ||
-        item.content.toLowerCase().includes(message.toLowerCase())
-      );
+      const validatedData = aiChatSchema.parse(req.body);
+      const { message, conversationId } = validatedData;
       
+      const messageLower = message.toLowerCase();
       let response: string;
-      let source: "knowledge_base" | "openai";
+      let source: "knowledge_base" | "openai" | "autonomous_sales";
+      let cartAction: any = null;
       
-      if (matchedItem) {
-        // Found answer in KB
-        response = matchedItem.content;
-        source = "knowledge_base";
+      // AUTONOMOUS SALES: Detect purchase intent commands
+      const buyCommands = ["comprar", "adicionar ao carrinho", "add to cart", "buy", "quero", "gostaria de"];
+      const checkoutCommands = ["finalizar compra", "checkout", "pagar", "concluir"];
+      const cartCommands = ["ver carrinho", "meu carrinho", "show cart", "view cart"];
+      
+      const isBuyCommand = buyCommands.some(cmd => messageLower.includes(cmd));
+      const isCheckoutCommand = checkoutCommands.some(cmd => messageLower.includes(cmd));
+      const isCartCommand = cartCommands.some(cmd => messageLower.includes(cmd));
+      
+      if (isBuyCommand || isCheckoutCommand || isCartCommand) {
+        // AUTONOMOUS SALES MODE
+        const products = await storage.listProducts(tenantId);
+        
+        if (isCartCommand) {
+          // Show cart contents
+          const cart = await storage.getActiveCart(customerId, tenantId);
+          const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
+          
+          if (cartItems.length === 0) {
+            response = "Seu carrinho está vazio. Posso ajudá-lo a encontrar produtos?";
+          } else {
+            const itemsDesc = cartItems.map((item: any) => {
+              const product = products.find(p => p.id === item.productId);
+              return product ? `- ${product.name} (${item.quantity}x) - R$ ${parseFloat(product.price) * item.quantity}` : null;
+            }).filter(Boolean).join('\n');
+            
+            response = `Seu carrinho:\n${itemsDesc}\n\nTotal: R$ ${cart.total}\n\nDeseja finalizar a compra?`;
+          }
+          source = "autonomous_sales";
+          
+        } else if (isCheckoutCommand) {
+          // Initiate checkout
+          const cart = await storage.getActiveCart(customerId, tenantId);
+          const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
+          
+          if (cartItems.length === 0) {
+            response = "Seu carrinho está vazio. Adicione produtos antes de finalizar a compra.";
+          } else {
+            response = `Ótimo! Você será redirecionado para o checkout seguro.\n\nTotal: R$ ${cart.total}\n\n[Clique aqui para pagar →]`;
+            cartAction = { type: "checkout", url: "/cart" };
+          }
+          source = "autonomous_sales";
+          
+        } else if (isBuyCommand) {
+          // Find product by name in message
+          const foundProduct = products.find(p => 
+            p.isActive && messageLower.includes(p.name.toLowerCase())
+          );
+          
+          if (foundProduct) {
+            // Add to cart
+            let cart = await storage.getActiveCart(customerId, tenantId);
+            const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
+            
+            // Check if product already in cart
+            const existingItem = cartItems.find((item: any) => item.productId === foundProduct.id);
+            
+            let updatedItems;
+            if (existingItem) {
+              // Increment quantity
+              updatedItems = cartItems.map((item: any) => 
+                item.productId === foundProduct.id 
+                  ? { ...item, quantity: item.quantity + 1 }
+                  : item
+              );
+            } else {
+              // Add new item
+              updatedItems = [...cartItems, { productId: foundProduct.id, quantity: 1 }];
+            }
+            
+            // Validate and recalculate total
+            const validatedItems = [];
+            let total = 0;
+            for (const item of updatedItems) {
+              const product = products.find(p => p.id === item.productId);
+              if (product && product.isActive) {
+                validatedItems.push({
+                  productId: item.productId,
+                  quantity: Math.max(1, parseInt(item.quantity) || 1),
+                  price: product.price
+                });
+                total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+              }
+            }
+            
+            // Update cart
+            cart = await storage.updateCart(cart.id, tenantId, {
+              items: validatedItems,
+              total: total.toFixed(2),
+            });
+            
+            response = `✅ ${foundProduct.name} adicionado ao carrinho!\n\nPreço: R$ ${foundProduct.price}\nTotal no carrinho: R$ ${cart.total}\n\nDeseja continuar comprando ou finalizar a compra?`;
+            cartAction = { type: "added", productId: foundProduct.id, productName: foundProduct.name };
+            source = "autonomous_sales";
+            
+          } else {
+            // Product not found - suggest alternatives
+            const activeProducts = products.filter(p => p.isActive);
+            if (activeProducts.length > 0) {
+              const suggestions = activeProducts.slice(0, 3).map(p => 
+                `- ${p.name} (R$ ${p.price})`
+              ).join('\n');
+              
+              response = `Não encontrei esse produto exato. Veja algumas opções disponíveis:\n\n${suggestions}\n\nDigite o nome do produto que deseja comprar.`;
+            } else {
+              response = "Desculpe, não encontrei esse produto. Podemos adicionar novos produtos ao catálogo em breve!";
+            }
+            source = "autonomous_sales";
+          }
+        }
       } else {
-        // Fallback to OpenAI
-        const OpenAI = (await import("openai")).default;
-        const openai = new OpenAI({
-          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
-        });
+        // REGULAR AI MODE: Knowledge Base + OpenAI
+        const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
+        const matchedItem = knowledgeBaseItems.find(item => 
+          item.title.toLowerCase().includes(messageLower) ||
+          item.content.toLowerCase().includes(messageLower)
+        );
         
-        // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        const completion = await openai.chat.completions.create({
-          model: "gpt-5",
-          messages: [
-            { role: "system", content: "You are a helpful AI assistant. Provide concise, professional responses." },
-            { role: "user", content: message }
-          ],
-          max_completion_tokens: 500,
-        });
-        
-        response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-        source = "openai";
+        if (matchedItem) {
+          response = matchedItem.content;
+          source = "knowledge_base";
+        } else {
+          // Fallback to OpenAI
+          const OpenAI = (await import("openai")).default;
+          const openai = new OpenAI({
+            baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+            apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+          });
+          
+          const completion = await openai.chat.completions.create({
+            model: "gpt-5",
+            messages: [
+              { role: "system", content: "You are a helpful AI sales assistant. Help customers find and buy products. Be concise and professional." },
+              { role: "user", content: message }
+            ],
+            max_completion_tokens: 500,
+          });
+          
+          response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+          source = "openai";
+        }
       }
       
-      // 3. Optionally save message to conversation if conversationId provided
+      // Save message to conversation if conversationId provided
       if (conversationId) {
-        // Validate conversation belongs to tenant
         const conversation = await storage.getConversation(conversationId, tenantId);
         if (conversation) {
           await storage.createMessage({
@@ -1061,7 +1177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      res.json({ response, source });
+      res.json({ response, source, cartAction });
     } catch (error: any) {
       console.error("AI Chat error:", error);
       res.status(500).json({ error: error.message });
@@ -2330,6 +2446,538 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting activity:", error);
       res.status(500).json({ message: "Erro ao deletar atividade" });
+    }
+  });
+
+  // ========================================
+  // INVENTORY - WAREHOUSES
+  // ========================================
+
+  app.get("/api/warehouses", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const warehouses = await storage.listWarehouses(tenantId);
+      res.json(warehouses);
+    } catch (error: any) {
+      console.error("Error listing warehouses:", error);
+      res.status(500).json({ message: "Erro ao listar depósitos" });
+    }
+  });
+
+  app.get("/api/warehouses/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const warehouse = await storage.getWarehouse(req.params.id, tenantId);
+      
+      if (!warehouse) {
+        return res.status(404).json({ message: "Depósito não encontrado" });
+      }
+      
+      res.json(warehouse);
+    } catch (error: any) {
+      console.error("Error getting warehouse:", error);
+      res.status(500).json({ message: "Erro ao buscar depósito" });
+    }
+  });
+
+  app.post("/api/warehouses", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertWarehouseSchema } = await import("@shared/schema");
+      const validatedData = insertWarehouseSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const warehouse = await storage.createWarehouse(validatedData);
+      res.json(warehouse);
+    } catch (error: any) {
+      console.error("Error creating warehouse:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar depósito" });
+    }
+  });
+
+  app.patch("/api/warehouses/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertWarehouseSchema } = await import("@shared/schema");
+      const validatedData = insertWarehouseSchema.partial().parse(req.body);
+      
+      const warehouse = await storage.updateWarehouse(req.params.id, tenantId, validatedData);
+      
+      if (!warehouse) {
+        return res.status(404).json({ message: "Depósito não encontrado" });
+      }
+      
+      res.json(warehouse);
+    } catch (error: any) {
+      console.error("Error updating warehouse:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar depósito" });
+    }
+  });
+
+  app.delete("/api/warehouses/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteWarehouse(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting warehouse:", error);
+      res.status(500).json({ message: "Erro ao deletar depósito" });
+    }
+  });
+
+  // ========================================
+  // INVENTORY - PRODUCT STOCK
+  // ========================================
+
+  app.get("/api/product-stock", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const warehouseId = req.query.warehouseId as string | undefined;
+      const stock = await storage.listProductStock(tenantId, warehouseId);
+      res.json(stock);
+    } catch (error: any) {
+      console.error("Error listing product stock:", error);
+      res.status(500).json({ message: "Erro ao listar estoque" });
+    }
+  });
+
+  app.post("/api/product-stock", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertProductStockSchema } = await import("@shared/schema");
+      const validatedData = insertProductStockSchema.parse({
+        ...req.body,
+        tenantId,
+        lastRestocked: req.body.lastRestocked ? new Date(req.body.lastRestocked) : undefined,
+      });
+      
+      const stock = await storage.createProductStock(validatedData);
+      res.json(stock);
+    } catch (error: any) {
+      console.error("Error creating product stock:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar estoque" });
+    }
+  });
+
+  app.patch("/api/product-stock/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertProductStockSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.lastRestocked) {
+        updateData.lastRestocked = new Date(req.body.lastRestocked);
+      }
+      
+      const validatedData = insertProductStockSchema.partial().parse(updateData);
+      const stock = await storage.updateProductStock(req.params.id, tenantId, validatedData);
+      
+      if (!stock) {
+        return res.status(404).json({ message: "Estoque não encontrado" });
+      }
+      
+      res.json(stock);
+    } catch (error: any) {
+      console.error("Error updating product stock:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar estoque" });
+    }
+  });
+
+  // ========================================
+  // INVENTORY - STOCK MOVEMENTS
+  // ========================================
+
+  app.get("/api/stock-movements", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const filters = {
+        productId: req.query.productId as string | undefined,
+        warehouseId: req.query.warehouseId as string | undefined,
+      };
+      const movements = await storage.listStockMovements(tenantId, filters);
+      res.json(movements);
+    } catch (error: any) {
+      console.error("Error listing stock movements:", error);
+      res.status(500).json({ message: "Erro ao listar movimentações" });
+    }
+  });
+
+  app.post("/api/stock-movements", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertStockMovementSchema } = await import("@shared/schema");
+      const validatedData = insertStockMovementSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const movement = await storage.createStockMovement(validatedData);
+      res.json(movement);
+    } catch (error: any) {
+      console.error("Error creating stock movement:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar movimentação" });
+    }
+  });
+
+  // ========================================
+  // HR - DEPARTMENTS
+  // ========================================
+
+  app.get("/api/departments", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const departments = await storage.listDepartments(tenantId);
+      res.json(departments);
+    } catch (error: any) {
+      console.error("Error listing departments:", error);
+      res.status(500).json({ message: "Erro ao listar departamentos" });
+    }
+  });
+
+  app.get("/api/departments/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const department = await storage.getDepartment(req.params.id, tenantId);
+      
+      if (!department) {
+        return res.status(404).json({ message: "Departamento não encontrado" });
+      }
+      
+      res.json(department);
+    } catch (error: any) {
+      console.error("Error getting department:", error);
+      res.status(500).json({ message: "Erro ao buscar departamento" });
+    }
+  });
+
+  app.post("/api/departments", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertDepartmentSchema } = await import("@shared/schema");
+      const validatedData = insertDepartmentSchema.parse({
+        ...req.body,
+        tenantId,
+      });
+      
+      const department = await storage.createDepartment(validatedData);
+      res.json(department);
+    } catch (error: any) {
+      console.error("Error creating department:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar departamento" });
+    }
+  });
+
+  app.patch("/api/departments/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertDepartmentSchema } = await import("@shared/schema");
+      const validatedData = insertDepartmentSchema.partial().parse(req.body);
+      
+      const department = await storage.updateDepartment(req.params.id, tenantId, validatedData);
+      
+      if (!department) {
+        return res.status(404).json({ message: "Departamento não encontrado" });
+      }
+      
+      res.json(department);
+    } catch (error: any) {
+      console.error("Error updating department:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar departamento" });
+    }
+  });
+
+  app.delete("/api/departments/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteDepartment(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting department:", error);
+      res.status(500).json({ message: "Erro ao deletar departamento" });
+    }
+  });
+
+  // ========================================
+  // HR - EMPLOYEES
+  // ========================================
+
+  app.get("/api/employees", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const departmentId = req.query.departmentId as string | undefined;
+      const employees = await storage.listEmployees(tenantId, departmentId);
+      res.json(employees);
+    } catch (error: any) {
+      console.error("Error listing employees:", error);
+      res.status(500).json({ message: "Erro ao listar funcionários" });
+    }
+  });
+
+  app.get("/api/employees/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const employee = await storage.getEmployee(req.params.id, tenantId);
+      
+      if (!employee) {
+        return res.status(404).json({ message: "Funcionário não encontrado" });
+      }
+      
+      res.json(employee);
+    } catch (error: any) {
+      console.error("Error getting employee:", error);
+      res.status(500).json({ message: "Erro ao buscar funcionário" });
+    }
+  });
+
+  app.post("/api/employees", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertEmployeeSchema } = await import("@shared/schema");
+      const validatedData = insertEmployeeSchema.parse({
+        ...req.body,
+        tenantId,
+        hireDate: new Date(req.body.hireDate),
+        terminationDate: req.body.terminationDate ? new Date(req.body.terminationDate) : undefined,
+      });
+      
+      const employee = await storage.createEmployee(validatedData);
+      res.json(employee);
+    } catch (error: any) {
+      console.error("Error creating employee:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar funcionário" });
+    }
+  });
+
+  app.patch("/api/employees/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertEmployeeSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.hireDate) {
+        updateData.hireDate = new Date(req.body.hireDate);
+      }
+      if (req.body.terminationDate) {
+        updateData.terminationDate = new Date(req.body.terminationDate);
+      }
+      
+      const validatedData = insertEmployeeSchema.partial().parse(updateData);
+      const employee = await storage.updateEmployee(req.params.id, tenantId, validatedData);
+      
+      if (!employee) {
+        return res.status(404).json({ message: "Funcionário não encontrado" });
+      }
+      
+      res.json(employee);
+    } catch (error: any) {
+      console.error("Error updating employee:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar funcionário" });
+    }
+  });
+
+  app.delete("/api/employees/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteEmployee(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting employee:", error);
+      res.status(500).json({ message: "Erro ao deletar funcionário" });
+    }
+  });
+
+  // ========================================
+  // HR - PAYROLL RECORDS
+  // ========================================
+
+  app.get("/api/payroll-records", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const employeeId = req.query.employeeId as string | undefined;
+      const records = await storage.listPayrollRecords(tenantId, employeeId);
+      res.json(records);
+    } catch (error: any) {
+      console.error("Error listing payroll records:", error);
+      res.status(500).json({ message: "Erro ao listar folhas de pagamento" });
+    }
+  });
+
+  app.post("/api/payroll-records", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertPayrollRecordSchema } = await import("@shared/schema");
+      const validatedData = insertPayrollRecordSchema.parse({
+        ...req.body,
+        tenantId,
+        periodStart: new Date(req.body.periodStart),
+        periodEnd: new Date(req.body.periodEnd),
+        paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : undefined,
+      });
+      
+      const record = await storage.createPayrollRecord(validatedData);
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error creating payroll record:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar folha de pagamento" });
+    }
+  });
+
+  app.patch("/api/payroll-records/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertPayrollRecordSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.periodStart) updateData.periodStart = new Date(req.body.periodStart);
+      if (req.body.periodEnd) updateData.periodEnd = new Date(req.body.periodEnd);
+      if (req.body.paymentDate) updateData.paymentDate = new Date(req.body.paymentDate);
+      
+      const validatedData = insertPayrollRecordSchema.partial().parse(updateData);
+      const record = await storage.updatePayrollRecord(req.params.id, tenantId, validatedData);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Folha de pagamento não encontrada" });
+      }
+      
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error updating payroll record:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar folha de pagamento" });
+    }
+  });
+
+  app.delete("/api/payroll-records/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deletePayrollRecord(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting payroll record:", error);
+      res.status(500).json({ message: "Erro ao deletar folha de pagamento" });
+    }
+  });
+
+  // ========================================
+  // HR - ATTENDANCE RECORDS
+  // ========================================
+
+  app.get("/api/attendance-records", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const employeeId = req.query.employeeId as string | undefined;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      
+      const records = await storage.listAttendanceRecords(tenantId, employeeId, startDate, endDate);
+      res.json(records);
+    } catch (error: any) {
+      console.error("Error listing attendance records:", error);
+      res.status(500).json({ message: "Erro ao listar registros de presença" });
+    }
+  });
+
+  app.post("/api/attendance-records", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertAttendanceRecordSchema } = await import("@shared/schema");
+      const validatedData = insertAttendanceRecordSchema.parse({
+        ...req.body,
+        tenantId,
+        date: new Date(req.body.date),
+        checkIn: req.body.checkIn ? new Date(req.body.checkIn) : undefined,
+        checkOut: req.body.checkOut ? new Date(req.body.checkOut) : undefined,
+      });
+      
+      const record = await storage.createAttendanceRecord(validatedData);
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error creating attendance record:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar registro de presença" });
+    }
+  });
+
+  app.patch("/api/attendance-records/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      
+      const { insertAttendanceRecordSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.date) updateData.date = new Date(req.body.date);
+      if (req.body.checkIn) updateData.checkIn = new Date(req.body.checkIn);
+      if (req.body.checkOut) updateData.checkOut = new Date(req.body.checkOut);
+      
+      const validatedData = insertAttendanceRecordSchema.partial().parse(updateData);
+      const record = await storage.updateAttendanceRecord(req.params.id, tenantId, validatedData);
+      
+      if (!record) {
+        return res.status(404).json({ message: "Registro de presença não encontrado" });
+      }
+      
+      res.json(record);
+    } catch (error: any) {
+      console.error("Error updating attendance record:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar registro de presença" });
+    }
+  });
+
+  app.delete("/api/attendance-records/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteAttendanceRecord(req.params.id, tenantId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting attendance record:", error);
+      res.status(500).json({ message: "Erro ao deletar registro de presença" });
     }
   });
 

@@ -586,3 +586,182 @@ export type CustomerSegment = typeof customerSegments.$inferSelect;
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
+
+// ========================================
+// INVENTORY MANAGEMENT (ERP)
+// ========================================
+
+// Stock Movement Types
+export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
+  "purchase",      // Compra de estoque
+  "sale",          // Venda
+  "adjustment",    // Ajuste manual
+  "transfer",      // Transferência entre depósitos
+  "return",        // Devolução
+  "loss",          // Perda/Quebra
+  "production"     // Produção interna
+]);
+
+// Warehouses/Depósitos
+export const warehouses = pgTable("warehouses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  location: text("location"),
+  address: text("address"),
+  isActive: boolean("is_active").default(true).notNull(),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Product Stock (per warehouse)
+export const productStock = pgTable("product_stock", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id, { onDelete: "cascade" }).notNull(),
+  quantity: integer("quantity").default(0).notNull(),
+  minQuantity: integer("min_quantity").default(0).notNull(), // Low stock alert threshold
+  maxQuantity: integer("max_quantity"),
+  lastRestocked: timestamp("last_restocked"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Stock Movements History
+export const stockMovements = pgTable("stock_movements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  warehouseId: varchar("warehouse_id").references(() => warehouses.id, { onDelete: "cascade" }).notNull(),
+  type: stockMovementTypeEnum("type").notNull(),
+  quantity: integer("quantity").notNull(), // Positive = entrada, Negative = saída
+  previousQuantity: integer("previous_quantity").notNull(),
+  newQuantity: integer("new_quantity").notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }), // Quem fez a movimentação
+  referenceId: varchar("reference_id"), // ID da ordem/venda relacionada
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ========================================
+// HR MANAGEMENT (ERP)
+// ========================================
+
+// Employment Types
+export const employmentTypeEnum = pgEnum("employment_type", ["full_time", "part_time", "contractor", "intern", "temporary"]);
+export const employmentStatusEnum = pgEnum("employment_status", ["active", "on_leave", "terminated", "suspended"]);
+export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biweekly", "monthly"]);
+
+// Departments
+export const departments = pgTable("departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  managerId: varchar("manager_id").references(() => users.id, { onDelete: "set null" }),
+  parentDepartmentId: varchar("parent_department_id"), // For hierarchical departments
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Employees
+export const employees = pgTable("employees", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }), // Link to user account (optional)
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  departmentId: varchar("department_id").references(() => departments.id, { onDelete: "set null" }),
+  position: text("position"),
+  employmentType: employmentTypeEnum("employment_type").default("full_time").notNull(),
+  status: employmentStatusEnum("status").default("active").notNull(),
+  hireDate: timestamp("hire_date").notNull(),
+  terminationDate: timestamp("termination_date"),
+  salary: decimal("salary", { precision: 10, scale: 2 }),
+  payrollFrequency: payrollFrequencyEnum("payroll_frequency").default("monthly").notNull(),
+  address: text("address"),
+  emergencyContact: jsonb("emergency_contact"),
+  documents: jsonb("documents").default({}), // IDs, contracts, etc
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Payroll Records
+export const payrollRecords = pgTable("payroll_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  grossPay: decimal("gross_pay", { precision: 10, scale: 2 }).notNull(),
+  deductions: decimal("deductions", { precision: 10, scale: 2 }).default("0").notNull(),
+  netPay: decimal("net_pay", { precision: 10, scale: 2 }).notNull(),
+  hoursWorked: decimal("hours_worked", { precision: 10, scale: 2 }),
+  overtimeHours: decimal("overtime_hours", { precision: 10, scale: 2 }),
+  bonuses: decimal("bonuses", { precision: 10, scale: 2 }).default("0"),
+  taxes: decimal("taxes", { precision: 10, scale: 2 }).default("0"),
+  paymentDate: timestamp("payment_date"),
+  paymentMethod: text("payment_method"), // bank_transfer, cash, check
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Attendance Records
+export const attendanceRecords = pgTable("attendance_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
+  date: timestamp("date").notNull(),
+  checkIn: timestamp("check_in"),
+  checkOut: timestamp("check_out"),
+  hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
+  isAbsent: boolean("is_absent").default(false).notNull(),
+  isLate: boolean("is_late").default(false).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Warehouses
+export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
+export type Warehouse = typeof warehouses.$inferSelect;
+
+// Product Stock
+export const insertProductStockSchema = createInsertSchema(productStock).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProductStock = z.infer<typeof insertProductStockSchema>;
+export type ProductStock = typeof productStock.$inferSelect;
+
+// Stock Movements
+export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
+export type InsertStockMovement = z.infer<typeof insertStockMovementSchema>;
+export type StockMovement = typeof stockMovements.$inferSelect;
+
+// Departments
+export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+export type Department = typeof departments.$inferSelect;
+
+// Employees
+export const insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
+export type Employee = typeof employees.$inferSelect;
+
+// Payroll Records
+export const insertPayrollRecordSchema = createInsertSchema(payrollRecords).omit({ id: true, createdAt: true });
+export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
+export type PayrollRecord = typeof payrollRecords.$inferSelect;
+
+// Attendance Records
+export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true });
+export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
+export type AttendanceRecord = typeof attendanceRecords.$inferSelect;

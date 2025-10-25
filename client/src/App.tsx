@@ -40,6 +40,8 @@ import FinanceReports from "@/pages/finance-reports";
 import CategoriesPage from "@/pages/categories";
 import TenantSettings from "@/pages/tenant-settings";
 import RBAC from "@/pages/rbac";
+import InventoryPage from "@/pages/inventory";
+import HRPage from "@/pages/hr";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -94,6 +96,8 @@ function Router() {
           <Route path="/categories" component={CategoriesPage} />
           <Route path="/tenant-settings" component={TenantSettings} />
           <Route path="/rbac" component={RBAC} />
+          <Route path="/inventory" component={InventoryPage} />
+          <Route path="/hr" component={HRPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

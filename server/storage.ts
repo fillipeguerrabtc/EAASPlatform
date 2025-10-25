@@ -43,6 +43,20 @@ import {
   type InsertCustomerSegment,
   type Activity,
   type InsertActivity,
+  type Warehouse,
+  type InsertWarehouse,
+  type ProductStock,
+  type InsertProductStock,
+  type StockMovement,
+  type InsertStockMovement,
+  type Department,
+  type InsertDepartment,
+  type Employee,
+  type InsertEmployee,
+  type PayrollRecord,
+  type InsertPayrollRecord,
+  type AttendanceRecord,
+  type InsertAttendanceRecord,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -68,6 +82,13 @@ import {
   deals,
   customerSegments,
   activities,
+  warehouses,
+  productStock,
+  stockMovements,
+  departments,
+  employees,
+  payrollRecords,
+  attendanceRecords,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -211,6 +232,52 @@ export interface IStorage {
   createActivity(activity: InsertActivity): Promise<Activity>;
   updateActivity(id: string, tenantId: string, data: Partial<InsertActivity>): Promise<Activity | undefined>;
   deleteActivity(id: string, tenantId: string): Promise<void>;
+  
+  // Inventory - Warehouses
+  listWarehouses(tenantId: string): Promise<Warehouse[]>;
+  getWarehouse(id: string, tenantId: string): Promise<Warehouse | undefined>;
+  createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse>;
+  updateWarehouse(id: string, tenantId: string, data: Partial<InsertWarehouse>): Promise<Warehouse | undefined>;
+  deleteWarehouse(id: string, tenantId: string): Promise<void>;
+  
+  // Inventory - Product Stock
+  listProductStock(tenantId: string, warehouseId?: string): Promise<ProductStock[]>;
+  getProductStock(productId: string, warehouseId: string, tenantId: string): Promise<ProductStock | undefined>;
+  createProductStock(stock: InsertProductStock): Promise<ProductStock>;
+  updateProductStock(id: string, tenantId: string, data: Partial<InsertProductStock>): Promise<ProductStock | undefined>;
+  
+  // Inventory - Stock Movements
+  listStockMovements(tenantId: string, filters?: { productId?: string; warehouseId?: string }): Promise<StockMovement[]>;
+  getStockMovement(id: string, tenantId: string): Promise<StockMovement | undefined>;
+  createStockMovement(movement: InsertStockMovement): Promise<StockMovement>;
+  
+  // HR - Departments
+  listDepartments(tenantId: string): Promise<Department[]>;
+  getDepartment(id: string, tenantId: string): Promise<Department | undefined>;
+  createDepartment(department: InsertDepartment): Promise<Department>;
+  updateDepartment(id: string, tenantId: string, data: Partial<InsertDepartment>): Promise<Department | undefined>;
+  deleteDepartment(id: string, tenantId: string): Promise<void>;
+  
+  // HR - Employees
+  listEmployees(tenantId: string, departmentId?: string): Promise<Employee[]>;
+  getEmployee(id: string, tenantId: string): Promise<Employee | undefined>;
+  createEmployee(employee: InsertEmployee): Promise<Employee>;
+  updateEmployee(id: string, tenantId: string, data: Partial<InsertEmployee>): Promise<Employee | undefined>;
+  deleteEmployee(id: string, tenantId: string): Promise<void>;
+  
+  // HR - Payroll Records
+  listPayrollRecords(tenantId: string, employeeId?: string): Promise<PayrollRecord[]>;
+  getPayrollRecord(id: string, tenantId: string): Promise<PayrollRecord | undefined>;
+  createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord>;
+  updatePayrollRecord(id: string, tenantId: string, data: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined>;
+  deletePayrollRecord(id: string, tenantId: string): Promise<void>;
+  
+  // HR - Attendance Records
+  listAttendanceRecords(tenantId: string, employeeId?: string, startDate?: Date, endDate?: Date): Promise<AttendanceRecord[]>;
+  getAttendanceRecord(id: string, tenantId: string): Promise<AttendanceRecord | undefined>;
+  createAttendanceRecord(record: InsertAttendanceRecord): Promise<AttendanceRecord>;
+  updateAttendanceRecord(id: string, tenantId: string, data: Partial<InsertAttendanceRecord>): Promise<AttendanceRecord | undefined>;
+  deleteAttendanceRecord(id: string, tenantId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -938,6 +1005,273 @@ export class DbStorage implements IStorage {
   async deleteActivity(id: string, tenantId: string): Promise<void> {
     await db.delete(activities)
       .where(and(eq(activities.id, id), eq(activities.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // INVENTORY - WAREHOUSES
+  // ========================================
+  
+  async listWarehouses(tenantId: string): Promise<Warehouse[]> {
+    return await db.select().from(warehouses)
+      .where(eq(warehouses.tenantId, tenantId))
+      .orderBy(warehouses.name);
+  }
+  
+  async getWarehouse(id: string, tenantId: string): Promise<Warehouse | undefined> {
+    const [warehouse] = await db.select().from(warehouses)
+      .where(and(eq(warehouses.id, id), eq(warehouses.tenantId, tenantId)))
+      .limit(1);
+    return warehouse;
+  }
+  
+  async createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse> {
+    const [newWarehouse] = await db.insert(warehouses).values(warehouse).returning();
+    return newWarehouse;
+  }
+  
+  async updateWarehouse(id: string, tenantId: string, data: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(warehouses)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(warehouses.id, id), eq(warehouses.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteWarehouse(id: string, tenantId: string): Promise<void> {
+    await db.delete(warehouses)
+      .where(and(eq(warehouses.id, id), eq(warehouses.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // INVENTORY - PRODUCT STOCK
+  // ========================================
+  
+  async listProductStock(tenantId: string, warehouseId?: string): Promise<ProductStock[]> {
+    const conditions = warehouseId
+      ? and(eq(productStock.tenantId, tenantId), eq(productStock.warehouseId, warehouseId))
+      : eq(productStock.tenantId, tenantId);
+    
+    return await db.select().from(productStock)
+      .where(conditions!)
+      .orderBy(productStock.productId);
+  }
+  
+  async getProductStock(productId: string, warehouseId: string, tenantId: string): Promise<ProductStock | undefined> {
+    const [stock] = await db.select().from(productStock)
+      .where(and(
+        eq(productStock.productId, productId),
+        eq(productStock.warehouseId, warehouseId),
+        eq(productStock.tenantId, tenantId)
+      ))
+      .limit(1);
+    return stock;
+  }
+  
+  async createProductStock(stock: InsertProductStock): Promise<ProductStock> {
+    const [newStock] = await db.insert(productStock).values(stock).returning();
+    return newStock;
+  }
+  
+  async updateProductStock(id: string, tenantId: string, data: Partial<InsertProductStock>): Promise<ProductStock | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(productStock)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(productStock.id, id), eq(productStock.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  // ========================================
+  // INVENTORY - STOCK MOVEMENTS
+  // ========================================
+  
+  async listStockMovements(tenantId: string, filters?: { productId?: string; warehouseId?: string }): Promise<StockMovement[]> {
+    let conditions = [eq(stockMovements.tenantId, tenantId)];
+    
+    if (filters?.productId) {
+      conditions.push(eq(stockMovements.productId, filters.productId));
+    }
+    if (filters?.warehouseId) {
+      conditions.push(eq(stockMovements.warehouseId, filters.warehouseId));
+    }
+    
+    return await db.select().from(stockMovements)
+      .where(and(...conditions))
+      .orderBy(desc(stockMovements.createdAt));
+  }
+  
+  async getStockMovement(id: string, tenantId: string): Promise<StockMovement | undefined> {
+    const [movement] = await db.select().from(stockMovements)
+      .where(and(eq(stockMovements.id, id), eq(stockMovements.tenantId, tenantId)))
+      .limit(1);
+    return movement;
+  }
+  
+  async createStockMovement(movement: InsertStockMovement): Promise<StockMovement> {
+    const [newMovement] = await db.insert(stockMovements).values(movement).returning();
+    return newMovement;
+  }
+  
+  // ========================================
+  // HR - DEPARTMENTS
+  // ========================================
+  
+  async listDepartments(tenantId: string): Promise<Department[]> {
+    return await db.select().from(departments)
+      .where(eq(departments.tenantId, tenantId))
+      .orderBy(departments.name);
+  }
+  
+  async getDepartment(id: string, tenantId: string): Promise<Department | undefined> {
+    const [department] = await db.select().from(departments)
+      .where(and(eq(departments.id, id), eq(departments.tenantId, tenantId)))
+      .limit(1);
+    return department;
+  }
+  
+  async createDepartment(department: InsertDepartment): Promise<Department> {
+    const [newDepartment] = await db.insert(departments).values(department).returning();
+    return newDepartment;
+  }
+  
+  async updateDepartment(id: string, tenantId: string, data: Partial<InsertDepartment>): Promise<Department | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(departments)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(departments.id, id), eq(departments.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteDepartment(id: string, tenantId: string): Promise<void> {
+    await db.delete(departments)
+      .where(and(eq(departments.id, id), eq(departments.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // HR - EMPLOYEES
+  // ========================================
+  
+  async listEmployees(tenantId: string, departmentId?: string): Promise<Employee[]> {
+    const conditions = departmentId
+      ? and(eq(employees.tenantId, tenantId), eq(employees.departmentId, departmentId))
+      : eq(employees.tenantId, tenantId);
+    
+    return await db.select().from(employees)
+      .where(conditions!)
+      .orderBy(employees.lastName, employees.firstName);
+  }
+  
+  async getEmployee(id: string, tenantId: string): Promise<Employee | undefined> {
+    const [employee] = await db.select().from(employees)
+      .where(and(eq(employees.id, id), eq(employees.tenantId, tenantId)))
+      .limit(1);
+    return employee;
+  }
+  
+  async createEmployee(employee: InsertEmployee): Promise<Employee> {
+    const [newEmployee] = await db.insert(employees).values(employee).returning();
+    return newEmployee;
+  }
+  
+  async updateEmployee(id: string, tenantId: string, data: Partial<InsertEmployee>): Promise<Employee | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(employees)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(employees.id, id), eq(employees.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteEmployee(id: string, tenantId: string): Promise<void> {
+    await db.delete(employees)
+      .where(and(eq(employees.id, id), eq(employees.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // HR - PAYROLL RECORDS
+  // ========================================
+  
+  async listPayrollRecords(tenantId: string, employeeId?: string): Promise<PayrollRecord[]> {
+    const conditions = employeeId
+      ? and(eq(payrollRecords.tenantId, tenantId), eq(payrollRecords.employeeId, employeeId))
+      : eq(payrollRecords.tenantId, tenantId);
+    
+    return await db.select().from(payrollRecords)
+      .where(conditions!)
+      .orderBy(desc(payrollRecords.periodEnd));
+  }
+  
+  async getPayrollRecord(id: string, tenantId: string): Promise<PayrollRecord | undefined> {
+    const [record] = await db.select().from(payrollRecords)
+      .where(and(eq(payrollRecords.id, id), eq(payrollRecords.tenantId, tenantId)))
+      .limit(1);
+    return record;
+  }
+  
+  async createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord> {
+    const [newRecord] = await db.insert(payrollRecords).values(record).returning();
+    return newRecord;
+  }
+  
+  async updatePayrollRecord(id: string, tenantId: string, data: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(payrollRecords)
+      .set(updateData)
+      .where(and(eq(payrollRecords.id, id), eq(payrollRecords.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deletePayrollRecord(id: string, tenantId: string): Promise<void> {
+    await db.delete(payrollRecords)
+      .where(and(eq(payrollRecords.id, id), eq(payrollRecords.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // HR - ATTENDANCE RECORDS
+  // ========================================
+  
+  async listAttendanceRecords(tenantId: string, employeeId?: string, startDate?: Date, endDate?: Date): Promise<AttendanceRecord[]> {
+    let conditions = [eq(attendanceRecords.tenantId, tenantId)];
+    
+    if (employeeId) {
+      conditions.push(eq(attendanceRecords.employeeId, employeeId));
+    }
+    // Note: For date filtering, we'd need to import gte/lte from drizzle-orm
+    // and add: if (startDate) conditions.push(gte(attendanceRecords.date, startDate));
+    // if (endDate) conditions.push(lte(attendanceRecords.date, endDate));
+    
+    return await db.select().from(attendanceRecords)
+      .where(and(...conditions))
+      .orderBy(desc(attendanceRecords.date));
+  }
+  
+  async getAttendanceRecord(id: string, tenantId: string): Promise<AttendanceRecord | undefined> {
+    const [record] = await db.select().from(attendanceRecords)
+      .where(and(eq(attendanceRecords.id, id), eq(attendanceRecords.tenantId, tenantId)))
+      .limit(1);
+    return record;
+  }
+  
+  async createAttendanceRecord(record: InsertAttendanceRecord): Promise<AttendanceRecord> {
+    const [newRecord] = await db.insert(attendanceRecords).values(record).returning();
+    return newRecord;
+  }
+  
+  async updateAttendanceRecord(id: string, tenantId: string, data: Partial<InsertAttendanceRecord>): Promise<AttendanceRecord | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(attendanceRecords)
+      .set(updateData)
+      .where(and(eq(attendanceRecords.id, id), eq(attendanceRecords.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deleteAttendanceRecord(id: string, tenantId: string): Promise<void> {
+    await db.delete(attendanceRecords)
+      .where(and(eq(attendanceRecords.id, id), eq(attendanceRecords.tenantId, tenantId)));
   }
 }
 

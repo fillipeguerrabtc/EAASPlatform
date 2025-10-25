@@ -14,7 +14,9 @@ import {
   LayoutDashboard,
   Target,
   Activity,
-  Tag
+  Tag,
+  Warehouse,
+  UserCog
 } from "lucide-react";
 import {
   Sidebar,
@@ -119,6 +121,18 @@ export function AppSidebar() {
       url: "/finance",
       icon: DollarSign,
       testId: "finance",
+    },
+    {
+      title: "Estoque",
+      url: "/inventory",
+      icon: Warehouse,
+      testId: "inventory",
+    },
+    {
+      title: "Recursos Humanos",
+      url: "/hr",
+      icon: UserCog,
+      testId: "hr",
     },
     {
       title: "Categorias",

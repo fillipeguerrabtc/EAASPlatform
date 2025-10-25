@@ -31,7 +31,7 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Frontend:** React with Wouter for routing, TailwindCSS for styling, TanStack Query (v5) for data fetching, and TypeScript. Developed with Vite.
 - **Backend:** Node.js with Express, PostgreSQL (Neon) managed by Drizzle ORM, and TypeScript.
 - **Multi-tenant Core:** Schema-based isolation, subdomain routing simulation, and `X-Tenant-ID` header for API requests. Role-Based Access Control (RBAC) implemented.
-- **Database Schema:** 16 tables covering tenants, users, marketplace (products, carts, orders), CRM, Omnichat, AI knowledge base, payments, and calendar events.
+- **Database Schema:** 24 tables covering tenants, users, marketplace (products, carts, orders), CRM (customers, segments, pipeline, deals, activities), Omnichat (conversations, messages), AI knowledge base, payments, calendar events, Inventory (warehouses, stock, movements), and HR (departments, employees, payroll, attendance).
 - **Backend API:** Comprehensive CRUD operations for all major entities (tenants, products, customers, conversations, knowledge base, orders, carts, payments).
 - **Public Marketplace (`/shop`):** Secure product display, search, filtering, and server-side calculated pricing for cart management and Stripe checkout (sandbox).
 - **AI System:** RAG-based knowledge base search with OpenAI GPT-5 fallback, per-tenant isolation, and editable content. Interactions are logged for learning.
