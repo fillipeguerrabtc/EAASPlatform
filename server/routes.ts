@@ -431,11 +431,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PRODUCTS
   // ========================================
 
-  app.get("/api/products", isAuthenticated, async (req: Request, res: Response) => {
+  // PUBLIC ENDPOINT: Allow anonymous access to products (for marketplace)
+  app.get("/api/products", async (req: Request, res: Response) => {
     try {
-      const tenantId = getTenantId(req);
+      // Try to get tenantId from session, otherwise use header
+      let tenantId: string;
+      try {
+        tenantId = getTenantId(req);
+      } catch {
+        // Anonymous access - use X-Tenant-ID header or default tenant
+        tenantId = getTenantIdFromSessionOrHeader(req);
+      }
+      
       const productsList = await storage.listProducts(tenantId);
-      res.json(productsList);
+      // Only return active products for public access
+      const activeProducts = productsList.filter(p => p.isActive);
+      res.json(activeProducts);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
