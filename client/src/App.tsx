@@ -75,8 +75,18 @@ function Router() {
     );
   }
 
-  // ROUTE 2: admin.eaas.com (Super Admin Dashboard)
-  if (tenantContext?.isSuperAdminRoute && isAuthenticated) {
+  // ROUTE 2: admin.eaas.com (Super Admin Dashboard) - SECURITY: Check role
+  if (tenantContext?.isSuperAdminRoute) {
+    if (!isAuthenticated) {
+      return (
+        <Switch>
+          <Route path="/" component={LoginPage} />
+          <Route component={LoginPage} />
+        </Switch>
+      );
+    }
+
+    // TODO: Add user.permissions.isSuperAdmin check here for extra security
     return (
       <Switch>
         <Route path="/" component={Dashboard} />

@@ -34,18 +34,33 @@ import {
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
 
-// Tenant context middleware - reads from authenticated session
+// Tenant context middleware - PRIORITY ORDER:
+// 1. Detected tenant from subdomain (req.detectedTenant)
+// 2. Authenticated session (req.user)
+// 3. X-Tenant-ID header (webhooks)
 function getTenantId(req: Request): string {
+  // PRIORITY 1: Subdomain detection (tenant.eaas.com)
+  if (req.detectedTenant?.id) {
+    return req.detectedTenant.id;
+  }
+
+  // PRIORITY 2: Authenticated session
   try {
     return getTenantIdFromSession(req);
   } catch (error) {
-    // If session missing, try header fallback (for webhooks)
+    // PRIORITY 3: Header fallback (for webhooks)
     return getTenantIdFromSessionOrHeader(req);
   }
 }
 
-// Strict tenant resolution (no fallback) - for webhooks and multi-tenant enforcement
+// Strict tenant resolution (subdomain or header only, NO session fallback)
 function getTenantIdStrict(req: Request): string | null {
+  // PRIORITY 1: Subdomain detection
+  if (req.detectedTenant?.id) {
+    return req.detectedTenant.id;
+  }
+
+  // PRIORITY 2: X-Tenant-ID header
   const tenantHeader = req.headers["x-tenant-id"] as string;
   return tenantHeader || null;
 }
