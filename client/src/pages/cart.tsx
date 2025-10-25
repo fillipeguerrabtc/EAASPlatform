@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShoppingCart, Trash2, Package, ArrowLeft } from "lucide-react";
+import { ShoppingCart, Trash2, Package, ArrowLeft, CreditCard } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { type Cart, type Product } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { useEffect } from "react";
+import { EaasLogo } from "@/components/eaas-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface CartItem {
   productId: string;
@@ -98,29 +100,52 @@ export default function CartPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex items-center gap-4 mb-8">
-          <Button
-            variant="ghost"
-            onClick={() => navigate("/shop")}
-            data-testid="button-back-to-shop"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            {t('cart.continueShopping')}
-          </Button>
+      {/* Premium Header */}
+      <header className="border-b sticky top-0 bg-background/80 backdrop-blur-lg z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="cursor-pointer" onClick={() => navigate("/")}>
+              <EaasLogo size="md" variant="full" />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <ThemeToggle />
+              <Button 
+                variant="ghost" 
+                onClick={() => navigate("/shop")}
+                data-testid="button-header-shop"
+              >
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                Marketplace
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+
+        {/* Premium Hero Section */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-emerald-50/50 dark:from-blue-950/20 dark:via-purple-950/10 dark:to-emerald-950/20 border rounded-xl mb-8">
+          <div className="p-6 sm:p-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 mb-4">
+              <ShoppingCart className="h-4 w-4 text-blue-600 dark:text-blue-500" />
+              <span className="text-sm font-medium">Meu Carrinho</span>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-bold mb-2" data-testid="text-cart-title">
+              <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600 bg-clip-text text-transparent dark:from-blue-500 dark:via-purple-500 dark:to-emerald-500">
+                {t('cart.title')}
+              </span>
+            </h1>
+            <p className="text-muted-foreground">
+              {t('cart.subtitle')}
+            </p>
+          </div>
+          <div className="absolute inset-0 bg-gradient-to-t from-background/50 via-transparent to-transparent pointer-events-none rounded-xl" />
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-6">
-            <div>
-              <h1 className="text-4xl font-bold mb-2" data-testid="text-cart-title">
-                {t('cart.title')}
-              </h1>
-              <p className="text-muted-foreground">
-                {t('cart.subtitle')}
-              </p>
-            </div>
 
             {!cart || !products ? (
               <div className="space-y-4">
@@ -205,27 +230,35 @@ export default function CartPage() {
             )}
           </div>
 
-          {/* Order Summary */}
+          {/* Order Summary - Premium */}
           {cartWithProducts.length > 0 && (
             <div className="lg:col-span-1">
-              <Card className="sticky top-8">
-                <CardHeader>
-                  <CardTitle>{t('checkout.title')}</CardTitle>
+              <Card className="sticky top-24 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-purple-500/5 to-blue-500/5" />
+                <CardHeader className="relative">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500/10 to-purple-500/10">
+                      <CreditCard className="h-5 w-5 text-emerald-600 dark:text-emerald-500" />
+                    </div>
+                    <CardTitle>{t('checkout.title')}</CardTitle>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between text-sm">
+                <CardContent className="space-y-4 relative">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                     <span className="text-muted-foreground">
                       {cartItems.length} {cartItems.length === 1 ? 'item' : t('cart.items')}
                     </span>
                   </div>
-                  <div className="border-t pt-4">
-                    <div className="flex justify-between mb-2">
+                  <div className="border-t pt-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-muted-foreground">{t('cart.subtotal')}</span>
-                      <span data-testid="text-subtotal">R$ {subtotal.toFixed(2)}</span>
+                      <span className="font-medium" data-testid="text-subtotal">R$ {subtotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xl font-bold">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xl font-bold pt-2 border-t">
                       <span>{t('cart.total')}</span>
-                      <span data-testid="text-total">R$ {subtotal.toFixed(2)}</span>
+                      <span className="text-emerald-600 dark:text-emerald-500" data-testid="text-total">
+                        R$ {subtotal.toFixed(2)}
+                      </span>
                     </div>
                   </div>
                   <div className="pt-4 border-t">
@@ -234,13 +267,14 @@ export default function CartPage() {
                     </p>
                   </div>
                 </CardContent>
-                <CardFooter>
+                <CardFooter className="relative">
                   <Button 
                     className="w-full" 
                     size="lg"
                     onClick={handleCheckout}
                     data-testid="button-proceed-checkout"
                   >
+                    <CreditCard className="mr-2 h-5 w-5" />
                     {t('cart.proceedToCheckout')}
                   </Button>
                 </CardFooter>
