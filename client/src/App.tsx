@@ -71,11 +71,11 @@ function Router() {
           <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
-          <Route path="/my-account" component={CustomerArea} />
         </>
       ) : (
         <>
           <Route path="/" component={Dashboard} />
+          <Route path="/my-account" component={CustomerArea} />
           <Route path="/tenants" component={Tenants} />
           <Route path="/marketplace" component={Marketplace} />
           <Route path="/customers" component={CRM} />
@@ -102,7 +102,6 @@ function Router() {
           <Route path="/hr" component={HRPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
-          <Route path="/my-account" component={CustomerArea} />
         </>
       )}
       <Route component={NotFound} />

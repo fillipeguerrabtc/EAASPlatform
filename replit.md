@@ -41,7 +41,10 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Categories Admin UI:** Hierarchical category management with infinite recursive visualization, cycle prevention, and intelligent delete functionality.
 - **Financial Management ERP:** Dashboard with dynamic KPIs, CRUD for revenues and expenses, and DRE reports. Zod validation for all POST/PATCH routes.
 - **WhatsApp Widget:** Floating widget with pre-formatted messages, integrated with Twilio for automated AI responses and CRM integration (auto-creates customer, conversation, and messages).
-- **Planned Features (Wave 2 - Tenant Branding):** Manual branding setup (logo, favicon, color picker) and an "Intelligent Brand Scanner" using Puppeteer to automatically extract and apply branding elements (colors, fonts, logos, spacing, shadows, borders) from a provided website URL.
+- **Anonymous Shopping System:** Complete support for anonymous cart management with sessionId-based tracking. Endpoints GET/POST/PATCH `/api/carts` are now public, allowing customers to shop without authentication. Schema modified with nullable `customerId` and new `sessionId` field.
+- **Customer Area (`/my-account`):** Complete authenticated customer dashboard with tabs for order history, tracking, shopping cart, and 24/7 AI support. Includes order status badges, detailed item breakdowns, and integrated Omnichat access.
+- **Brand Scanner with Puppeteer (PRODUCTION):** Intelligent Brand Scanner using Puppeteer to automatically extract comprehensive branding elements from websites: colors (primary, secondary, accent, background, foreground), logos, favicons, typography (fonts), and spacing (border-radius, padding). Available at POST `/api/tenants/:id/scan-brand` with `websiteUrl` parameter. Also includes legacy OpenAI Vision API endpoint for logo-only color extraction at `/api/tenants/:id/scan-brand-colors`.
+- **Multi-Provider OAuth:** Replit Auth integration supporting Google, Apple, GitHub, and X (Twitter) authentication providers with automatic user creation and session management.
 
 ### External Dependencies
 - **Stripe:** For payment processing (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`).
