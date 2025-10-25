@@ -25,6 +25,7 @@ import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SEO } from "@/components/seo";
 import { ChatWidget } from "@/components/chat-widget";
+import { WhatsAppWidget } from "@/components/whatsapp-widget";
 
 const productTypeIcons = {
   product: Package,
@@ -346,6 +347,9 @@ export default function Shop() {
     
     {/* AI Chat Widget */}
     <ChatWidget />
+    
+    {/* WhatsApp Widget */}
+    <WhatsAppWidget />
     </>
   );
 }

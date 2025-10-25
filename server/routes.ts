@@ -1238,6 +1238,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content: Body,
       }, tenantId);
       
+      // ========================================
+      // AI AUTO-RESPONSE via WhatsApp
+      // ========================================
+      
+      // Process message with AI (Knowledge Base + GPT-5 fallback)
+      const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
+      const matchedItem = knowledgeBaseItems.find(item => 
+        item.title.toLowerCase().includes(Body.toLowerCase()) ||
+        item.content.toLowerCase().includes(Body.toLowerCase())
+      );
+      
+      let aiResponse: string;
+      let source: "knowledge_base" | "openai";
+      
+      if (matchedItem) {
+        aiResponse = matchedItem.content;
+        source = "knowledge_base";
+      } else {
+        // Fallback to OpenAI GPT-5
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({
+          baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+          apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+        });
+        
+        const completion = await openai.chat.completions.create({
+          model: "gpt-5",
+          messages: [
+            { 
+              role: "system", 
+              content: "Você é a assistente virtual da EAAS, uma plataforma completa de gestão empresarial. Seja profissional, prestativa e objetiva. Ajude com dúvidas sobre produtos, serviços e vendas. Sempre mantenha um tom amigável e profissional." 
+            },
+            { role: "user", content: Body }
+          ],
+          max_completion_tokens: 300,
+        });
+        
+        aiResponse = completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua mensagem. Por favor, tente novamente.";
+        source = "openai";
+      }
+      
+      // Send AI response via WhatsApp FIRST (then save only if successful)
+      if (twilioClient) {
+        const twilioResponse = await twilioClient.messages.create({
+          from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+          to: From,
+          body: aiResponse,
+        });
+        
+        // Only save AI response if Twilio send was successful
+        if (twilioResponse.status !== "failed") {
+          await storage.createMessage({
+            conversationId: conversation.id,
+            senderType: "ai",
+            content: aiResponse,
+          }, tenantId);
+          
+          console.log(`🤖 AI responded via WhatsApp (source: ${source}, status: ${twilioResponse.status})`);
+        } else {
+          console.error(`❌ Failed to send WhatsApp message: ${twilioResponse.status}`);
+        }
+      }
+      
       // Respond with TwiML (required by Twilio)
       res.type("text/xml");
       res.send("<Response></Response>");

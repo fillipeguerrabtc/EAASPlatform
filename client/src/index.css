@@ -70,6 +70,8 @@
 
   --input: 220 13% 91%;
   --ring: 157 74% 40%;
+  --whatsapp: 142 79% 45%;
+  --whatsapp-foreground: 0 0% 100%;
   --chart-1: 157 74% 40%;
   --chart-2: 250 95% 66%;
   --chart-3: 47 96% 53%;
@@ -120,6 +122,10 @@
   /* Fallback for older browsers */
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
+
+  /* Fallback for older browsers */
+  --whatsapp-border: hsl(var(--whatsapp));
+  --whatsapp-border: hsl(from hsl(var(--whatsapp)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
 .dark {
@@ -188,6 +194,8 @@
 
   --input: 220 13% 18%;
   --ring: 157 74% 45%;
+  --whatsapp: 142 79% 45%;
+  --whatsapp-foreground: 0 0% 100%;
   --chart-1: 157 74% 50%;
   --chart-2: 250 95% 70%;
   --chart-3: 47 96% 58%;
