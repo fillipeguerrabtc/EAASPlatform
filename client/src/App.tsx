@@ -18,6 +18,8 @@ import Omnichat from "@/pages/omnichat";
 import KnowledgeBasePage from "@/pages/knowledge-base";
 import Tenants from "@/pages/tenants";
 import Checkout from "@/pages/checkout";
+import Payments from "@/pages/payments";
+import CalendarPage from "@/pages/calendar";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -48,6 +50,8 @@ function Router() {
           <Route path="/omnichat" component={Omnichat} />
           <Route path="/knowledge-base" component={KnowledgeBasePage} />
           <Route path="/checkout" component={Checkout} />
+          <Route path="/payments" component={Payments} />
+          <Route path="/calendar" component={CalendarPage} />
         </>
       )}
       <Route component={NotFound} />

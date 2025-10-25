@@ -12,6 +12,7 @@ import {
   insertPaymentSchema,
   insertOrderSchema,
   insertCartSchema,
+  insertCalendarEventSchema,
 } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
@@ -729,6 +730,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment CRUD routes
+  app.get("/api/payments", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const paymentsList = await storage.listPayments(tenantId);
+      res.json(paymentsList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/payments", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -752,6 +763,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Payment not found" });
       }
       res.json(payment);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // CALENDAR EVENTS
+  // ========================================
+
+  app.get("/api/calendar-events", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const events = await storage.listCalendarEvents(tenantId);
+      res.json(events);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/calendar-events", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const bodyData = insertCalendarEventSchema.omit({ tenantId: true }).parse(req.body);
+      // Convert ISO strings to Date objects
+      const data = {
+        ...bodyData,
+        tenantId,
+        startTime: new Date(bodyData.startTime as any),
+        endTime: new Date(bodyData.endTime as any),
+      };
+      const event = await storage.createCalendarEvent(data);
+      res.status(201).json(event);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/calendar-events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const event = await storage.getCalendarEvent(req.params.id, tenantId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/calendar-events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      const bodyData = insertCalendarEventSchema.omit({ tenantId: true }).partial().parse(req.body);
+      // Convert ISO strings to Date objects if present
+      const data: any = { ...bodyData };
+      if (data.startTime) data.startTime = new Date(data.startTime);
+      if (data.endTime) data.endTime = new Date(data.endTime);
+      const event = await storage.updateCalendarEvent(req.params.id, tenantId, data);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/calendar-events/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      await storage.deleteCalendarEvent(req.params.id, tenantId);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

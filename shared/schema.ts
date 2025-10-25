@@ -254,6 +254,44 @@ export const calendarEvents = pgTable("calendar_events", {
 });
 
 // ========================================
+// ERP - FINANCIAL MODULE
+// ========================================
+
+export const transactionTypeEnum = pgEnum("transaction_type", ["income", "expense", "transfer"]);
+export const transactionCategoryEnum = pgEnum("transaction_category", ["sales", "purchase", "salary", "rent", "utilities", "tax", "other"]);
+
+// Financial Accounts (Bank Accounts, Cash, etc.)
+export const financialAccounts = pgTable("financial_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  type: text("type").notNull(), // checking, savings, cash, credit_card
+  balance: decimal("balance", { precision: 10, scale: 2 }).default("0").notNull(),
+  currency: text("currency").default("BRL").notNull(),
+  bankName: text("bank_name"),
+  accountNumber: text("account_number"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Financial Transactions
+export const financialTransactions = pgTable("financial_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  accountId: varchar("account_id").references(() => financialAccounts.id, { onDelete: "cascade" }).notNull(),
+  type: transactionTypeEnum("type").notNull(),
+  category: transactionCategoryEnum("category").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  description: text("description").notNull(),
+  date: timestamp("date").notNull(),
+  reference: text("reference"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ========================================
 // ZOD SCHEMAS & TYPES
 // ========================================
 
@@ -326,3 +364,13 @@ export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
 export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
 export type UserTenant = typeof userTenants.$inferSelect;
+
+// Financial Accounts
+export const insertFinancialAccountSchema = createInsertSchema(financialAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinancialAccount = z.infer<typeof insertFinancialAccountSchema>;
+export type FinancialAccount = typeof financialAccounts.$inferSelect;
+
+// Financial Transactions
+export const insertFinancialTransactionSchema = createInsertSchema(financialTransactions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
+export type FinancialTransaction = typeof financialTransactions.$inferSelect;

@@ -21,6 +21,8 @@ import {
   type InsertCart,
   type UserTenant,
   type InsertUserTenant,
+  type CalendarEvent,
+  type InsertCalendarEvent,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -35,6 +37,7 @@ import {
   orders,
   carts,
   userTenants,
+  calendarEvents,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -87,6 +90,7 @@ export interface IStorage {
   deleteKnowledgeBaseItem(id: string, tenantId: string): Promise<void>;
   
   // Payments
+  listPayments(tenantId: string): Promise<Payment[]>;
   createPayment(payment: InsertPayment): Promise<Payment>;
   getPayment(id: string, tenantId: string): Promise<Payment | undefined>;
   updatePayment(id: string, tenantId: string, data: Partial<InsertPayment>): Promise<Payment | undefined>;
@@ -102,6 +106,13 @@ export interface IStorage {
   getCartByCustomer(customerId: string, tenantId: string): Promise<Cart | undefined>;
   createCart(cart: InsertCart): Promise<Cart>;
   updateCart(id: string, tenantId: string, data: Partial<InsertCart>): Promise<Cart | undefined>;
+  
+  // Calendar Events
+  listCalendarEvents(tenantId: string): Promise<CalendarEvent[]>;
+  getCalendarEvent(id: string, tenantId: string): Promise<CalendarEvent | undefined>;
+  createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
+  updateCalendarEvent(id: string, tenantId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined>;
+  deleteCalendarEvent(id: string, tenantId: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -347,6 +358,12 @@ export class DbStorage implements IStorage {
   // PAYMENTS
   // ========================================
 
+  async listPayments(tenantId: string): Promise<Payment[]> {
+    return await db.select().from(payments)
+      .where(eq(payments.tenantId, tenantId))
+      .orderBy(desc(payments.createdAt));
+  }
+
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
     const result = await db.insert(payments).values(insertPayment).returning();
     return result[0];
@@ -429,6 +446,42 @@ export class DbStorage implements IStorage {
       .where(and(eq(carts.id, id), eq(carts.tenantId, tenantId)))
       .returning();
     return result[0];
+  }
+
+  // ========================================
+  // CALENDAR EVENTS
+  // ========================================
+
+  async listCalendarEvents(tenantId: string): Promise<CalendarEvent[]> {
+    return await db.select().from(calendarEvents)
+      .where(eq(calendarEvents.tenantId, tenantId))
+      .orderBy(desc(calendarEvents.startTime));
+  }
+
+  async getCalendarEvent(id: string, tenantId: string): Promise<CalendarEvent | undefined> {
+    const result = await db.select().from(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.tenantId, tenantId)))
+      .limit(1);
+    return result[0];
+  }
+
+  async createCalendarEvent(insertEvent: InsertCalendarEvent): Promise<CalendarEvent> {
+    const result = await db.insert(calendarEvents).values(insertEvent).returning();
+    return result[0];
+  }
+
+  async updateCalendarEvent(id: string, tenantId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const result = await db.update(calendarEvents)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.tenantId, tenantId)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCalendarEvent(id: string, tenantId: string): Promise<void> {
+    await db.delete(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.tenantId, tenantId)));
   }
 }
 
