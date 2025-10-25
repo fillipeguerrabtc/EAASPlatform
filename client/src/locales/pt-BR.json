@@ -216,7 +216,20 @@
     "createSuccess": "Evento criado com sucesso",
     "createError": "Falha ao criar evento",
     "deleteSuccess": "Evento excluído com sucesso",
-    "deleteError": "Falha ao excluir evento"
+    "deleteError": "Falha ao excluir evento",
+    "deleteConfirm": "Tem certeza que deseja deletar o evento \"{{title}}\"?",
+    "next": "Próximo",
+    "previous": "Anterior",
+    "today": "Hoje",
+    "month": "Mês",
+    "week": "Semana",
+    "day": "Dia",
+    "agenda": "Agenda",
+    "date": "Data",
+    "time": "Hora",
+    "event": "Evento",
+    "noEventsInRange": "Nenhum evento neste período",
+    "showMore": "mais"
   },
   "shop": {
     "title": "Loja",

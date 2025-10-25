@@ -216,7 +216,20 @@
     "createSuccess": "Event created successfully",
     "createError": "Failed to create event",
     "deleteSuccess": "Event deleted successfully",
-    "deleteError": "Failed to delete event"
+    "deleteError": "Failed to delete event",
+    "deleteConfirm": "Are you sure you want to delete the event \"{{title}}\"?",
+    "next": "Next",
+    "previous": "Previous",
+    "today": "Today",
+    "month": "Month",
+    "week": "Week",
+    "day": "Day",
+    "agenda": "Agenda",
+    "date": "Date",
+    "time": "Time",
+    "event": "Event",
+    "noEventsInRange": "No events in this range",
+    "showMore": "more"
   },
   "shop": {
     "title": "Shop",
