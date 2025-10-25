@@ -97,6 +97,12 @@ export function AppSidebar() {
       icon: Package,
       testId: "categories",
     },
+    {
+      title: "Configurações",
+      url: "/tenant-settings",
+      icon: Settings,
+      testId: "tenant-settings",
+    },
   ];
 
   return (

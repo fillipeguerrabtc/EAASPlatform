@@ -137,6 +137,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Brand Scanner: Extract colors from logo using AI
+  app.post("/api/tenants/:id/scan-brand-colors", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const requestedTenantId = req.params.id;
+      const userTenantId = getTenantId(req);
+      
+      if (requestedTenantId !== userTenantId) {
+        return res.status(403).json({ error: "Forbidden: Cannot access other tenants' data" });
+      }
+
+      const { logoUrl } = req.body;
+      
+      if (!logoUrl) {
+        return res.status(400).json({ error: "logoUrl is required" });
+      }
+
+      // Use OpenAI Vision API to analyze the logo and extract brand colors
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          {
+            role: "system",
+            content: `You are a brand color expert. Analyze the provided logo image and extract the main brand colors. 
+            Return ONLY a valid JSON object with this exact structure (no markdown, no code blocks):
+            {
+              "primary": "#HEXCODE",
+              "secondary": "#HEXCODE",
+              "accent": "#HEXCODE",
+              "background": "#FFFFFF",
+              "foreground": "#000000"
+            }
+            
+            Guidelines:
+            - primary: The dominant/most prominent brand color
+            - secondary: A complementary or secondary brand color
+            - accent: An accent color for highlights
+            - background: Suggest #FFFFFF for light mode or appropriate background
+            - foreground: Suggest #000000 for text or appropriate text color
+            - All colors must be valid hex codes starting with #
+            - Return ONLY the JSON object, nothing else`
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: {
+                  url: logoUrl
+                }
+              },
+              {
+                type: "text",
+                text: "Extract the brand color palette from this logo. Return only JSON."
+              }
+            ]
+          }
+        ],
+        max_completion_tokens: 200,
+      });
+
+      const responseText = completion.choices[0]?.message?.content || "{}";
+      
+      // Parse the AI response to extract colors
+      let colors;
+      try {
+        // Remove any markdown code blocks if present
+        const cleanedResponse = responseText
+          .replace(/```json\n?/g, '')
+          .replace(/```\n?/g, '')
+          .trim();
+        
+        colors = JSON.parse(cleanedResponse);
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", responseText);
+        return res.status(500).json({ 
+          error: "Failed to extract colors from logo",
+          details: "AI response was not valid JSON"
+        });
+      }
+
+      // Validate that we have the required color fields
+      const requiredFields = ['primary', 'secondary', 'accent', 'background', 'foreground'];
+      const missingFields = requiredFields.filter(field => !colors[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(500).json({ 
+          error: "Incomplete color extraction",
+          details: `Missing fields: ${missingFields.join(', ')}`
+        });
+      }
+
+      res.json({ colors });
+    } catch (error: any) {
+      console.error("Brand scanner error:", error);
+      res.status(500).json({ 
+        error: "Failed to scan brand colors",
+        details: error.message 
+      });
+    }
+  });
+
   // ========================================
   // PRODUCTS
   // ========================================

@@ -38,7 +38,10 @@ export const tenants = pgTable("tenants", {
   name: text("name").notNull(),
   subdomain: text("subdomain").notNull().unique(),
   logo: text("logo"),
+  logoUrl: text("logo_url"),
+  faviconUrl: text("favicon_url"),
   primaryColor: text("primary_color").default("#2563EB"),
+  customTheme: jsonb("custom_theme"),
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
   status: text("status").default("active"),
   settings: jsonb("settings").default({}),
@@ -302,6 +305,51 @@ export const financialTransactions = pgTable("financial_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ========================================
+// CUSTOM TYPES
+// ========================================
+
+// Custom Theme Structure for Tenant Branding
+export interface CustomTheme {
+  colors?: {
+    primary?: string;
+    secondary?: string;
+    accent?: string;
+    background?: string;
+    foreground?: string;
+    muted?: string;
+    mutedForeground?: string;
+    card?: string;
+    cardForeground?: string;
+    border?: string;
+  };
+  typography?: {
+    fontFamily?: string;
+    headings?: {
+      h1?: { fontSize?: string; fontWeight?: string; lineHeight?: string };
+      h2?: { fontSize?: string; fontWeight?: string; lineHeight?: string };
+      h3?: { fontSize?: string; fontWeight?: string; lineHeight?: string };
+    };
+    body?: { fontSize?: string; fontWeight?: string; lineHeight?: string };
+  };
+  spacing?: {
+    sm?: string;
+    md?: string;
+    lg?: string;
+    xl?: string;
+  };
+  shadows?: {
+    sm?: string;
+    md?: string;
+    lg?: string;
+  };
+  borderRadius?: {
+    sm?: string;
+    md?: string;
+    lg?: string;
+  };
+}
 
 // ========================================
 // ZOD SCHEMAS & TYPES

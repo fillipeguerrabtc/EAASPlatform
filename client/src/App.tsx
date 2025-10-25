@@ -9,6 +9,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { UserMenu } from "@/components/user-menu";
+import { DynamicFavicon } from "@/components/dynamic-favicon";
 import { useAuth } from "@/hooks/useAuth";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -29,6 +30,7 @@ import FinanceRevenues from "@/pages/finance-revenues";
 import FinanceExpenses from "@/pages/finance-expenses";
 import FinanceReports from "@/pages/finance-reports";
 import CategoriesPage from "@/pages/categories";
+import TenantSettings from "@/pages/tenant-settings";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -73,6 +75,7 @@ function Router() {
           <Route path="/finance/expenses" component={FinanceExpenses} />
           <Route path="/finance/reports" component={FinanceReports} />
           <Route path="/categories" component={CategoriesPage} />
+          <Route path="/tenant-settings" component={TenantSettings} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>
@@ -92,6 +95,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ThemeProvider defaultTheme="light" storageKey="eaas-theme">
+          <DynamicFavicon />
           <AuthenticatedLayout style={style as React.CSSProperties}>
             <Router />
           </AuthenticatedLayout>
