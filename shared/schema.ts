@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, jsonb, decimal, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, jsonb, decimal, pgEnum, index, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -13,6 +13,20 @@ export const conversationStatusEnum = pgEnum("conversation_status", ["open", "in
 export const productTypeEnum = pgEnum("product_type", ["product", "service", "experience", "real_estate", "vehicle"]);
 export const paymentStatusEnum = pgEnum("payment_status", ["pending", "processing", "succeeded", "failed", "refunded"]);
 export const orderStatusEnum = pgEnum("order_status", ["draft", "pending", "confirmed", "processing", "completed", "cancelled"]);
+
+// ========================================
+// AUTHENTICATION (Replit Auth)
+// ========================================
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
 
 // ========================================
 // MULTI-TENANT CORE
@@ -41,10 +55,20 @@ export const users = pgTable("users", {
   avatar: text("avatar"),
   role: userRoleEnum("role").default("customer").notNull(),
   password: text("password"),
-  replitAuthId: text("replit_auth_id"),
+  replitAuthId: text("replit_auth_id").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// User-Tenant Membership (for multi-tenant access)
+export const userTenants = pgTable("user_tenants", {
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  role: userRoleEnum("role").default("agent").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.tenantId] }),
+}));
 
 // ========================================
 // MARKETPLACE UNIVERSAL
@@ -297,3 +321,8 @@ export type Payment = typeof payments.$inferSelect;
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
+
+// User-Tenant Membership
+export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
+export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
+export type UserTenant = typeof userTenants.$inferSelect;

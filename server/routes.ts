@@ -14,11 +14,16 @@ import {
   insertCartSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
 
-// Tenant context middleware
+// Tenant context middleware - reads from authenticated session
 function getTenantId(req: Request): string {
-  const tenantHeader = req.headers["x-tenant-id"] as string;
-  return tenantHeader || "default";
+  try {
+    return getTenantIdFromSession(req);
+  } catch (error) {
+    // If session missing, try header fallback (for webhooks)
+    return getTenantIdFromSessionOrHeader(req);
+  }
 }
 
 // Strict tenant resolution (no fallback) - for webhooks and multi-tenant enforcement
@@ -28,6 +33,35 @@ function getTenantIdStrict(req: Request): string | null {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup Replit Auth middleware
+  await setupAuth(app);
+
+  // ========================================
+  // AUTHENTICATION
+  // ========================================
+
+  // Get current authenticated user (no auth guard - returns null if not authenticated)
+  app.get('/api/auth/user', async (req: any, res) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      if (!userId) {
+        // Not authenticated - return null to allow frontend to show landing page
+        return res.status(200).json(null);
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        // User deleted from database but session still exists
+        return res.status(200).json(null);
+      }
+      
+      res.json(user);
+    } catch (error: any) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
   // ========================================
   // TENANTS
   // ========================================
@@ -37,7 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   //   - super_admin: can list all tenants
   //   - tenant_admin: can only see their own tenant
   //   - other roles: no access
-  app.get("/api/tenants", async (req: Request, res: Response) => {
+  app.get("/api/tenants", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantsList = await storage.listTenants();
       res.json(tenantsList);
@@ -46,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tenants/:id", async (req: Request, res: Response) => {
+  app.get("/api/tenants/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const requestedTenantId = req.params.id;
       const userTenantId = getTenantId(req);
@@ -65,7 +99,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tenants", async (req: Request, res: Response) => {
+  app.post("/api/tenants", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = insertTenantSchema.parse(req.body);
       const tenant = await storage.createTenant(data);
@@ -78,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/tenants/:id", async (req: Request, res: Response) => {
+  app.patch("/api/tenants/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const requestedTenantId = req.params.id;
       const userTenantId = getTenantId(req);
@@ -105,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PRODUCTS
   // ========================================
 
-  app.get("/api/products", async (req: Request, res: Response) => {
+  app.get("/api/products", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const productsList = await storage.listProducts(tenantId);
@@ -115,7 +149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/products/:id", async (req: Request, res: Response) => {
+  app.get("/api/products/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const product = await storage.getProduct(req.params.id, tenantId);
@@ -128,7 +162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/products", async (req: Request, res: Response) => {
+  app.post("/api/products", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertProductSchema.omit({ tenantId: true }).parse(req.body);
@@ -143,7 +177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/products/:id", async (req: Request, res: Response) => {
+  app.patch("/api/products/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertProductSchema.omit({ tenantId: true }).partial().parse(req.body);
@@ -160,7 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/products/:id", async (req: Request, res: Response) => {
+  app.delete("/api/products/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       await storage.deleteProduct(req.params.id, tenantId);
@@ -174,7 +208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CUSTOMERS
   // ========================================
 
-  app.get("/api/customers", async (req: Request, res: Response) => {
+  app.get("/api/customers", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const customersList = await storage.listCustomers(tenantId);
@@ -184,7 +218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/customers/:id", async (req: Request, res: Response) => {
+  app.get("/api/customers/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const customer = await storage.getCustomer(req.params.id, tenantId);
@@ -197,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/customers", async (req: Request, res: Response) => {
+  app.post("/api/customers", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertCustomerSchema.omit({ tenantId: true }).parse(req.body);
@@ -212,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/customers/:id", async (req: Request, res: Response) => {
+  app.patch("/api/customers/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertCustomerSchema.omit({ tenantId: true }).partial().parse(req.body);
@@ -233,7 +267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CONVERSATIONS
   // ========================================
 
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const conversationsList = await storage.listConversations(tenantId);
@@ -243,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const conversation = await storage.getConversation(req.params.id, tenantId);
@@ -256,7 +290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertConversationSchema.omit({ tenantId: true }).parse(req.body);
@@ -271,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.patch("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertConversationSchema.omit({ tenantId: true }).partial().parse(req.body);
@@ -292,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MESSAGES
   // ========================================
 
-  app.get("/api/conversations/:conversationId/messages", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:conversationId/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const messagesList = await storage.listMessages(req.params.conversationId, tenantId);
@@ -302,7 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/messages", async (req: Request, res: Response) => {
+  app.post("/api/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertMessageSchema.parse(req.body);
@@ -320,7 +354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // KNOWLEDGE BASE
   // ========================================
 
-  app.get("/api/knowledge-base", async (req: Request, res: Response) => {
+  app.get("/api/knowledge-base", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const items = await storage.listKnowledgeBase(tenantId);
@@ -330,7 +364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/knowledge-base/:id", async (req: Request, res: Response) => {
+  app.get("/api/knowledge-base/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const item = await storage.getKnowledgeBaseItem(req.params.id, tenantId);
@@ -343,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/knowledge-base", async (req: Request, res: Response) => {
+  app.post("/api/knowledge-base", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertKnowledgeBaseSchema.omit({ tenantId: true, vectorId: true }).parse(req.body);
@@ -358,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/knowledge-base/:id", async (req: Request, res: Response) => {
+  app.patch("/api/knowledge-base/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertKnowledgeBaseSchema.omit({ tenantId: true, vectorId: true }).partial().parse(req.body);
@@ -375,7 +409,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/knowledge-base/:id", async (req: Request, res: Response) => {
+  app.delete("/api/knowledge-base/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       await storage.deleteKnowledgeBaseItem(req.params.id, tenantId);
@@ -389,7 +423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ORDERS
   // ========================================
 
-  app.get("/api/orders", async (req: Request, res: Response) => {
+  app.get("/api/orders", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const ordersList = await storage.listOrders(tenantId);
@@ -399,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/orders/:id", async (req: Request, res: Response) => {
+  app.get("/api/orders/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const order = await storage.getOrder(req.params.id, tenantId);
@@ -412,7 +446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/orders", async (req: Request, res: Response) => {
+  app.post("/api/orders", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertOrderSchema.omit({ tenantId: true }).parse(req.body);
@@ -427,7 +461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/orders/:id", async (req: Request, res: Response) => {
+  app.patch("/api/orders/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertOrderSchema.omit({ tenantId: true }).partial().parse(req.body);
@@ -448,7 +482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CARTS
   // ========================================
 
-  app.get("/api/carts/:id", async (req: Request, res: Response) => {
+  app.get("/api/carts/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const cart = await storage.getCart(req.params.id, tenantId);
@@ -461,7 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/carts", async (req: Request, res: Response) => {
+  app.post("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertCartSchema.omit({ tenantId: true }).parse(req.body);
@@ -476,7 +510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/carts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/carts/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const data = insertCartSchema.omit({ tenantId: true }).partial().parse(req.body);
@@ -497,7 +531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI CHAT (Knowledge Base + OpenAI Fallback)
   // ========================================
   
-  app.post("/api/ai/chat", async (req: Request, res: Response) => {
+  app.post("/api/ai/chat", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const { message, conversationId } = req.body;
@@ -695,7 +729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Payment CRUD routes
-  app.post("/api/payments", async (req: Request, res: Response) => {
+  app.post("/api/payments", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const bodyData = insertPaymentSchema.omit({ tenantId: true }).parse(req.body);
@@ -710,7 +744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/payments/:id", async (req: Request, res: Response) => {
+  app.get("/api/payments/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       const payment = await storage.getPayment(req.params.id, tenantId);
@@ -741,7 +775,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   // Send WhatsApp message
-  app.post("/api/whatsapp/send", async (req: Request, res: Response) => {
+  app.post("/api/whatsapp/send", isAuthenticated, async (req: Request, res: Response) => {
     try {
       if (!twilioClient || !process.env.TWILIO_WHATSAPP_NUMBER) {
         return res.status(503).json({ error: "WhatsApp service not configured" });

@@ -192,5 +192,32 @@
     "allMarketplaces": "All Marketplaces",
     "systemMetrics": "System Metrics",
     "globalSettings": "Global Settings"
+  },
+  "landing": {
+    "subtitle": "Complete Platform for Business Management",
+    "login": "Log In",
+    "getStarted": "Get Started",
+    "marketplace": {
+      "desc": "Universal marketplace for products, services and experiences"
+    },
+    "crm": {
+      "desc": "360° customer relationship management"
+    },
+    "omnichat": {
+      "desc": "Unified multi-channel support center"
+    },
+    "ai": {
+      "desc": "Autonomous AI with intelligent knowledge base"
+    },
+    "calendar": {
+      "desc": "Smart calendar for scheduling and events"
+    },
+    "tenants": {
+      "desc": "Multi-tenant architecture for multiple companies"
+    },
+    "ready": {
+      "title": "Ready to Get Started?",
+      "desc": "Log in to access your EAAS platform"
+    }
   }
 }

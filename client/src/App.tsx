@@ -8,6 +8,9 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
+import { UserMenu } from "@/components/user-menu";
+import { useAuth } from "@/hooks/useAuth";
+import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Marketplace from "@/pages/marketplace";
 import CRM from "@/pages/crm";
@@ -16,17 +19,37 @@ import KnowledgeBasePage from "@/pages/knowledge-base";
 import Tenants from "@/pages/tenants";
 import Checkout from "@/pages/checkout";
 import NotFound from "@/pages/not-found";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-64" />
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/tenants" component={Tenants} />
-      <Route path="/marketplace" component={Marketplace} />
-      <Route path="/crm" component={CRM} />
-      <Route path="/omnichat" component={Omnichat} />
-      <Route path="/knowledge-base" component={KnowledgeBasePage} />
-      <Route path="/checkout" component={Checkout} />
+      {!isAuthenticated ? (
+        <Route path="/" component={Landing} />
+      ) : (
+        <>
+          <Route path="/" component={Dashboard} />
+          <Route path="/tenants" component={Tenants} />
+          <Route path="/marketplace" component={Marketplace} />
+          <Route path="/crm" component={CRM} />
+          <Route path="/omnichat" component={Omnichat} />
+          <Route path="/knowledge-base" component={KnowledgeBasePage} />
+          <Route path="/checkout" component={Checkout} />
+        </>
+      )}
       <Route component={NotFound} />
     </Switch>
   );
@@ -42,26 +65,43 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ThemeProvider defaultTheme="light" storageKey="eaas-theme">
-          <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex h-screen w-full">
-              <AppSidebar />
-              <div className="flex flex-col flex-1 overflow-hidden">
-                <header className="flex items-center justify-between p-4 border-b">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <div className="flex items-center gap-2">
-                    <LanguageToggle />
-                    <ThemeToggle />
-                  </div>
-                </header>
-                <main className="flex-1 overflow-auto">
-                  <Router />
-                </main>
-              </div>
-            </div>
-          </SidebarProvider>
+          <AuthenticatedLayout style={style as React.CSSProperties}>
+            <Router />
+          </AuthenticatedLayout>
           <Toaster />
         </ThemeProvider>
       </TooltipProvider>
     </QueryClientProvider>
+  );
+}
+
+function AuthenticatedLayout({ style, children }: { style: React.CSSProperties; children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Show Landing page without sidebar for non-authenticated users
+  if (isLoading || !isAuthenticated) {
+    return <>{children}</>;
+  }
+
+  // Show authenticated layout with sidebar
+  return (
+    <SidebarProvider style={style}>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <header className="flex items-center justify-between p-4 border-b">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <div className="flex items-center gap-2">
+              <LanguageToggle />
+              <ThemeToggle />
+              <UserMenu />
+            </div>
+          </header>
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
   );
 }

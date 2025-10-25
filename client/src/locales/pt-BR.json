@@ -192,5 +192,32 @@
     "allMarketplaces": "Todos os Marketplaces",
     "systemMetrics": "Métricas do Sistema",
     "globalSettings": "Configurações Globais"
+  },
+  "landing": {
+    "subtitle": "Plataforma Completa para Gestão Empresarial",
+    "login": "Entrar",
+    "getStarted": "Começar Agora",
+    "marketplace": {
+      "desc": "Marketplace universal para produtos, serviços e experiências"
+    },
+    "crm": {
+      "desc": "Gestão 360° do relacionamento com clientes"
+    },
+    "omnichat": {
+      "desc": "Central unificada de atendimento multicanal"
+    },
+    "ai": {
+      "desc": "IA autônoma com base de conhecimento inteligente"
+    },
+    "calendar": {
+      "desc": "Calendário inteligente para agendamentos e eventos"
+    },
+    "tenants": {
+      "desc": "Arquitetura multi-tenant para múltiplas empresas"
+    },
+    "ready": {
+      "title": "Pronto para Começar?",
+      "desc": "Faça login para acessar sua plataforma EAAS"
+    }
   }
 }

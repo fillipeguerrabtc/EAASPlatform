@@ -3,7 +3,14 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const error = new Error(`${res.status}: ${text}`);
+    
+    // Redirect to login if unauthorized
+    if (res.status === 401) {
+      window.location.href = "/api/login";
+    }
+    
+    throw error;
   }
 }
 

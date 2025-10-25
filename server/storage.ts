@@ -19,6 +19,8 @@ import {
   type InsertOrder,
   type Cart,
   type InsertCart,
+  type UserTenant,
+  type InsertUserTenant,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -32,14 +34,19 @@ import {
   payments,
   orders,
   carts,
+  userTenants,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
-  // Users
+  // Users & Auth
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string, tenantId?: string): Promise<User | undefined>;
+  getUserByReplitAuthId(replitAuthId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+  getUserTenants(userId: string): Promise<UserTenant[]>;
+  addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant>;
   
   // Tenants
   getTenant(id: string): Promise<Tenant | undefined>;
@@ -116,8 +123,32 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async getUserByReplitAuthId(replitAuthId: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.replitAuthId, replitAuthId)).limit(1);
+    return result[0];
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const result = await db.insert(users).values(insertUser).returning();
+    return result[0];
+  }
+
+  async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
+    const result = await db.update(users)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getUserTenants(userId: string): Promise<UserTenant[]> {
+    return await db.select().from(userTenants)
+      .where(eq(userTenants.userId, userId))
+      .orderBy(desc(userTenants.createdAt));
+  }
+
+  async addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant> {
+    const result = await db.insert(userTenants).values(userTenant).returning();
     return result[0];
   }
 
