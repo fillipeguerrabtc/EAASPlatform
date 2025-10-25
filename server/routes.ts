@@ -58,7 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION
   // ========================================
 
-  // Get current authenticated user (no auth guard - returns null if not authenticated)
+  // Get current authenticated user with permissions (no auth guard - returns null if not authenticated)
   app.get('/api/auth/user', async (req: any, res) => {
     try {
       const userId = getUserIdFromSession(req);
@@ -73,7 +73,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(200).json(null);
       }
       
-      res.json(user);
+      // Get user's accessible tenants based on role
+      let accessibleTenants = [];
+      
+      if (user.role === 'super_admin') {
+        // Super admins can see ALL tenants
+        accessibleTenants = await storage.listTenants();
+      } else {
+        // Other users can only see their own tenant(s)
+        // Get user's tenant
+        const primaryTenant = await storage.getTenant(user.tenantId);
+        if (primaryTenant) {
+          accessibleTenants.push(primaryTenant);
+        }
+        
+        // TODO: If implementing multi-tenant membership via userTenants table,
+        // also fetch additional tenants where user has access
+      }
+      
+      // Return user with permissions metadata
+      res.json({
+        ...user,
+        permissions: {
+          isSuperAdmin: user.role === 'super_admin',
+          canSeeAllTenants: user.role === 'super_admin',
+          accessibleTenantIds: accessibleTenants.map(t => t.id),
+        },
+        accessibleTenants,
+      });
     } catch (error: any) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -84,14 +111,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // TENANTS
   // ========================================
   
-  // NOTE: This endpoint returns all tenants for MVP simplicity.
-  // TODO: In production, implement RBAC to restrict access based on user role:
-  //   - super_admin: can list all tenants
-  //   - tenant_admin: can only see their own tenant
-  //   - other roles: no access
+  // List tenants based on user role (RBAC enforced)
   app.get("/api/tenants", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const tenantsList = await storage.listTenants();
+      const userId = getUserIdFromSession(req);
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      let tenantsList = [];
+      
+      if (user.role === 'super_admin') {
+        // Super admins can see ALL tenants
+        tenantsList = await storage.listTenants();
+      } else {
+        // Other users can only see their own tenant
+        const tenant = await storage.getTenant(user.tenantId);
+        if (tenant) {
+          tenantsList = [tenant];
+        }
+      }
+      
       res.json(tenantsList);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -101,9 +143,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tenants/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const requestedTenantId = req.params.id;
-      const userTenantId = getTenantId(req);
+      const userId = getUserIdFromSession(req);
+      const user = await storage.getUser(userId);
       
-      if (requestedTenantId !== userTenantId) {
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      // Super admins can access any tenant, others only their own
+      if (user.role !== 'super_admin' && requestedTenantId !== user.tenantId) {
         return res.status(403).json({ error: "Forbidden: Cannot access other tenants' data" });
       }
       
@@ -133,9 +181,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/tenants/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const requestedTenantId = req.params.id;
-      const userTenantId = getTenantId(req);
+      const userId = getUserIdFromSession(req);
+      const user = await storage.getUser(userId);
       
-      if (requestedTenantId !== userTenantId) {
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      // Super admins can modify any tenant, others only their own
+      if (user.role !== 'super_admin' && requestedTenantId !== user.tenantId) {
         return res.status(403).json({ error: "Forbidden: Cannot modify other tenants' data" });
       }
       
