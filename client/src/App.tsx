@@ -33,7 +33,9 @@ import CalendarPage from "@/pages/calendar";
 import Shop from "@/pages/shop";
 import CartPage from "@/pages/cart";
 import CustomerArea from "@/pages/customer-area";
+import CentralMarketplace from "@/pages/central-marketplace";
 import OrdersPage from "@/pages/orders";
+import { useTenantContext } from "@/hooks/useTenantContext";
 import Finance from "@/pages/finance";
 import FinanceRevenues from "@/pages/finance-revenues";
 import FinanceExpenses from "@/pages/finance-expenses";
@@ -47,9 +49,10 @@ import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { tenantContext, isLoading: contextLoading } = useTenantContext();
 
-  if (isLoading) {
+  if (authLoading || contextLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="space-y-4">
@@ -60,6 +63,79 @@ function Router() {
     );
   }
 
+  // ROUTE 1: eaas.com (Central Marketplace - selling EAAS platform)
+  if (tenantContext?.isCentralMarketplace) {
+    return (
+      <Switch>
+        <Route path="/" component={CentralMarketplace} />
+        <Route path="/login" component={LoginPage} />
+        <Route path="/register" component={RegisterPage} />
+        <Route component={CentralMarketplace} />
+      </Switch>
+    );
+  }
+
+  // ROUTE 2: admin.eaas.com (Super Admin Dashboard)
+  if (tenantContext?.isSuperAdminRoute && isAuthenticated) {
+    return (
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/tenants" component={Tenants} />
+        <Route component={Dashboard} />
+      </Switch>
+    );
+  }
+
+  // ROUTE 3: tenant.eaas.com (Tenant Marketplace or Admin)
+  if (tenantContext?.detectedTenant) {
+    return (
+      <Switch>
+        {!isAuthenticated ? (
+          <>
+            <Route path="/" component={Shop} />
+            <Route path="/shop" component={Shop} />
+            <Route path="/cart" component={CartPage} />
+            <Route path="/login" component={LoginPage} />
+            <Route path="/register" component={RegisterPage} />
+          </>
+        ) : (
+          <>
+            <Route path="/admin" component={Dashboard} />
+            <Route path="/admin/marketplace" component={Marketplace} />
+            <Route path="/admin/customers" component={CRM} />
+            <Route path="/admin/crm" component={CRMDashboard} />
+            <Route path="/admin/crm/customers" component={CRM} />
+            <Route path="/admin/crm/pipeline" component={CRMPipeline} />
+            <Route path="/admin/crm/activities" component={CRMActivities} />
+            <Route path="/admin/crm/segments" component={CRMSegments} />
+            <Route path="/admin/omnichat" component={Omnichat} />
+            <Route path="/admin/omnichat-admin" component={OmnichatAdmin} />
+            <Route path="/admin/knowledge-base" component={KnowledgeBasePage} />
+            <Route path="/admin/checkout" component={Checkout} />
+            <Route path="/admin/payments" component={Payments} />
+            <Route path="/admin/calendar" component={CalendarPage} />
+            <Route path="/admin/orders" component={OrdersPage} />
+            <Route path="/admin/finance" component={Finance} />
+            <Route path="/admin/finance/revenues" component={FinanceRevenues} />
+            <Route path="/admin/finance/expenses" component={FinanceExpenses} />
+            <Route path="/admin/finance/reports" component={FinanceReports} />
+            <Route path="/admin/categories" component={CategoriesPage} />
+            <Route path="/admin/tenant-settings" component={TenantSettings} />
+            <Route path="/admin/rbac" component={RBAC} />
+            <Route path="/admin/inventory" component={InventoryPage} />
+            <Route path="/admin/hr" component={HRPage} />
+            <Route path="/" component={Shop} />
+            <Route path="/shop" component={Shop} />
+            <Route path="/cart" component={CartPage} />
+            <Route path="/my-account" component={CustomerArea} />
+          </>
+        )}
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
+  // ROUTE 4: Default/Development (localhost)
   return (
     <Switch>
       {!isAuthenticated ? (

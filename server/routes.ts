@@ -58,6 +58,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION
   // ========================================
 
+  // Get tenant context from subdomain detection (PUBLIC endpoint)
+  app.get('/api/tenant-context', async (req: Request, res: Response) => {
+    try {
+      res.json({
+        detectedTenant: req.detectedTenant || null,
+        isSuperAdminRoute: req.isSuperAdminRoute || false,
+        isCentralMarketplace: req.isCentralMarketplace || false,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get current authenticated user with permissions (no auth guard - returns null if not authenticated)
   app.get('/api/auth/user', async (req: any, res) => {
     try {
@@ -227,9 +240,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { scanWebsiteBrand } = await import("./brandScanner");
       const brandAnalysis = await scanWebsiteBrand(websiteUrl);
 
-      // Update tenant with new brand colors and assets
+      // Update tenant with new brand assets
       await storage.updateTenant(requestedTenantId, {
-        brandColors: brandAnalysis.colors,
         logoUrl: brandAnalysis.assets?.logo,
         faviconUrl: brandAnalysis.assets?.favicon,
       });
@@ -978,11 +990,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tenantId = getTenantIdFromSessionOrHeader(req);
         sessionId = (req.session as any)?.id || req.headers['x-session-id'] as string;
         
-        // Find cart by sessionId for anonymous users
-        if (sessionId) {
-          const allCarts = await storage.listCarts(tenantId);
-          cart = allCarts.find(c => c.sessionId === sessionId && !c.customerId) || null;
-        }
+        // Find cart by sessionId for anonymous users (future enhancement)
+        // For now, create new cart for each anonymous session
       }
       
       // Create new cart if none exists

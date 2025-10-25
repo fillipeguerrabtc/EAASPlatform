@@ -21,7 +21,6 @@ declare global {
         id: string;
         subdomain: string;
         name: string;
-        brandColors?: any;
         logoUrl?: string;
         faviconUrl?: string;
       } | null;
@@ -98,9 +97,8 @@ export async function subdomainMiddleware(
       id: tenant.id,
       subdomain: tenant.subdomain,
       name: tenant.name,
-      brandColors: tenant.brandColors,
-      logoUrl: tenant.logoUrl,
-      faviconUrl: tenant.faviconUrl,
+      logoUrl: tenant.logoUrl || undefined,
+      faviconUrl: tenant.faviconUrl || undefined,
     };
 
     req.isCentralMarketplace = false;
