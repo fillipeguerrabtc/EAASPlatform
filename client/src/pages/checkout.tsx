@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ export default function Checkout() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [location] = useLocation();
   const { toast } = useToast();
+  const { t } = useTranslation();
   
   // Check URL params for success/cancel from Stripe redirect
   useEffect(() => {
@@ -22,21 +24,21 @@ export default function Checkout() {
     if (params.get("success") === "true") {
       setPaymentSuccess(true);
       toast({
-        title: "Payment Successful!",
-        description: "Your payment was processed successfully (Test Mode)",
+        title: t('checkout.paymentSuccessful'),
+        description: t('checkout.paymentSuccessDesc'),
       });
     } else if (params.get("canceled") === "true") {
       toast({
-        title: "Payment Canceled",
-        description: "You can try again when ready",
+        title: t('checkout.paymentCanceled'),
+        description: t('checkout.tryAgain'),
         variant: "destructive",
       });
     }
-  }, [location]);
+  }, [location, toast, t]);
 
   const createPaymentMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("/api/create-payment-intent", "POST", {
+      const response = await apiRequest("POST", "/api/create-payment-intent", {
         amount: parseFloat(amount),
         description,
       });
@@ -50,15 +52,15 @@ export default function Checkout() {
         window.location.href = data.url;
       } else {
         toast({
-          title: "Error",
-          description: "Could not create checkout session",
+          title: t('common.error'),
+          description: t('checkout.sessionError'),
           variant: "destructive",
         });
       }
     },
     onError: (error: Error) => {
       toast({
-        title: "Payment Failed",
+        title: t('checkout.paymentFailed'),
         description: error.message,
         variant: "destructive",
       });
@@ -69,8 +71,8 @@ export default function Checkout() {
     e.preventDefault();
     if (parseFloat(amount) <= 0) {
       toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
+        title: t('checkout.invalidAmount'),
+        description: t('checkout.validAmount'),
         variant: "destructive",
       });
       return;
@@ -86,9 +88,9 @@ export default function Checkout() {
             <div className="flex justify-center mb-4">
               <CheckCircle2 className="h-16 w-16 text-primary" />
             </div>
-            <CardTitle className="text-center">Payment Successful!</CardTitle>
+            <CardTitle className="text-center">{t('checkout.paymentSuccessful')}</CardTitle>
             <CardDescription className="text-center">
-              Your payment of ${amount} has been processed (Test Mode)
+              {t('checkout.paymentProcessed')} R$ {amount} ({t('checkout.testMode')})
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -101,7 +103,7 @@ export default function Checkout() {
               className="w-full"
               data-testid="button-new-payment"
             >
-              Make Another Payment
+              {t('checkout.makeAnotherPayment')}
             </Button>
           </CardContent>
         </Card>
@@ -113,10 +115,10 @@ export default function Checkout() {
     <div className="p-8 space-y-8">
       <div>
         <h1 className="text-4xl font-bold" data-testid="text-checkout-title">
-          Checkout
+          {t('checkout.title')}
         </h1>
         <p className="text-muted-foreground mt-2">
-          Stripe Payment Integration (Test Mode)
+          {t('checkout.subtitle')}
         </p>
       </div>
 
@@ -125,16 +127,16 @@ export default function Checkout() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5" />
-              Payment Details
+              {t('checkout.paymentDetails')}
             </CardTitle>
             <CardDescription>
-              Enter payment amount and description
+              {t('checkout.enterDetails')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="amount">Amount (USD)</Label>
+                <Label htmlFor="amount">{t('checkout.amount')}</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -149,13 +151,13 @@ export default function Checkout() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">{t('common.description')}</Label>
                 <Input
                   id="description"
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Payment description"
+                  placeholder={t('checkout.descriptionPlaceholder')}
                   disabled={createPaymentMutation.isPending}
                   data-testid="input-payment-description"
                 />
@@ -168,14 +170,14 @@ export default function Checkout() {
                 data-testid="button-create-payment"
               >
                 {createPaymentMutation.isPending ? (
-                  <>Processing...</>
+                  <>{t('common.processing')}</>
                 ) : (
-                  <>Create Payment Intent</>
+                  <>{t('checkout.createPayment')}</>
                 )}
               </Button>
 
               <p className="text-xs text-muted-foreground text-center">
-                🧪 Test mode - No real charges will be made
+                {t('checkout.testModeNote')}
               </p>
             </form>
           </CardContent>

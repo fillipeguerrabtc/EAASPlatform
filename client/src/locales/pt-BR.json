@@ -35,7 +35,8 @@
     "created": "Criado",
     "updated": "Atualizado",
     "creating": "Criando...",
-    "sending": "Enviando..."
+    "sending": "Enviando...",
+    "processing": "Processando..."
   },
   "dashboard": {
     "title": "Painel de Controle",
@@ -217,6 +218,27 @@
     "allMarketplaces": "Todos os Marketplaces",
     "systemMetrics": "Métricas do Sistema",
     "globalSettings": "Configurações Globais"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "subtitle": "Integração de Pagamento Stripe (Modo de Teste)",
+    "paymentDetails": "Detalhes do Pagamento",
+    "enterDetails": "Informe valor e descrição do pagamento",
+    "amount": "Valor (BRL)",
+    "descriptionPlaceholder": "Descrição do pagamento",
+    "createPayment": "Criar Intenção de Pagamento",
+    "paymentSuccessful": "Pagamento Realizado!",
+    "paymentSuccessDesc": "Seu pagamento foi processado com sucesso (Modo de Teste)",
+    "paymentProcessed": "Seu pagamento de",
+    "testMode": "Modo de Teste",
+    "makeAnotherPayment": "Fazer Outro Pagamento",
+    "paymentCanceled": "Pagamento Cancelado",
+    "tryAgain": "Você pode tentar novamente quando estiver pronto",
+    "sessionError": "Não foi possível criar sessão de checkout",
+    "paymentFailed": "Pagamento Falhou",
+    "invalidAmount": "Valor Inválido",
+    "validAmount": "Por favor, insira um valor válido",
+    "testModeNote": "Modo de teste - Nenhuma cobrança real será feita"
   },
   "landing": {
     "subtitle": "Plataforma Completa para Gestão Empresarial",

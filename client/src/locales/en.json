@@ -35,7 +35,8 @@
     "created": "Created",
     "updated": "Updated",
     "creating": "Creating...",
-    "sending": "Sending..."
+    "sending": "Sending...",
+    "processing": "Processing..."
   },
   "dashboard": {
     "title": "Control Panel",
@@ -217,6 +218,27 @@
     "allMarketplaces": "All Marketplaces",
     "systemMetrics": "System Metrics",
     "globalSettings": "Global Settings"
+  },
+  "checkout": {
+    "title": "Checkout",
+    "subtitle": "Stripe Payment Integration (Test Mode)",
+    "paymentDetails": "Payment Details",
+    "enterDetails": "Enter payment amount and description",
+    "amount": "Amount (USD)",
+    "descriptionPlaceholder": "Payment description",
+    "createPayment": "Create Payment Intent",
+    "paymentSuccessful": "Payment Successful!",
+    "paymentSuccessDesc": "Your payment was processed successfully (Test Mode)",
+    "paymentProcessed": "Your payment of",
+    "testMode": "Test Mode",
+    "makeAnotherPayment": "Make Another Payment",
+    "paymentCanceled": "Payment Canceled",
+    "tryAgain": "You can try again when ready",
+    "sessionError": "Could not create checkout session",
+    "paymentFailed": "Payment Failed",
+    "invalidAmount": "Invalid Amount",
+    "validAmount": "Please enter a valid amount",
+    "testModeNote": "Test mode - No real charges will be made"
   },
   "landing": {
     "subtitle": "Complete Platform for Business Management",
