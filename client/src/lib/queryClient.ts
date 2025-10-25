@@ -5,10 +5,8 @@ async function throwIfResNotOk(res: Response) {
     const text = (await res.text()) || res.statusText;
     const error = new Error(`${res.status}: ${text}`);
     
-    // Redirect to login if unauthorized
-    if (res.status === 401) {
-      window.location.href = "/api/login";
-    }
+    // DO NOT auto-redirect on 401 - let each page decide
+    // Pages can handle 401 errors as needed
     
     throw error;
   }
@@ -51,7 +49,7 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
+      queryFn: getQueryFn({ on401: "returnNull" }), // Return null instead of throwing on 401
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
