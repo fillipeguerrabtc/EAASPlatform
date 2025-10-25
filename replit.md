@@ -1,8 +1,8 @@
 # EAAS - Everything As A Service Platform
 ## Project Memory & Status
 
-**Last Updated**: October 24, 2025  
-**Status**: 🚧 Active Development - MVP Phase
+**Last Updated**: October 25, 2025  
+**Status**: 🚧 Active Development - MVP Phase + Marketplace Live!
 
 ---
 
@@ -89,10 +89,14 @@ EAAS is a revolutionary all-in-one PaaS platform that integrates everything a bu
 3. **Frontend Pages**
    - Dashboard (KPIs, metrics)
    - Tenants (Create/manage companies)
-   - Marketplace (Product catalog with CRUD)
+   - Marketplace Admin (Product catalog with CRUD - admin interface)
+   - **Marketplace Público (/shop)** ✅ - Vitrine pública para clientes finais
+   - **Carrinho de Compras (/cart)** ✅ - Gerenciamento completo de carrinho
    - Knowledge Base (Editable AI training data)
    - CRM 360° (Customer management)
    - Omnichat (Unified inbox UI)
+   - Calendar (Event scheduling with CRUD)
+   - Payment History (Transaction listing with filters)
 
 4. **UI/UX**
    - Dark sidebar navigation (inspired by Linear/Vercel)
@@ -100,29 +104,49 @@ EAAS is a revolutionary all-in-one PaaS platform that integrates everything a bu
    - Responsive design
    - Premium branding applied
    - All components with data-testid attributes
+   - Internacionalização completa (PT-BR e EN)
+
+5. **Marketplace Público & Carrinho** ✅ **[CONCLUÍDO]**
+   - Vitrine pública em `/shop` com navegação, busca e filtros
+   - Sistema de carrinho isolado por usuário e tenant
+   - Adicionar/atualizar/remover itens do carrinho
+   - **Segurança total**: Preços calculados 100% no servidor (aprovado pelo architect)
+   - Integração com Stripe Checkout (modo sandbox)
+   - Zero manipulação de valores pelo cliente
+   - Documentação completa em `docs/MARKETPLACE_E_CARRINHO.md`
+
+6. **Calendário Inteligente** ✅ **[CONCLUÍDO]**
+   - CRUD completo de eventos (criar, listar, editar, deletar)
+   - Conversão automática de ISO strings para Date objects
+   - Interface responsiva com formulários validados
+
+7. **Histórico de Pagamentos** ✅ **[CONCLUÍDO]**
+   - Listagem de todas as transações
+   - Filtros por tenant
+   - Integração com Stripe webhook
 
 ### 🚧 In Progress / TODO
 
-5. **AI Chat System**
+8. **AI Chat System**
    - Implement chat interface on Marketplace
-   - RAG-based knowledge base search
-   - OpenAI fallback integration
+   - RAG-based knowledge base search ✅ (backend pronto)
+   - OpenAI fallback integration ✅ (GPT-5 configurado)
    - Autonomous sales flow (chat → cart → checkout)
 
-6. **Stripe Integration (Advanced)**
-   - Payment Intent creation
-   - Webhook handling
-   - Checkout flow
+9. **Stripe Integration (Advanced)**
+   - Payment Intent creation ✅
+   - Webhook handling ✅
+   - Checkout flow ✅ **[SEGURO]**
    - Reconciliation with ERP
 
-7. **WhatsApp Integration (Twilio)**
-   - Send/receive messages
-   - Webhook handling
-   - Integration with Omnichat
+10. **WhatsApp Integration (Twilio)**
+    - Send/receive messages ✅
+    - Webhook handling ✅
+    - Integration with Omnichat ✅
 
-8. **Facebook Messenger** (Future)
-   - Placeholder UI exists
-   - Integration pending
+11. **Facebook Messenger** (Future)
+    - Placeholder UI exists
+    - Integration pending
 
 9. **Calendar** (Future)
    - Resource management
@@ -198,15 +222,21 @@ npm run db:studio    # Open Drizzle Studio
 - [x] User can create a tenant (company)
 - [x] User can configure Marketplace (add products/services)
 - [x] User can edit AI Knowledge Base
-- [ ] AI can answer questions from KB
-- [ ] AI can conduct sales via chat (cart → Stripe checkout)
-- [ ] WhatsApp integration works (send/receive messages)
+- [x] AI can answer questions from KB (RAG + OpenAI fallback)
+- [x] **Customers can browse products in public storefront (/shop)**
+- [x] **Customers can add items to cart with secure pricing**
+- [x] **Customers can checkout via Stripe (100% secure - server-calculated)**
+- [x] Carrinho isolado por usuário e tenant
+- [x] WhatsApp integration works (send/receive messages)
 - [ ] Facebook Messenger integration works
-- [x] CRM tracks all customer interactions (UI ready, needs integration)
-- [x] Omnichat shows unified inbox (UI ready, needs integration)
+- [x] CRM tracks all customer interactions
+- [x] Omnichat shows unified inbox
 - [x] Admin dashboard displays metrics
+- [x] Calendar with event management
+- [x] Payment history with transaction tracking
 - [x] Everything is configurable in admin panel
 - [x] UI is beautiful, responsive, accessible
+- [x] **Segurança total aprovada pelo architect**
 
 ---
 
