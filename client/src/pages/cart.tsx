@@ -14,7 +14,7 @@ import { useEffect } from "react";
 interface CartItem {
   productId: string;
   quantity: number;
-  price: string;
+  price?: string; // Server-provided, never sent from client
 }
 
 export default function CartPage() {
@@ -32,11 +32,8 @@ export default function CartPage() {
 
   const updateCartMutation = useMutation({
     mutationFn: async (items: CartItem[]) => {
-      const total = items.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
-      return apiRequest("PATCH", `/api/carts/${cart?.id}`, { 
-        items,
-        total: total.toFixed(2)
-      });
+      // SECURE: Server recalculates total from actual product prices
+      return apiRequest("PATCH", `/api/carts/${cart?.id}`, { items });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/carts"] });
@@ -61,28 +58,29 @@ export default function CartPage() {
   }).filter(item => item.product);
 
   const handleRemoveItem = (productId: string) => {
-    const newItems = cartItems.filter(item => item.productId !== productId);
+    // SECURE: Only send productId and quantity
+    const newItems = cartItems
+      .filter(item => item.productId !== productId)
+      .map(item => ({ productId: item.productId, quantity: item.quantity }));
     updateCartMutation.mutate(newItems);
   };
 
   const handleUpdateQuantity = (productId: string, newQuantity: number) => {
     if (newQuantity < 1) return;
-    const newItems = cartItems.map(item => 
-      item.productId === productId ? { ...item, quantity: newQuantity } : item
-    );
+    // SECURE: Only send productId and quantity - no price
+    const newItems = cartItems.map(item => ({
+      productId: item.productId,
+      quantity: item.productId === productId ? newQuantity : item.quantity
+    }));
     updateCartMutation.mutate(newItems);
   };
 
   const handleCheckout = async () => {
     if (!cart || cartItems.length === 0) return;
 
-    const totalAmount = parseFloat(cart.total);
-
     try {
-      const response = await apiRequest("POST", "/api/create-checkout-session", {
-        amount: totalAmount.toFixed(2),
-        description: `Compra de ${cartItems.length} ${cartItems.length === 1 ? 'item' : 'itens'}`,
-      });
+      // SECURE: Server validates cart and recalculates total from actual product prices
+      const response = await apiRequest("POST", "/api/create-checkout-session", {});
 
       if (response.url) {
         window.location.href = response.url;
@@ -180,10 +178,10 @@ export default function CartPage() {
                           </Button>
                           <div className="text-right">
                             <div className="text-sm text-muted-foreground">
-                              R$ {item.price} x {item.quantity}
+                              R$ {item.product!.price} x {item.quantity}
                             </div>
                             <div className="text-2xl font-bold" data-testid={`text-item-total-${item.productId}`}>
-                              R$ {(parseFloat(item.price) * item.quantity).toFixed(2)}
+                              R$ {(parseFloat(item.product!.price) * item.quantity).toFixed(2)}
                             </div>
                           </div>
                         </div>

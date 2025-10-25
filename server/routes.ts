@@ -487,7 +487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
-      const customerId = req.user!.id;
+      const customerId = (req.user as any).userId;
       
       // Find active cart for this user
       let cart = await storage.getActiveCart(customerId, tenantId);
@@ -525,7 +525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
-      const customerId = req.user!.id;
+      const customerId = (req.user as any).userId;
       const { items } = req.body;
 
       // SECURITY: Validate items and recalculate total from actual product prices
@@ -674,14 +674,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (conversation) {
           await storage.createMessage({
             conversationId,
-            tenantId,
             senderType: "customer",
             content: message,
           }, tenantId);
           
           await storage.createMessage({
             conversationId,
-            tenantId,
             senderType: "ai",
             content: response,
           }, tenantId);
@@ -718,7 +716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const tenantId = getTenantId(req);
-      const customerId = req.user!.id;
+      const customerId = (req.user as any).userId;
       
       // SECURITY: Get user's cart and recalculate total from actual product prices
       const cart = await storage.getActiveCart(customerId, tenantId);
@@ -866,9 +864,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.createPayment({
             tenantId,
             customerId: paymentIntent.metadata.customerId || null,
-            amount: paymentIntent.amount / 100, // Convert from cents
+            amount: (paymentIntent.amount / 100).toFixed(2), // Convert from cents to string
             currency: paymentIntent.currency,
-            status: "completed",
+            status: "succeeded",
             stripePaymentIntentId: paymentIntent.id,
           });
           break;
@@ -1076,7 +1074,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (twilioMessage.status !== "failed") {
         await storage.createMessage({
           conversationId: conversation.id,
-          tenantId,
           senderType: "agent",
           content: message,
         }, tenantId);
@@ -1180,7 +1177,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Save incoming message
       await storage.createMessage({
         conversationId: conversation.id,
-        tenantId,
         senderType: "customer",
         content: Body,
       }, tenantId);

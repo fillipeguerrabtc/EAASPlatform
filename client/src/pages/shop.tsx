@@ -50,27 +50,26 @@ export default function Shop() {
       const currentItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
       const existingItemIndex = currentItems.findIndex(item => item.productId === product.id);
       
+      // SECURE: Only send productId and quantity - server calculates prices
       let newItems;
       if (existingItemIndex >= 0) {
         newItems = currentItems.map((item, index) => 
           index === existingItemIndex 
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+            ? { productId: item.productId, quantity: item.quantity + 1 }
+            : { productId: item.productId, quantity: item.quantity }
         );
       } else {
         newItems = [...currentItems, { 
           productId: product.id, 
-          quantity: 1, 
-          price: product.price 
+          quantity: 1
         }];
       }
       
-      const total = newItems.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
-      
+      // Server recalculates total from actual product prices
       if (cart?.id) {
-        return apiRequest("PATCH", `/api/carts/${cart.id}`, { items: newItems, total: total.toFixed(2) });
+        return apiRequest("PATCH", `/api/carts/${cart.id}`, { items: newItems });
       } else {
-        return apiRequest("POST", "/api/carts", { items: newItems, total: total.toFixed(2) });
+        return apiRequest("POST", "/api/carts", { items: newItems });
       }
     },
     onSuccess: () => {

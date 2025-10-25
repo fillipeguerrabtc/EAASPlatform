@@ -104,6 +104,7 @@ export interface IStorage {
   // Carts
   getCart(id: string, tenantId: string): Promise<Cart | undefined>;
   getCartByCustomer(customerId: string, tenantId: string): Promise<Cart | undefined>;
+  getActiveCart(customerId: string, tenantId: string): Promise<Cart | undefined>;
   createCart(cart: InsertCart): Promise<Cart>;
   updateCart(id: string, tenantId: string, data: Partial<InsertCart>): Promise<Cart | undefined>;
   
@@ -432,6 +433,11 @@ export class DbStorage implements IStorage {
       .where(and(eq(carts.customerId, customerId), eq(carts.tenantId, tenantId)))
       .limit(1);
     return result[0];
+  }
+
+  async getActiveCart(customerId: string, tenantId: string): Promise<Cart | undefined> {
+    // Alias for getCartByCustomer for semantic clarity
+    return this.getCartByCustomer(customerId, tenantId);
   }
 
   async createCart(insertCart: InsertCart): Promise<Cart> {
