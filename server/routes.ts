@@ -923,20 +923,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CARTS
   // ========================================
 
-  // Get or create user's cart
-  app.get("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
+  // PUBLIC ENDPOINT: Get or create cart (authenticated or anonymous)
+  app.get("/api/carts", async (req: Request, res: Response) => {
     try {
-      const tenantId = getTenantId(req);
-      const customerId = (req.user as any).userId;
+      let tenantId: string;
+      let customerId: string | null = null;
+      let sessionId: string | null = null;
+      let cart = null;
       
-      // Find active cart for this user
-      let cart = await storage.getActiveCart(customerId, tenantId);
+      try {
+        tenantId = getTenantId(req);
+        customerId = getUserIdFromSession(req);
+        // Find cart by customerId for authenticated users
+        cart = await storage.getActiveCart(customerId, tenantId);
+      } catch {
+        // Anonymous user
+        tenantId = getTenantIdFromSessionOrHeader(req);
+        sessionId = (req.session as any)?.id || req.headers['x-session-id'] as string;
+        
+        // Find cart by sessionId for anonymous users
+        if (sessionId) {
+          const allCarts = await storage.listCarts(tenantId);
+          cart = allCarts.find(c => c.sessionId === sessionId && !c.customerId) || null;
+        }
+      }
       
       // Create new cart if none exists
       if (!cart) {
         cart = await storage.createCart({
           tenantId,
           customerId,
+          sessionId,
           items: [],
           total: "0",
           metadata: {},
@@ -962,10 +979,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/carts", isAuthenticated, async (req: Request, res: Response) => {
+  // PUBLIC ENDPOINT: Allow anonymous cart creation
+  app.post("/api/carts", async (req: Request, res: Response) => {
     try {
-      const tenantId = getTenantId(req);
-      const customerId = (req.user as any).userId;
+      // Try to get tenantId and user info
+      let tenantId: string;
+      let customerId: string | null = null;
+      let sessionId: string | null = null;
+      
+      try {
+        tenantId = getTenantId(req);
+        customerId = getUserIdFromSession(req);
+      } catch {
+        // Anonymous user
+        tenantId = getTenantIdFromSessionOrHeader(req);
+        sessionId = (req.session as any)?.id || req.headers['x-session-id'] as string || Math.random().toString(36);
+      }
+      
       const { items } = req.body;
 
       // SECURITY: Validate items and recalculate total from actual product prices
@@ -994,6 +1024,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cart = await storage.createCart({
         tenantId,
         customerId,
+        sessionId,
         items: validatedItems,
         total: total.toFixed(2),
         metadata: {},
@@ -1008,9 +1039,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/carts/:id", isAuthenticated, async (req: Request, res: Response) => {
+  // PUBLIC ENDPOINT: Allow anonymous cart updates
+  app.patch("/api/carts/:id", async (req: Request, res: Response) => {
     try {
-      const tenantId = getTenantId(req);
+      let tenantId: string;
+      try {
+        tenantId = getTenantId(req);
+      } catch {
+        tenantId = getTenantIdFromSessionOrHeader(req);
+      }
+      
       const { items } = req.body;
 
       if (!items) {
