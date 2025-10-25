@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
+import { Link } from "wouter";
 import {
   ShoppingCart,
   Users,
@@ -31,31 +32,35 @@ export default function Dashboard() {
   const stats = [
     {
       title: t('marketplace.products'),
-      value: products?.length || 0,
+      value: Array.isArray(products) ? products.length : 0,
       icon: ShoppingCart,
       loading: productsLoading,
       testId: "total-products",
+      link: "/marketplace",
     },
     {
       title: t('crm.customers'),
-      value: customers?.length || 0,
+      value: Array.isArray(customers) ? customers.length : 0,
       icon: Users,
       loading: customersLoading,
       testId: "total-customers",
+      link: "/customers",
     },
     {
       title: t('omnichat.conversations'),
-      value: conversations?.filter((c: any) => c.status === "open").length || 0,
+      value: Array.isArray(conversations) ? conversations.filter((c: any) => c.status === "open").length : 0,
       icon: MessageSquare,
       loading: conversationsLoading,
       testId: "active-conversations",
+      link: "/omnichat",
     },
     {
       title: t('dashboard.metrics.orders'),
-      value: orders?.length || 0,
+      value: Array.isArray(orders) ? orders.length : 0,
       icon: DollarSign,
       loading: ordersLoading,
       testId: "total-orders",
+      link: "/orders",
     },
   ];
 
@@ -74,23 +79,25 @@ export default function Dashboard() {
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title} className="hover-elevate">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.title}
-                </CardTitle>
-                <Icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                {stat.loading ? (
-                  <Skeleton className="h-8 w-16" />
-                ) : (
-                  <div className="text-3xl font-bold" data-testid={`stat-${stat.testId}`}>
-                    {stat.value}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <Link key={stat.title} href={stat.link}>
+              <Card className="hover-elevate active-elevate-2 cursor-pointer transition-all">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    {stat.title}
+                  </CardTitle>
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  {stat.loading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <div className="text-3xl font-bold" data-testid={`stat-${stat.testId}`}>
+                      {stat.value}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
           );
         })}
       </div>
