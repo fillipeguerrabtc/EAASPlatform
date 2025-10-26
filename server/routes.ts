@@ -647,6 +647,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
+  // AI GOVERNANCE - Analytics & Policies
+  // ========================================
+  
+  // Get AI Traces with filters
+  app.get("/api/ai/governance/traces", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const tenantId = user.tenantId || "default";
+      const { customerId, startDate, endDate, limit } = req.query;
+      
+      const filters: any = { tenantId };
+      
+      if (customerId) {
+        filters.customerId = customerId as string;
+      }
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      
+      let traces = await storage.listAiTraces(filters);
+      
+      // Limit results if requested
+      if (limit) {
+        traces = traces.slice(0, parseInt(limit as string));
+      }
+      
+      res.json(traces);
+    } catch (error: any) {
+      console.error("Failed to fetch AI traces:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get AI Metrics Summary
+  app.get("/api/ai/governance/metrics/summary", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const tenantId = user.tenantId || "default";
+      const { startDate, endDate } = req.query;
+      
+      const filters: any = { tenantId };
+      
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      
+      const summary = await storage.getAiMetricsSummary(filters);
+      res.json(summary);
+    } catch (error: any) {
+      console.error("Failed to fetch AI metrics summary:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get AI Governance Policies
+  app.get("/api/ai/governance/policies", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const tenantId = user.tenantId || "default";
+      const { activeOnly } = req.query;
+      
+      const policies = activeOnly === 'true' 
+        ? await storage.listActiveAiPolicies(tenantId)
+        : await storage.listAiGovernance(tenantId);
+      
+      res.json(policies);
+    } catch (error: any) {
+      console.error("Failed to fetch AI governance policies:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Create AI Governance Policy
+  app.post("/api/ai/governance/policies", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const tenantId = user.tenantId || "default";
+      
+      const policyData = {
+        ...req.body,
+        tenantId,
+      };
+      
+      const policy = await storage.createAiGovernance(policyData);
+      res.json(policy);
+    } catch (error: any) {
+      console.error("Failed to create AI governance policy:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update AI Governance Policy
+  app.put("/api/ai/governance/policies/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateAiGovernance(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Policy not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Failed to update AI governance policy:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Delete AI Governance Policy
+  app.delete("/api/ai/governance/policies/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteAiGovernance(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Failed to delete AI governance policy:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
   // PRODUCTS
   // ========================================
 
