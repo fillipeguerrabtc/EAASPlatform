@@ -67,6 +67,14 @@ export const tenants = pgTable("tenants", {
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
   status: text("status").default("active"),
   settings: jsonb("settings").default({}),
+  
+  // AI Governance (EAAS Whitepaper 02 - Chapter 9)
+  aiPersona: text("ai_persona").default("professional"), // Tone: professional, friendly, casual, technical
+  maxPersuasionLevel: decimal("max_persuasion_level", { precision: 3, scale: 2 }).default("0.70"), // P̄ (max persuasion limit)
+  aiEthicalPolicies: jsonb("ai_ethical_policies").default({}), // LTL+D policies as JSON
+  enabledAITools: jsonb("enabled_ai_tools").default(['crm', 'marketplace', 'knowledge_base']), // Allowed tools
+  riskThreshold: decimal("risk_threshold", { precision: 3, scale: 2 }).default("0.70"), // τ (risk threshold for human escalation)
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

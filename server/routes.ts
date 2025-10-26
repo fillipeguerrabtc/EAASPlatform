@@ -33,6 +33,9 @@ import {
 } from "./auth";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSessionOrHeader, getUserIdFromSession } from "./replitAuth";
+// AI Modules (EAAS Whitepaper 02 implementation)
+import { runAllCritics } from "./ai/critics.js";
+import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag.js";
 
 // Tenant context middleware - PRIORITY ORDER:
 // 1. Detected tenant from subdomain (req.detectedTenant)

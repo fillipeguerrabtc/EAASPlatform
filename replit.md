@@ -3,6 +3,8 @@
 ### Overview
 EAAS is an all-in-one Platform-as-a-Service (PaaS) designed to centralize critical business operations. It features a universal marketplace for diverse offerings, a 360° CRM, a comprehensive ERP, an autonomous AI with a tenant-editable knowledge base, an Omnichat for unified communication, integrated payment management (Stripe), and a smart calendar for resource orchestration. The platform is built on a secure multi-tenant core with subdomain routing, aiming to provide a silent, sophisticated, and inevitable solution for businesses.
 
+**Mathematical Foundation**: Implementation based on EAAS Whitepaper 02 (Fillipe Guerra, 2025), incorporating advanced AI mathematics including Lyapunov stability, POMDP decision models, LTL+D ethical constraints, and Hybrid RAG scoring.
+
 ### User Preferences
 - I prefer simple language and clear explanations.
 - I like an iterative development approach.
@@ -34,7 +36,26 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Database Schema:** 28 tables covering tenants, users, marketplace (products, carts, orders), CRM (customers, segments, pipeline, deals, activities), Omnichat (conversations, messages), AI knowledge base, payments, calendar events, Inventory (warehouses, productStock, stockMovements), and HR (departments, employees, payrollRecords, attendanceRecords).
 - **Backend API:** Comprehensive CRUD operations for all major entities including tenants, products, customers, conversations, knowledge base, orders, carts, payments, warehouses, stock, stock movements, departments, employees, payroll, and attendance. All POST/PATCH routes have Zod validation.
 - **Public Marketplace (`/shop`):** Secure product display, search, filtering, and server-side calculated pricing for cart management and Stripe checkout (sandbox).
-- **AI Autonomous Sales System:** RAG-based knowledge base search with OpenAI GPT-5 fallback, per-tenant isolation, and editable content. AI now detects purchase intent in chat ("comprar", "adicionar ao carrinho"), automatically searches products, adds items to cart, and suggests checkout with actionable cart links. Complete autonomous sales flow from conversation to cart.
+- **AI Autonomous Sales System (Enhanced with Whitepaper 02 Mathematics):**
+  - **Multi-Layer Critics System** (server/ai/critics.ts): Four independent validation layers before response delivery:
+    1. **Factual Critic**: Validates KB grounding and prevents hallucinations using LTL policy G(answer → O citation)
+    2. **Numeric Critic**: Validates arithmetic, prices, quantities (double-entry principle: ∑Débitos = ∑Créditos)
+    3. **Ethical Critic**: Enforces persuasion limits Pt = min{P̄, ψ(It)} where P̄ is max tenant limit, prevents manipulation
+    4. **Risk Critic**: Detects fraud/high-value transactions using risk threshold τ, triggers human escalation G(risk(a) > τ → O handoff(a))
+  - **Hybrid RAG Scoring** (server/ai/hybrid-rag.ts): Multi-component relevance scoring S(x,q) = α·S_vetor + β·S_bm25 + γ·S_grafo + δ·S_fresco + ζ·S_autoridade
+    - Vector Similarity (35%): Semantic understanding via cosine similarity
+    - BM25 (25%): Lexical matching with saturation
+    - Graph Similarity (15%): Semantic relationships via category/tag overlap
+    - Freshness (15%): Temporal decay S_fresco(x) = e^(-λt)
+    - Authority (10%): Source credibility weighting
+  - **AI Governance Fields** (schema.ts - tenants table):
+    - `aiPersona`: Tone configuration (professional/friendly/casual/technical)
+    - `maxPersuasionLevel`: P̄ limit (default 0.70)
+    - `aiEthicalPolicies`: JSON-encoded LTL+D policies
+    - `enabledAITools`: Allowed tool access (CRM/ERP/Market/KB)
+    - `riskThreshold`: τ for human escalation (default 0.70)
+  - **Self-Consistency & Reflection**: Future implementation of Dream Loops with coherence metric Coherence=1−E[rt]²/Var(rt)
+  - RAG-based knowledge base search with OpenAI GPT-5 fallback, per-tenant isolation. AI detects purchase intent, automatically searches products, adds to cart, validates with critics before response.
 - **Inventory Management ERP:** Complete inventory control with 3 database tables (warehouses, productStock, stockMovements). Features multi-warehouse support, real-time stock levels tracking, automatic movement logging (IN/OUT/TRANSFER/ADJUSTMENT), low-stock alerts, and comprehensive audit trail. Full CRUD API with Zod validation and multi-tab UI (Warehouses, Stock Levels, Movements).
 - **HR Management ERP:** Complete human resources system with 4 database tables (departments, employees, payrollRecords, attendanceRecords). Features organizational hierarchy, employee lifecycle management, automated payroll calculations (base salary + bonuses - deductions = net salary), attendance tracking with clock-in/out timestamps, and comprehensive reporting. Full CRUD API with Zod validation and multi-tab UI (Employees, Departments, Payroll, Attendance).
 - **Omnichat Admin:** Dashboard for managing WhatsApp conversations, with features for manual takeover, manual replies, releasing to AI, and smart escalation based on user sentiment.
