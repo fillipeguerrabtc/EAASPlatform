@@ -10,6 +10,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { DynamicFavicon } from "@/components/dynamic-favicon";
+import { BrandThemeProvider } from "@/components/brand-theme-provider";
+import { TenantLogo } from "@/components/tenant-logo";
 import { useAuth } from "@/hooks/useAuth";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -214,15 +216,17 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeProvider defaultTheme="light" storageKey="eaas-theme">
-          <DynamicFavicon />
-          <AuthenticatedLayout style={style as React.CSSProperties}>
-            <Router />
-          </AuthenticatedLayout>
-          <Toaster />
-        </ThemeProvider>
-      </TooltipProvider>
+      <BrandThemeProvider>
+        <TooltipProvider>
+          <ThemeProvider defaultTheme="light" storageKey="eaas-theme">
+            <DynamicFavicon />
+            <AuthenticatedLayout style={style as React.CSSProperties}>
+              <Router />
+            </AuthenticatedLayout>
+            <Toaster />
+          </ThemeProvider>
+        </TooltipProvider>
+      </BrandThemeProvider>
     </QueryClientProvider>
   );
 }
@@ -242,7 +246,10 @@ function AuthenticatedLayout({ style, children }: { style: React.CSSProperties; 
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <header className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-            <SidebarTrigger data-testid="button-sidebar-toggle" className="min-h-11 min-w-11" />
+            <div className="flex items-center gap-3">
+              <SidebarTrigger data-testid="button-sidebar-toggle" className="min-h-11 min-w-11" />
+              <TenantLogo className="h-8" />
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <LanguageToggle />
               <ThemeToggle />

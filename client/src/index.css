@@ -51,20 +51,17 @@
 
   --popover-border: 220 13% 91%;
 
+  /* Brand-customizable colors - can be overridden by tenant customTheme */
   --primary: 157 74% 40%;
-
   --primary-foreground: 0 0% 100%;
 
   --secondary: 220 8% 96%;
-
   --secondary-foreground: 220 14% 11%;
 
   --muted: 220 13% 95%;
-
   --muted-foreground: 220 9% 46%;
 
   --accent: 250 95% 66%;
-
   --accent-foreground: 0 0% 100%;
 
   --destructive: 0 84% 60%;

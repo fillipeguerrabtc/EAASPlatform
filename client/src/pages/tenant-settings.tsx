@@ -265,6 +265,37 @@ export default function TenantSettings() {
     scanBrandColorsMutation.mutate(logoUrlToScan);
   };
 
+  const handleRestoreDefaults = async () => {
+    if (!currentTenant?.id) return;
+
+    // Reset to default EAAS colors in UI
+    const defaultColors = {
+      primary: "#10A37F",
+      secondary: "#8B5CF6",
+      accent: "#3B82F6",
+      background: "#FFFFFF",
+      foreground: "#000000",
+    };
+
+    setThemeColors(defaultColors);
+    setLogoPreview(null);
+    setFaviconPreview(null);
+
+    // Clear custom theme by sending null
+    await apiRequest("PATCH", `/api/tenants/${currentTenant.id}`, {
+      customTheme: null,
+      logoUrl: null,
+      faviconUrl: null,
+    });
+
+    queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
+
+    toast({
+      title: "🔄 Restaurado!",
+      description: "Identidade visual restaurada para o padrão do sistema EAAS.",
+    });
+  };
+
   const applyThemeColors = () => {
     // Apply colors dynamically via CSS variables
     const root = document.documentElement;
@@ -728,7 +759,19 @@ export default function TenantSettings() {
             </div>
 
             {/* Theme Save Button */}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-3 flex-wrap">
+              <Button
+                onClick={handleRestoreDefaults}
+                disabled={themeMutation.isPending || uploadMutation.isPending}
+                variant="outline"
+                data-testid="button-restore-defaults"
+                className="gap-2"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Restaurar Padrão
+              </Button>
               <Button
                 onClick={handleSaveTheme}
                 disabled={themeMutation.isPending}
