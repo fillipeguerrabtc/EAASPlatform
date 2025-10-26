@@ -111,7 +111,7 @@ import {
   aiTraces,
   aiMetrics,
 } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
@@ -362,6 +362,18 @@ export interface IStorage {
   listAiMetrics(filters: { tenantId: string; startDate?: Date; endDate?: Date; aggregationPeriod?: string }): Promise<AiMetric[]>;
   createAiMetric(metric: InsertAiMetric): Promise<AiMetric>;
   updateAiMetric(id: string, data: Partial<InsertAiMetric>): Promise<AiMetric | undefined>;
+  getAiMetricsSummary(filters: { tenantId: string; startDate?: Date; endDate?: Date }): Promise<{
+    avgFactualScore: number;
+    avgNumericScore: number;
+    avgEthicalScore: number;
+    avgRiskScore: number;
+    avgOverallConfidence: number;
+    totalTraces: number;
+    escalationRate: number;
+    passRate: number;
+    topViolations: Array<{ violation: string; count: number }>;
+    tracesBySource: Array<{ source: string; count: number }>;
+  }>;
 }
 
 export class DbStorage implements IStorage {
@@ -1713,6 +1725,106 @@ export class DbStorage implements IStorage {
       .where(eq(aiMetrics.id, id))
       .returning();
     return updated;
+  }
+  
+  async getAiMetricsSummary(filters: { tenantId: string; startDate?: Date; endDate?: Date }): Promise<{
+    avgFactualScore: number;
+    avgNumericScore: number;
+    avgEthicalScore: number;
+    avgRiskScore: number;
+    avgOverallConfidence: number;
+    totalTraces: number;
+    escalationRate: number;
+    passRate: number;
+    topViolations: Array<{ violation: string; count: number }>;
+    tracesBySource: Array<{ source: string; count: number }>;
+  }> {
+    const conditions = [eq(aiTraces.tenantId, filters.tenantId)];
+    
+    if (filters.startDate) {
+      conditions.push(gte(aiTraces.createdAt, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(aiTraces.createdAt, filters.endDate));
+    }
+    
+    // Get all traces for the period
+    const traces = await db.select().from(aiTraces)
+      .where(and(...conditions));
+    
+    if (traces.length === 0) {
+      return {
+        avgFactualScore: 0,
+        avgNumericScore: 0,
+        avgEthicalScore: 0,
+        avgRiskScore: 0,
+        avgOverallConfidence: 0,
+        totalTraces: 0,
+        escalationRate: 0,
+        passRate: 0,
+        topViolations: [],
+        tracesBySource: [],
+      };
+    }
+    
+    // Calculate averages
+    const totalTraces = traces.length;
+    const avgFactualScore = traces.reduce((sum, t) => sum + parseFloat(t.factualScore || '0'), 0) / totalTraces;
+    const avgNumericScore = traces.reduce((sum, t) => sum + parseFloat(t.numericScore || '0'), 0) / totalTraces;
+    const avgEthicalScore = traces.reduce((sum, t) => sum + parseFloat(t.ethicalScore || '0'), 0) / totalTraces;
+    const avgRiskScore = traces.reduce((sum, t) => sum + parseFloat(t.riskScore || '0'), 0) / totalTraces;
+    const avgOverallConfidence = traces.reduce((sum, t) => sum + parseFloat(t.overallConfidence || '0'), 0) / totalTraces;
+    
+    const escalationCount = traces.filter(t => t.shouldEscalateToHuman).length;
+    const passCount = traces.filter(t => t.passed).length;
+    
+    const escalationRate = (escalationCount / totalTraces) * 100;
+    const passRate = (passCount / totalTraces) * 100;
+    
+    // Aggregate violations
+    const violationCounts = new Map<string, number>();
+    
+    traces.forEach(trace => {
+      const allViolations = [
+        ...(trace.factualViolations as string[] || []),
+        ...(trace.numericViolations as string[] || []),
+        ...(trace.ethicalViolations as string[] || []),
+        ...(trace.riskViolations as string[] || []),
+      ];
+      
+      allViolations.forEach(violation => {
+        violationCounts.set(violation, (violationCounts.get(violation) || 0) + 1);
+      });
+    });
+    
+    const topViolations = Array.from(violationCounts.entries())
+      .map(([violation, count]) => ({ violation, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    
+    // Count by source
+    const sourceCounts = new Map<string, number>();
+    traces.forEach(trace => {
+      const source = trace.responseSource || 'unknown';
+      sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+    });
+    
+    const tracesBySource = Array.from(sourceCounts.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count);
+    
+    return {
+      avgFactualScore: Math.round(avgFactualScore * 100) / 100,
+      avgNumericScore: Math.round(avgNumericScore * 100) / 100,
+      avgEthicalScore: Math.round(avgEthicalScore * 100) / 100,
+      avgRiskScore: Math.round(avgRiskScore * 100) / 100,
+      avgOverallConfidence: Math.round(avgOverallConfidence * 100) / 100,
+      totalTraces,
+      escalationRate: Math.round(escalationRate * 100) / 100,
+      passRate: Math.round(passRate * 100) / 100,
+      topViolations,
+      tracesBySource,
+    };
   }
 }
 
