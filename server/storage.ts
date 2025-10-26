@@ -97,6 +97,7 @@ import {
   planNodes,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
   // Users & Auth
@@ -107,6 +108,15 @@ export interface IStorage {
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
   getUserTenants(userId: string): Promise<UserTenant[]>;
   addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant>;
+  
+  // Local Auth (Email/Password)
+  registerUser(data: { email: string; password: string; name: string; userType: 'employee' | 'customer' }): Promise<User>;
+  loginUser(email: string, password: string): Promise<User | null>;
+  
+  // User Approvals (Admin)
+  listPendingApprovals(): Promise<User[]>;
+  approveUser(userId: string, adminId: string): Promise<User | undefined>;
+  rejectUser(userId: string, adminId: string, reason: string): Promise<User | undefined>;
   
   // Tenants (kept for company settings management)
   getTenant(id: string): Promise<Tenant | undefined>;
@@ -341,6 +351,91 @@ export class DbStorage implements IStorage {
 
   async addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant> {
     const result = await db.insert(userTenants).values(userTenant).returning();
+    return result[0];
+  }
+
+  // ========================================
+  // LOCAL AUTH (Email/Password)
+  // ========================================
+
+  async registerUser(data: { email: string; password: string; name: string; userType: 'employee' | 'customer' }): Promise<User> {
+    // Hash password
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    
+    // Set approval status based on user type
+    const approvalStatus = data.userType === 'customer' ? 'approved' : 'pending_approval';
+    
+    // Create user
+    const insertData: InsertUser = {
+      email: data.email,
+      name: data.name,
+      passwordHash,
+      userType: data.userType,
+      approvalStatus,
+      requestedAt: data.userType === 'employee' ? new Date() : undefined,
+      role: data.userType === 'customer' ? 'customer' : 'agent',
+    };
+    
+    const result = await db.insert(users).values(insertData).returning();
+    return result[0];
+  }
+
+  async loginUser(email: string, password: string): Promise<User | null> {
+    // Get user by email
+    const user = await this.getUserByEmail(email);
+    
+    if (!user || !user.passwordHash) {
+      return null;
+    }
+    
+    // Check if user is approved
+    if (user.approvalStatus !== 'approved') {
+      return null;
+    }
+    
+    // Verify password
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    
+    if (!isValid) {
+      return null;
+    }
+    
+    return user;
+  }
+
+  // ========================================
+  // USER APPROVALS (Admin)
+  // ========================================
+
+  async listPendingApprovals(): Promise<User[]> {
+    return await db.select().from(users)
+      .where(eq(users.approvalStatus, 'pending_approval'))
+      .orderBy(desc(users.requestedAt));
+  }
+
+  async approveUser(userId: string, adminId: string): Promise<User | undefined> {
+    const result = await db.update(users)
+      .set({
+        approvalStatus: 'approved',
+        approvedAt: new Date(),
+        approvedBy: adminId,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    return result[0];
+  }
+
+  async rejectUser(userId: string, adminId: string, reason: string): Promise<User | undefined> {
+    const result = await db.update(users)
+      .set({
+        approvalStatus: 'rejected',
+        approvedBy: adminId,
+        rejectionReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
     return result[0];
   }
 
