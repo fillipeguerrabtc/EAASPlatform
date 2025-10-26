@@ -457,8 +457,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Wrap execution in timeout promise
       const executionPromise = (async () => {
         if (mode === 'extract') {
-          const { scanWebsiteBrand } = await import("./brandScanner");
-          const brandAnalysis = await scanWebsiteBrand(url);
+          // 🚀 BRAND SCANNER PRO - Diamond Edition with ALL improvements:
+          // 1. Crawler controlado (maxDepth=2, maxPages=10)
+          // 2. CIELAB K-Means (perceptually uniform)
+          // 3. WCAG Contrast validation (AA/AAA)
+          // 4. Image sampling from hero/backgrounds
+          // 5. pHash logo detection
+          // 6. Font fallback detection
+          // 7. Deterministic export (CSS vars + Tailwind.config.ts)
+          const { scanWebsiteBrandPro } = await import("./brandScannerPro");
+          const brandAnalysis = await scanWebsiteBrandPro(url, {
+            maxDepth: 2,
+            maxPages: 10,
+            timeout: 30000,
+            respectRobots: true,  // Honor robots.txt directives (Phase 1 requirement)
+          });
           return { type: 'extract', data: brandAnalysis };
         } else if (mode === 'clone') {
           const { buildStaticSnapshot } = await import("./cloneBuilder");

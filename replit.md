@@ -45,13 +45,22 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **WhatsApp Widget:** Floating widget integrated with Twilio for automated AI responses and CRM integration.
 - **Anonymous Shopping System:** Supports sessionId-based cart management without authentication.
 - **Customer Area (`/my-account`):** Authenticated customer dashboard with order history, tracking, shopping cart, and 24/7 AI support.
-- **Brand Scanner 2.0 (PRODUCTION):** Advanced brand identity system with two modes:
-  - **Extract Mode:** Intelligent extraction using K-Means clustering for color palettes (5 clusters), typography analysis, spacing, radius, shadows, and border styles. Generates versioned ThemeTokens bundles with preview/activation system.
+- **Brand Scanner PRO - Diamond Edition (PRODUCTION):** Advanced brand identity system with two modes achieving DIAMOND-grade paridade with market leaders (Figma Tokens + Pro Crawlers):
+  - **Extract Mode (PRO):** 
+    - **Crawler Controlado:** maxDepth=2, maxPages=10, frontier management with BFS, adaptive politeness
+    - **CIELAB K-Means:** Perceptually uniform color clustering (not RGB), ΔE distance calculation, K-means++ initialization
+    - **WCAG Contrast:** Automated AA/AAA compliance validation (4.5:1 normal, 3:1 large text), accessibility reports
+    - **Image Sampling:** Hero/background color extraction via canvas sampling (not just CSS)
+    - **pHash Logos:** Perceptual hashing for logo variants detection with Hamming distance deduplication
+    - **Font Fallback:** Real rendered font detection vs declared font-stack
+    - **Export Determinístico:** CSS variables + Tailwind.config.ts with complete tokens (color, font, spacing, radius, shadow, border)
   - **Clone Mode:** Creates static HTML snapshots with security-hardened script sanitization (allowlist-based, removes inline scripts and event handlers). Supports serving cloned websites as /shop marketplace with secure iframe previews.
-  - **Technical Stack:** Puppeteer + Chromium for web scraping, client-side K-Means for color clustering, HEX→HSL conversion for Tailwind compatibility, 45s timeout with Promise.race for job execution.
+  - **Technical Stack:** Puppeteer + Chromium, culori (CIELAB conversion), Jimp (pHash), node-html-parser (crawler), robots-parser
   - **Security:** Default-deny script policy, removes ALL inline scripts and event handlers, only allows explicitly verified CDN domains.
   - **Database:** brandJobs (job tracking), themeBundles (versioned themes with JSONB tokens), cloneArtifacts (HTML snapshots with manifests).
   - **API Routes:** 10 REST endpoints (/api/brand/jobs, /api/brand/themes, /api/brand/clones) with public /api/brand/clones/active for /shop serving.
+  - **Coverage Metrics:** pagesScanned, colorsExtracted, logosFound, wcagIssues
+  - **Timeout Protection:** 45s max per job with Promise.race to prevent handler blocking
 - **Brand Theming System:** Dynamically applies ThemeTokens as CSS variables via BrandThemeProvider context. Auto-loads active themes on mount with /api/brand/themes/active query. Supports preview, activate, clear, and rollback operations.
 - **Multi-Provider OAuth:** Integration with Google, Apple, GitHub, and X for authentication.
 - **Dual-Track Authentication System:** Distinct flows for Employee Registration (requires admin approval) and Customer Registration (auto-approved, creates CRM record). Security features include Bcrypt hashing and RBAC.
