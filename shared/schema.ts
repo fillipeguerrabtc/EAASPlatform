@@ -82,7 +82,6 @@ export const tenants = pgTable("tenants", {
 // RBAC Tables Forward Declaration (needed for users table reference)
 export const roles = pgTable("roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
   isDefault: boolean("is_default").default(false).notNull(),
@@ -90,10 +89,9 @@ export const roles = pgTable("roles", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Users (Multi-tenant aware)
+// Users (Single-tenant)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   email: text("email").notNull(),
   name: text("name").notNull(),
   avatar: text("avatar"),
@@ -108,7 +106,8 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// User-Tenant Membership (for multi-tenant access)
+// User-Tenant Membership (deprecated for single-tenant, keeping for migration compatibility)
+// TODO: Remove this table after migration
 export const userTenants = pgTable("user_tenants", {
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
@@ -125,7 +124,6 @@ export const userTenants = pgTable("user_tenants", {
 // Products/Services/Experiences
 export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   type: productTypeEnum("type").default("product").notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -143,7 +141,6 @@ export const products = pgTable("products", {
 // Categories (for products/services organization)
 export const categories = pgTable("categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
   icon: text("icon"),
@@ -156,7 +153,6 @@ export const categories = pgTable("categories", {
 // Shopping Cart (supports anonymous + authenticated users)
 export const carts = pgTable("carts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }), // Nullable for anonymous carts
   sessionId: text("session_id"), // For anonymous users (session-based)
   items: jsonb("items").default([]).notNull(),
@@ -169,7 +165,6 @@ export const carts = pgTable("carts", {
 // Orders
 export const orders = pgTable("orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   items: jsonb("items").notNull(),
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
@@ -187,7 +182,6 @@ export const orders = pgTable("orders", {
 // Customers (extended from users)
 export const customers = pgTable("customers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   email: text("email"),
@@ -205,7 +199,6 @@ export const customers = pgTable("customers", {
 // Customer Interactions (Timeline)
 export const interactions = pgTable("interactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   type: text("type").notNull(),
   channel: conversationChannelEnum("channel"),
@@ -221,7 +214,6 @@ export const interactions = pgTable("interactions", {
 // Pipeline Stages
 export const pipelineStages = pgTable("pipeline_stages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   color: text("color").default("#3B82F6"),
@@ -233,7 +225,6 @@ export const pipelineStages = pgTable("pipeline_stages", {
 // Deals/Opportunities
 export const deals = pgTable("deals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   value: decimal("value", { precision: 10, scale: 2 }).notNull(),
@@ -251,7 +242,6 @@ export const deals = pgTable("deals", {
 // Customer Segments
 export const customerSegments = pgTable("customer_segments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   filters: jsonb("filters").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -261,7 +251,6 @@ export const customerSegments = pgTable("customer_segments", {
 // Activities
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }),
   dealId: varchar("deal_id").references(() => deals.id, { onDelete: "cascade" }),
   type: activityTypeEnum("type").notNull(),
@@ -280,7 +269,6 @@ export const activities = pgTable("activities", {
 // Conversations
 export const conversations = pgTable("conversations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }).notNull(),
   channel: conversationChannelEnum("channel").notNull(),
   status: conversationStatusEnum("status").default("open").notNull(),
@@ -310,7 +298,6 @@ export const messages = pgTable("messages", {
 // Knowledge Base Documents (RAG)
 export const knowledgeBase = pgTable("knowledge_base", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
   category: text("category"),
@@ -325,7 +312,6 @@ export const knowledgeBase = pgTable("knowledge_base", {
 // AI Learning Log (Successful conversations)
 export const aiLearningLog = pgTable("ai_learning_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   conversationId: varchar("conversation_id").references(() => conversations.id),
   query: text("query").notNull(),
   response: text("response").notNull(),
@@ -343,7 +329,6 @@ export const aiLearningLog = pgTable("ai_learning_log", {
 // Payments
 export const payments = pgTable("payments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   orderId: varchar("order_id").references(() => orders.id, { onDelete: "cascade" }),
   customerId: varchar("customer_id").references(() => customers.id).notNull(),
   stripePaymentIntentId: text("stripe_payment_intent_id").unique(),
@@ -362,7 +347,6 @@ export const payments = pgTable("payments", {
 // Calendar Events
 export const calendarEvents = pgTable("calendar_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
   startTime: timestamp("start_time").notNull(),
@@ -382,7 +366,6 @@ export const calendarEvents = pgTable("calendar_events", {
 // Financial Accounts (Bank Accounts, Cash, etc.)
 export const financialAccounts = pgTable("financial_accounts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull(), // checking, savings, cash, credit_card
   balance: decimal("balance", { precision: 10, scale: 2 }).default("0").notNull(),
@@ -397,7 +380,6 @@ export const financialAccounts = pgTable("financial_accounts", {
 // Financial Transactions (Simplified for MVP - flexible fields)
 export const financialTransactions = pgTable("financial_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   accountId: varchar("account_id").references(() => financialAccounts.id, { onDelete: "cascade" }), // optional for MVP
   type: text("type").notNull(), // revenue, expense, transfer
   category: text("category"), // flexible category
@@ -613,7 +595,6 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
 // Warehouses/Depósitos
 export const warehouses = pgTable("warehouses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   location: text("location"),
   address: text("address"),
@@ -626,7 +607,6 @@ export const warehouses = pgTable("warehouses", {
 // Product Stock (per warehouse)
 export const productStock = pgTable("product_stock", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
   warehouseId: varchar("warehouse_id").references(() => warehouses.id, { onDelete: "cascade" }).notNull(),
   quantity: integer("quantity").default(0).notNull(),
@@ -640,7 +620,6 @@ export const productStock = pgTable("product_stock", {
 // Stock Movements History
 export const stockMovements = pgTable("stock_movements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
   warehouseId: varchar("warehouse_id").references(() => warehouses.id, { onDelete: "cascade" }).notNull(),
   type: stockMovementTypeEnum("type").notNull(),
@@ -668,7 +647,6 @@ export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biwe
 // Departments
 export const departments = pgTable("departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
   managerId: varchar("manager_id").references(() => users.id, { onDelete: "set null" }),
@@ -681,7 +659,6 @@ export const departments = pgTable("departments", {
 // Employees
 export const employees = pgTable("employees", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }), // Link to user account (optional)
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
@@ -706,7 +683,6 @@ export const employees = pgTable("employees", {
 // Payroll Records
 export const payrollRecords = pgTable("payroll_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
@@ -727,7 +703,6 @@ export const payrollRecords = pgTable("payroll_records", {
 // Attendance Records
 export const attendanceRecords = pgTable("attendance_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
   date: timestamp("date").notNull(),
   checkIn: timestamp("check_in"),
@@ -781,7 +756,6 @@ export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
 // Plan Sessions: Persistent planning state for multi-turn POMDP
 export const planSessions = pgTable("plan_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
   customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }),
   
@@ -850,7 +824,6 @@ export type PlanNode = typeof planNodes.$inferSelect;
 // Ethical Policies: LTL+D formulas for formal verification
 export const ethicalPolicies = pgTable("ethical_policies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   
   // Policy Identity
   policyId: text("policy_id").notNull().unique(), // e.g. "risk-escalation", "kb-citation"
@@ -873,7 +846,6 @@ export const ethicalPolicies = pgTable("ethical_policies", {
 // Execution Traces: Store AI execution traces for audit/verification
 export const executionTraces = pgTable("execution_traces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
   conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
   
   // Trace Data (π = ⟨s₀,a₀,s₁,a₁,...⟩)
