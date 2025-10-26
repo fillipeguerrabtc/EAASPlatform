@@ -24,6 +24,12 @@ export interface CriticContext {
   cartValue?: number;
   knowledgeBaseMatch?: any;
   persuasionLevel?: number; // [0,1]
+  ledgerEntries?: Array<{
+    type: 'debit' | 'credit';
+    amount: number;
+    account?: string;
+    description?: string;
+  }>; // For double-entry validation
 }
 
 /**
@@ -278,6 +284,33 @@ export function numericCritic(context: CriticContext): CriticResult {
     if (qty <= 0 || qty > 10000) {
       issues.push(`Invalid quantity: ${qty}`);
       confidence *= 0.3;
+    }
+  }
+
+  // Rule 5: Double-Entry Validation (∑Débitos = ∑Créditos)
+  // ONLY validates when structured ledgerEntries are provided (not textual heuristics)
+  // This prevents false positives when AI summarizes independent transactions
+  // Example: "You had R$ 100 revenue yesterday and R$ 50 expense today" = valid (2 separate transactions)
+  // Example: Single transaction with entries = [debit: 100, credit: 100] = valid (balanced)
+  if (context.ledgerEntries && Array.isArray(context.ledgerEntries) && context.ledgerEntries.length > 0) {
+    let totalDebits = 0;
+    let totalCredits = 0;
+    
+    for (const entry of context.ledgerEntries) {
+      if (entry.type === 'debit' && typeof entry.amount === 'number') {
+        totalDebits += entry.amount;
+      } else if (entry.type === 'credit' && typeof entry.amount === 'number') {
+        totalCredits += entry.amount;
+      }
+    }
+    
+    const diff = Math.abs(totalDebits - totalCredits);
+    
+    // Allow 1 cent tolerance for rounding errors
+    if (diff > 0.01) {
+      issues.push(`Double-entry validation failed: ∑Débitos (${totalDebits.toFixed(2)}) ≠ ∑Créditos (${totalCredits.toFixed(2)}). Difference: ${diff.toFixed(2)}`);
+      confidence *= 0.2;
+      recommendations.push("Verify ledger entries - debits and credits must be equal (double-entry accounting principle)");
     }
   }
 
