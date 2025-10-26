@@ -694,6 +694,7 @@ export const stockMovements = pgTable("stock_movements", {
   notes: text("notes"),
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }), // Quem fez a movimentação
   referenceId: varchar("reference_id"), // ID da ordem/venda relacionada
+  relatedWarehouseId: varchar("related_warehouse_id").references(() => warehouses.id, { onDelete: "set null" }), // Para transfers: warehouse destino/origem
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

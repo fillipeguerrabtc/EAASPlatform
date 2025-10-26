@@ -4335,6 +4335,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // INVENTORY - STOCK TRANSFERS
+  // ========================================
+  
+  app.post("/api/inventory/transfers", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        productId: z.string().min(1, "productId é obrigatório"),
+        fromWarehouseId: z.string().min(1, "fromWarehouseId é obrigatório"),
+        toWarehouseId: z.string().min(1, "toWarehouseId é obrigatório"),
+        quantity: z.number().int().positive("Quantidade deve ser positiva"),
+        notes: z.string().optional(),
+      });
+      
+      const validatedData = schema.parse(req.body);
+      
+      if (validatedData.fromWarehouseId === validatedData.toWarehouseId) {
+        return res.status(400).json({ message: "Warehouse de origem e destino não podem ser iguais" });
+      }
+      
+      if (!req.user?.id) {
+        return res.status(401).json({ message: "Usuário não autenticado" });
+      }
+      
+      const result = await storage.createStockTransfer(
+        validatedData.productId,
+        validatedData.fromWarehouseId,
+        validatedData.toWarehouseId,
+        validatedData.quantity,
+        req.user.id,
+        validatedData.notes
+      );
+      
+      res.status(201).json(result);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error creating stock transfer:", error);
+      res.status(500).json({ message: error.message || "Erro ao criar transferência" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

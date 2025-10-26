@@ -79,6 +79,9 @@ import {
   type InsertAiMetric,
   type ReportTemplate,
   type InsertReportTemplate,
+  type StockMovement,
+  type InsertStockMovement,
+  type ProductStock,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -122,6 +125,9 @@ import {
   aiTraces,
   aiMetrics,
   reportTemplates,
+  stockMovements,
+  productStock,
+  warehouses,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -381,6 +387,9 @@ export interface IStorage {
   createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
   updateReportTemplate(id: string, data: Partial<InsertReportTemplate>): Promise<ReportTemplate | undefined>;
   deleteReportTemplate(id: string): Promise<void>;
+  
+  // Inventory - Stock Transfers
+  createStockTransfer(productId: string, fromWarehouseId: string, toWarehouseId: string, quantity: number, userId: string, notes?: string): Promise<{ success: true; movements: StockMovement[] }>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -1882,6 +1891,116 @@ export class DbStorage implements IStorage {
   async deleteReportTemplate(id: string): Promise<void> {
     await db.delete(reportTemplates)
       .where(eq(reportTemplates.id, id));
+  }
+  
+  // ========================================
+  // INVENTORY - STOCK TRANSFERS
+  // ========================================
+  
+  async createStockTransfer(
+    productId: string, 
+    fromWarehouseId: string, 
+    toWarehouseId: string, 
+    quantity: number, 
+    userId: string, 
+    notes?: string
+  ): Promise<{ success: true; movements: StockMovement[] }> {
+    // Validate warehouses exist (outside transaction for early fail)
+    const [fromWarehouse] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, fromWarehouseId))
+      .limit(1);
+    const [toWarehouse] = await db.select().from(warehouses)
+      .where(eq(warehouses.id, toWarehouseId))
+      .limit(1);
+    
+    if (!fromWarehouse) {
+      throw new Error("Warehouse de origem não encontrado");
+    }
+    if (!toWarehouse) {
+      throw new Error("Warehouse de destino não encontrado");
+    }
+    
+    // Execute transfer in transaction for atomicity
+    return await db.transaction(async (tx) => {
+      // Get current stock at source warehouse
+      const [sourceStock] = await tx.select().from(productStock)
+        .where(and(
+          eq(productStock.productId, productId),
+          eq(productStock.warehouseId, fromWarehouseId)
+        ))
+        .limit(1);
+      
+      if (!sourceStock || sourceStock.quantity < quantity) {
+        throw new Error(`Estoque insuficiente no warehouse de origem. Disponível: ${sourceStock?.quantity || 0}, Solicitado: ${quantity}`);
+      }
+      
+      // Get or create destination stock
+      let [destStock] = await tx.select().from(productStock)
+        .where(and(
+          eq(productStock.productId, productId),
+          eq(productStock.warehouseId, toWarehouseId)
+        ))
+        .limit(1);
+      
+      if (!destStock) {
+        [destStock] = await tx.insert(productStock)
+          .values({
+            productId,
+            warehouseId: toWarehouseId,
+            quantity: 0,
+            minQuantity: 0
+          })
+          .returning();
+      }
+      
+      // Calculate new quantities
+      const newSourceQty = sourceStock.quantity - quantity;
+      const newDestQty = destStock.quantity + quantity;
+      
+      // Movement OUT from source
+      const [movementOut] = await tx.insert(stockMovements)
+        .values({
+          productId,
+          warehouseId: fromWarehouseId,
+          type: "transfer",
+          quantity: -quantity,
+          previousQuantity: sourceStock.quantity,
+          newQuantity: newSourceQty,
+          userId,
+          notes: notes || `Transferência para ${toWarehouse.name}`,
+          relatedWarehouseId: toWarehouseId,
+        })
+        .returning();
+      
+      // Movement IN to destination
+      const [movementIn] = await tx.insert(stockMovements)
+        .values({
+          productId,
+          warehouseId: toWarehouseId,
+          type: "transfer",
+          quantity: quantity,
+          previousQuantity: destStock.quantity,
+          newQuantity: newDestQty,
+          userId,
+          notes: notes || `Transferência de ${fromWarehouse.name}`,
+          relatedWarehouseId: fromWarehouseId,
+        })
+        .returning();
+      
+      // Update stock quantities
+      await tx.update(productStock)
+        .set({ quantity: newSourceQty, updatedAt: new Date() })
+        .where(eq(productStock.id, sourceStock.id));
+      
+      await tx.update(productStock)
+        .set({ quantity: newDestQty, updatedAt: new Date() })
+        .where(eq(productStock.id, destStock.id));
+      
+      return {
+        success: true,
+        movements: [movementOut, movementIn]
+      };
+    });
   }
   
   // ========================================
