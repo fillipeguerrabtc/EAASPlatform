@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { Tenant } from "@shared/schema";
 
 export function TenantLogo({ className = "h-8" }: { className?: string }) {
-  const { data: tenants = [] } = useQuery<Tenant[]>({
+  const { data: tenants } = useQuery<Tenant[]>({
     queryKey: ["/api/tenants"],
   });
 
-  const currentTenant = tenants[0];
+  const currentTenant = tenants?.[0];
 
   if (!currentTenant?.logoUrl) {
     return (
