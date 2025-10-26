@@ -1294,17 +1294,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } else {
-        // REGULAR AI MODE: Knowledge Base + OpenAI
+        // REGULAR AI MODE: Hybrid RAG + OpenAI with Critics validation
         const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
-        const matchedItem = knowledgeBaseItems.find(item => 
-          item.title.toLowerCase().includes(messageLower) ||
-          item.content.toLowerCase().includes(messageLower)
-        );
         
-        if (matchedItem) {
-          response = matchedItem.content;
+        // Convert KB items to expected format (id should be number)
+        const kbItems = knowledgeBaseItems.map(item => ({
+          id: parseInt(item.id),
+          title: item.title,
+          content: item.content,
+          category: item.category || undefined,
+          tags: (item.tags as string[]) || undefined,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          isVerified: item.isActive,
+        }));
+        
+        // Use Hybrid RAG scoring for better KB search
+        const bestMatch = getBestMatch(message, kbItems, 0.3);
+        
+        if (bestMatch && bestMatch.score > 0.3) {
+          // High confidence KB match
+          response = bestMatch.item.content;
           source = "knowledge_base";
-        } else {
+          
+          // Validate with critics
+          const criticResults = runAllCritics({
+            message,
+            response,
+            source: "knowledge_base",
+            tenantId: parseInt(tenantId),
+            customerId,
+            knowledgeBaseMatch: bestMatch.item,
+          });
+          
+          // Log critic feedback
+          console.info(`[AI Critics] Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
+          console.info(`[AI Critics] Recommendation: ${criticResults.finalRecommendation}`);
+          
+          if (criticResults.shouldEscalateToHuman) {
+            console.warn(`[AI Critics] ESCALATION RECOMMENDED: ${criticResults.finalRecommendation}`);
+          }
+          
+          // If critical issues, fallback to OpenAI
+          if (!criticResults.passed && criticResults.shouldEscalateToHuman) {
+            console.warn(`[AI Critics] Critical issues detected, falling back to OpenAI`);
+            source = "openai"; // Will trigger OpenAI below
+          }
+        }
+        
+        if (source !== "knowledge_base") {
           // Fallback to OpenAI
           const OpenAI = (await import("openai")).default;
           const openai = new OpenAI({
@@ -1323,6 +1361,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
           source = "openai";
+          
+          // Validate OpenAI response with critics
+          const criticResults = runAllCritics({
+            message,
+            response,
+            source: "openai",
+            tenantId: parseInt(tenantId),
+            customerId,
+          });
+          
+          // Log critic feedback
+          console.info(`[AI Critics] OpenAI Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
+          console.info(`[AI Critics] Recommendation: ${criticResults.finalRecommendation}`);
+          
+          if (criticResults.shouldEscalateToHuman) {
+            console.warn(`[AI Critics] ESCALATION RECOMMENDED: ${criticResults.finalRecommendation}`);
+          }
         }
       }
       

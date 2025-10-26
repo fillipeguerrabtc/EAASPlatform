@@ -93,6 +93,77 @@ export function factualCritic(context: CriticContext): CriticResult {
 }
 
 /**
+ * Helper: Parse currency string to number
+ * Handles BRL ("R$ 1.234,56") and International ("$1,234.56") formats
+ */
+function parseCurrency(priceStr: string): number {
+  // Remove currency symbol
+  let cleaned = priceStr.replace(/(?:R\$|\$)\s*/g, '');
+  
+  // Count separators
+  const commaCount = (cleaned.match(/,/g) || []).length;
+  const periodCount = (cleaned.match(/\./g) || []).length;
+  const totalSeps = commaCount + periodCount;
+  
+  // Case 1: No separators → integer
+  if (totalSeps === 0) {
+    return parseFloat(cleaned);
+  }
+  
+  // Detect format by last separator position
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastPeriod = cleaned.lastIndexOf('.');
+  
+  // Case 2: Single separator
+  if (totalSeps === 1) {
+    const separator = lastComma !== -1 ? lastComma : lastPeriod;
+    const beforeSep = cleaned.substring(0, separator);
+    const afterSep = cleaned.substring(separator + 1);
+    
+    // Thousands heuristic: exactly 3 digits after AND integer part is not "0" or empty
+    // Examples:
+    // - "1.234" → 1234 (thousands)
+    // - "0.500" → 0.5 (decimal, not thousands)
+    // - "12,345" → 12345 (thousands)
+    // - "0,123" → 0.123 (decimal, not thousands)
+    const intPart = parseInt(beforeSep, 10);
+    if (afterSep.length === 3 && intPart > 0) {
+      // Remove thousands separator
+      cleaned = cleaned.replace(/[,.]/, '');
+      return parseFloat(cleaned);
+    }
+    
+    // Otherwise it's decimal - normalize to period
+    cleaned = cleaned.replace(',', '.');
+    return parseFloat(cleaned);
+  }
+  
+  // Case 3: Multiple separators
+  //  - If SAME separator type repeated → all thousands (e.g., "$1,234,567" or "R$ 1.234.567")
+  //  - If MIXED separators → last is decimal, others are thousands (e.g., "R$ 1.234,56" or "$1,234.56")
+  
+  const hasMixedSeparators = commaCount > 0 && periodCount > 0;
+  
+  if (!hasMixedSeparators) {
+    // Same separator type repeated → all are thousands
+    // Examples: "$1,234,567" or "R$ 1.234.567"
+    cleaned = cleaned.replace(/[,.]/g, '');
+    return parseFloat(cleaned);
+  }
+  
+  // Mixed separators → last is decimal, others are thousands
+  if (lastComma > lastPeriod) {
+    // BRL: "1.234,56" or "1.234.567,89" → periods are thousands, comma is decimal
+    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    // International: "1,234.56" or "1,234,567.89" → commas are thousands, period is decimal
+    cleaned = cleaned.replace(/,/g, '');
+  }
+  
+  return parseFloat(cleaned);
+}
+
+/**
  * Numeric Critic
  * 
  * Mathematical Foundation:
@@ -109,14 +180,12 @@ export function numericCritic(context: CriticContext): CriticResult {
   const recommendations: string[] = [];
   let confidence = 1.0;
 
-  // Extract all numbers from response
-  const numbers = context.response.match(/R\$\s*([\d,\.]+)/g);
+  // Extract all numbers from response (BRL and international formats)
+  const numbers = context.response.match(/(?:R\$|\$)\s*[\d.,]+/g);
   
   if (numbers && numbers.length > 0) {
-    const prices = numbers.map(n => {
-      const cleaned = n.replace(/[R\$\s,]/g, '').replace('.', '');
-      return parseFloat(cleaned) / 100; // Convert to decimal
-    });
+    // Parse prices using helper function
+    const prices = numbers.map(parseCurrency);
 
     // Rule 1: Validate cart totals if present
     if (context.cartValue !== undefined && prices.length > 1) {
@@ -131,16 +200,69 @@ export function numericCritic(context: CriticContext): CriticResult {
     }
 
     // Rule 2: Check for obviously invalid prices
-    const hasInvalidPrice = prices.some(p => p < 0 || p > 1000000 || isNaN(p));
+    const hasInvalidPrice = prices.some(p => p < 0 || p > 100000000 || isNaN(p));
     if (hasInvalidPrice) {
-      issues.push("Invalid price detected (negative, NaN, or > 1M)");
+      issues.push("Invalid price detected (negative, NaN, or > 100M)");
       confidence *= 0.2;
     }
 
-    // Rule 3: Check for precision issues
+    // Rule 3: Check for precision issues (BRL and international safe)
     const hasTooManyDecimals = numbers.some(n => {
-      const decimalPart = n.split('.')[1] || n.split(',')[1];
-      return decimalPart && decimalPart.replace(/\D/g, '').length > 2;
+      // Remove currency symbols: "R$ 1.234,56" → "1.234,56"
+      const cleaned = n.replace(/(?:R\$|\$)\s*/g, '');
+      
+      // Count separators
+      const commaCount = (cleaned.match(/,/g) || []).length;
+      const periodCount = (cleaned.match(/\./g) || []).length;
+      const totalSeparators = commaCount + periodCount;
+      
+      // Case 1: No separators → integer (valid)
+      if (totalSeparators === 0) {
+        return false;
+      }
+      
+      // Case 2: Single separator
+      if (totalSeparators === 1) {
+        const lastComma = cleaned.lastIndexOf(',');
+        const lastPeriod = cleaned.lastIndexOf('.');
+        const separator = lastComma !== -1 ? lastComma : lastPeriod;
+        const beforeSep = cleaned.substring(0, separator);
+        const afterSep = cleaned.substring(separator + 1);
+        
+        // Exactly 3 digits after AND integer part > 0 → thousands (e.g., "1.234", "12,345")
+        // Otherwise → decimal (e.g., "1.5", "0.123")
+        const intPart = parseInt(beforeSep, 10);
+        if (afterSep.length === 3 && intPart > 0) {
+          return false; // Valid thousands separator
+        }
+        
+        // Otherwise it's a decimal separator → check precision
+        return afterSep.length > 2;
+      }
+      
+      // Case 3: Multiple separators
+      const commaCountClean = (cleaned.match(/,/g) || []).length;
+      const periodCountClean = (cleaned.match(/\./g) || []).length;
+      const hasMixedSeps = commaCountClean > 0 && periodCountClean > 0;
+      
+      const lastComma = cleaned.lastIndexOf(',');
+      const lastPeriod = cleaned.lastIndexOf('.');
+      let lastSeparatorIndex: number;
+      if (lastComma > lastPeriod) {
+        lastSeparatorIndex = lastComma;
+      } else {
+        lastSeparatorIndex = lastPeriod;
+      }
+      
+      const decimalPart = cleaned.substring(lastSeparatorIndex + 1);
+      
+      // SAME separator type repeated → all thousands (e.g., "$1,234,567")
+      if (!hasMixedSeps && decimalPart.length === 3) {
+        return false; // No decimals, valid
+      }
+      
+      // MIXED separators OR non-3-digit → last separator is decimal
+      return decimalPart.length > 2;
     });
     
     if (hasTooManyDecimals) {
