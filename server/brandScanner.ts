@@ -1,5 +1,4 @@
-import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium-min';
+import puppeteer from 'puppeteer';
 
 export interface BrandColors {
   primary: string;
@@ -46,10 +45,17 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
   let browser;
   
   try {
-    // Launch Puppeteer with Chromium - use default path for Replit
+    // Launch Puppeteer with bundled Chromium
     browser = await puppeteer.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: await chromium.executablePath(),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ],
       headless: true,
     });
 
