@@ -82,8 +82,8 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         spacing: {},
       };
 
-      // Helper: Convert RGB/RGBA to HEX
-      const rgbToHex = (rgb: string): string => {
+      // Helper: Convert RGB/RGBA to HEX (function declaration for browser compatibility)
+      function rgbToHex(rgb: string): string {
         if (rgb.startsWith('#')) return rgb;
         const match = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)$/);
         if (!match) return rgb;
@@ -91,10 +91,10 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         const g = parseInt(match[2]);
         const b = parseInt(match[3]);
         return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
-      };
+      }
 
       // Helper: Calculate color saturation to find vibrant colors
-      const getSaturation = (hex: string): number => {
+      function getSaturation(hex: string): number {
         const rgb = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
         if (!rgb) return 0;
         const r = parseInt(rgb[1], 16) / 255;
@@ -103,10 +103,10 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         return max === 0 ? 0 : (max - min) / max;
-      };
+      }
 
       // Helper: Check if color is too light or too dark (ignore pure white/black)
-      const isUsableColor = (hex: string): boolean => {
+      function isUsableColor(hex: string): boolean {
         const rgb = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
         if (!rgb) return false;
         const r = parseInt(rgb[1], 16);
@@ -119,7 +119,7 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         if (r < 10 && g < 10 && b < 10) return false;
         
         return true;
-      };
+      }
 
       // 1. EXTRACT COLORS from ALL elements on page
       const allElements = Array.from(document.querySelectorAll('*'));
