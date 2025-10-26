@@ -1507,6 +1507,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         source = "autonomous_sales";
       }
       
+      // Final Critics validation for ALL autonomous_sales responses (add_to_cart, product_suggestions, etc.)
+      // These responses often contain prices and totals that need validation
+      if (source === "autonomous_sales" && response) {
+        const criticResults = runAllCritics({
+          message,
+          response,
+          source: "autonomous_sales",
+          customerId,
+          cartValue: cart ? parseFloat(cart.total) : undefined,
+        });
+        
+        // Log critic feedback
+        console.info(`[AI Critics] Autonomous Sales Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
+        
+        if (!criticResults.passed) {
+          console.warn(`[AI Critics] Issues detected in autonomous response: ${criticResults.finalRecommendation}`);
+        }
+        
+        if (criticResults.shouldEscalateToHuman) {
+          console.warn(`[AI Critics] ESCALATION RECOMMENDED: ${criticResults.finalRecommendation}`);
+        }
+      }
+      
       // Save message to conversation if conversationId provided
       if (conversationId) {
         const conversation = await storage.getConversation(conversationId);
@@ -2131,6 +2154,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         aiResponse = completion.choices[0]?.message?.content || "Desculpe, não consegui processar sua mensagem. Por favor, tente novamente.";
         source = "openai";
+      }
+      
+      // Run Critics validation BEFORE sending response
+      const criticResults = runAllCritics({
+        message: Body,
+        response: aiResponse,
+        source,
+        customerId: customer!.id,
+        knowledgeBaseMatch: matchedItem,
+      });
+      
+      // If Critics recommend escalation, disable AI and notify human
+      if (criticResults.shouldEscalateToHuman) {
+        console.log(`🚨 CRITICS ESCALATION: ${criticResults.finalRecommendation}`);
+        
+        // Disable AI handling
+        await storage.updateConversation(conversation.id, {
+          isAiHandled: false,
+        });
+        
+        // Send escalation message
+        const escalationNotice = `[Escalado para humano: ${criticResults.finalRecommendation}]`;
+        
+        if (twilioClient) {
+          await twilioClient.messages.create({
+            from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+            to: From,
+            body: `Estou transferindo você para um atendente humano. ${criticResults.finalRecommendation}`,
+          });
+        }
+        
+        // Save escalation to conversation
+        await storage.createMessage({
+          conversationId: conversation.id,
+          senderType: "ai",
+          content: escalationNotice,
+        });
+        
+        res.type("text/xml");
+        return res.send("<Response></Response>");
       }
       
       // Send AI response via WhatsApp FIRST (then save only if successful)
