@@ -46,10 +46,10 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
   let browser;
   
   try {
-    // Launch Puppeteer with Chromium
+    // Launch Puppeteer with Chromium - use default path for Replit
     browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath('/opt/nix/store'),
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath: await chromium.executablePath(),
       headless: true,
     });
 

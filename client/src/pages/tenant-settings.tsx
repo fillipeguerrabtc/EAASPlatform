@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { SEO } from "@/components/seo";
-import { Upload, Building2, Image as ImageIcon, CheckCircle2, Palette, Sparkles } from "lucide-react";
+import { Upload, Building2, Image as ImageIcon, CheckCircle2, Palette, Sparkles, X, Check } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Tenant } from "@shared/schema";
 
@@ -30,10 +31,21 @@ interface CustomTheme {
   };
 }
 
+interface BrandPreview {
+  colors: CustomTheme["colors"];
+  logo?: string;
+  favicon?: string;
+  screenshot?: string;
+  typography?: any;
+  spacing?: any;
+}
+
 export default function TenantSettings() {
   const { toast } = useToast();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
+  const [brandPreview, setBrandPreview] = useState<BrandPreview | null>(null);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   
   // Theme color states
   const [themeColors, setThemeColors] = useState<CustomTheme["colors"]>({
@@ -45,11 +57,11 @@ export default function TenantSettings() {
   });
 
   // Fetch current tenant (assuming tenant ID is in session)
-  const { data: tenants = [], isLoading } = useQuery<Tenant[]>({
+  const { data: tenants, isLoading } = useQuery<Tenant[]>({
     queryKey: ["/api/tenants"],
   });
 
-  const currentTenant = tenants[0]; // For MVP, assuming first tenant
+  const currentTenant = tenants?.[0]; // For MVP, assuming first tenant
 
   // Load existing theme colors when tenant data is available
   useEffect(() => {
@@ -153,24 +165,26 @@ export default function TenantSettings() {
         return;
       }
 
-      // Update theme colors if available
-      if (brand.colors) {
-        setThemeColors({
-          primary: brand.colors.primary || themeColors.primary,
-          secondary: brand.colors.secondary || themeColors.secondary,
-          accent: brand.colors.accent || themeColors.accent,
-          background: brand.colors.background || themeColors.background,
-          foreground: brand.colors.foreground || themeColors.foreground,
-        });
-      }
+      // Store brand data in preview state instead of applying immediately
+      const previewColors: CustomTheme["colors"] = {
+        primary: brand.colors.primary || themeColors.primary,
+        secondary: brand.colors.secondary || themeColors.secondary,
+        accent: brand.colors.accent || themeColors.accent,
+        background: brand.colors.background || themeColors.background,
+        foreground: brand.colors.foreground || themeColors.foreground,
+      };
 
-      // Update logo and favicon previews
-      if (brand.assets?.logo) {
-        setLogoPreview(brand.assets.logo);
-      }
-      if (brand.assets?.favicon) {
-        setFaviconPreview(brand.assets.favicon);
-      }
+      setBrandPreview({
+        colors: previewColors,
+        logo: brand.assets?.logo,
+        favicon: brand.assets?.favicon,
+        screenshot: brand.screenshots?.full,
+        typography: brand.typography,
+        spacing: brand.spacing,
+      });
+
+      // Show preview dialog
+      setShowPreviewDialog(true);
 
       // Build success message
       const extracted = [];
@@ -182,10 +196,8 @@ export default function TenantSettings() {
 
       toast({
         title: "✨ Identidade Visual Capturada!",
-        description: `Extraídos com sucesso: ${extracted.join(', ')}`,
+        description: `Extraídos com sucesso: ${extracted.join(', ')}. Revise a proposta!`,
       });
-      
-      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
     },
     onError: (error: Error) => {
       toast({
@@ -304,6 +316,36 @@ export default function TenantSettings() {
     root.style.setProperty('--theme-accent', themeColors.accent);
     root.style.setProperty('--theme-background', themeColors.background);
     root.style.setProperty('--theme-foreground', themeColors.foreground);
+  };
+
+  // Apply brand preview to the system
+  const handleApplyBrandPreview = () => {
+    if (!brandPreview) return;
+
+    // Apply colors
+    setThemeColors(brandPreview.colors);
+
+    // Apply logo and favicon
+    if (brandPreview.logo) {
+      setLogoPreview(brandPreview.logo);
+    }
+    if (brandPreview.favicon) {
+      setFaviconPreview(brandPreview.favicon);
+    }
+
+    // Close dialog
+    setShowPreviewDialog(false);
+
+    toast({
+      title: "✅ Identidade Aplicada!",
+      description: "A nova identidade visual foi aplicada. Clique em 'Salvar Tema' para confirmar.",
+    });
+  };
+
+  // Cancel brand preview
+  const handleCancelBrandPreview = () => {
+    setBrandPreview(null);
+    setShowPreviewDialog(false);
   };
 
   // Apply theme colors on mount and when they change
@@ -808,6 +850,186 @@ export default function TenantSettings() {
           </Button>
         </div>
       </div>
+
+      {/* Brand Preview Dialog */}
+      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <Sparkles className="h-6 w-6 text-purple-500" />
+              Preview da Nova Identidade Visual
+            </DialogTitle>
+            <DialogDescription>
+              Revise a proposta extraída do site antes de aplicar ao sistema
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Screenshot */}
+            {brandPreview?.screenshot && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Screenshot do Site Escaneado</Label>
+                <div className="rounded-lg border overflow-hidden bg-muted">
+                  <img
+                    src={brandPreview.screenshot}
+                    alt="Website Screenshot"
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Colors Preview */}
+            {brandPreview?.colors && (
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold">Cores Extraídas</Label>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="space-y-2">
+                    <div
+                      className="h-20 rounded-md border-2 shadow-sm"
+                      style={{ backgroundColor: brandPreview.colors.primary }}
+                    />
+                    <p className="text-xs text-center font-medium">Primária</p>
+                    <p className="text-xs text-center text-muted-foreground font-mono">
+                      {brandPreview.colors.primary}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div
+                      className="h-20 rounded-md border-2 shadow-sm"
+                      style={{ backgroundColor: brandPreview.colors.secondary }}
+                    />
+                    <p className="text-xs text-center font-medium">Secundária</p>
+                    <p className="text-xs text-center text-muted-foreground font-mono">
+                      {brandPreview.colors.secondary}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div
+                      className="h-20 rounded-md border-2 shadow-sm"
+                      style={{ backgroundColor: brandPreview.colors.accent }}
+                    />
+                    <p className="text-xs text-center font-medium">Destaque</p>
+                    <p className="text-xs text-center text-muted-foreground font-mono">
+                      {brandPreview.colors.accent}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div
+                      className="h-20 rounded-md border-2 shadow-sm"
+                      style={{ backgroundColor: brandPreview.colors.background }}
+                    />
+                    <p className="text-xs text-center font-medium">Fundo</p>
+                    <p className="text-xs text-center text-muted-foreground font-mono">
+                      {brandPreview.colors.background}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div
+                      className="h-20 rounded-md border-2 shadow-sm"
+                      style={{ backgroundColor: brandPreview.colors.foreground }}
+                    />
+                    <p className="text-xs text-center font-medium">Texto</p>
+                    <p className="text-xs text-center text-muted-foreground font-mono">
+                      {brandPreview.colors.foreground}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Logo and Favicon */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {brandPreview?.logo && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Logo Extraído</Label>
+                  <div className="rounded-lg border p-4 bg-background flex items-center justify-center h-32">
+                    <img
+                      src={brandPreview.logo}
+                      alt="Extracted Logo"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+              {brandPreview?.favicon && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Favicon Extraído</Label>
+                  <div className="rounded-lg border p-4 bg-background flex items-center justify-center h-32">
+                    <img
+                      src={brandPreview.favicon}
+                      alt="Extracted Favicon"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Preview Cards */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Preview da Aplicação</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Admin Dashboard Preview */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Dashboard Administrativo</p>
+                  <div className="rounded-lg border overflow-hidden">
+                    <div 
+                      className="h-8 flex items-center px-3"
+                      style={{ backgroundColor: brandPreview?.colors.primary, color: '#fff' }}
+                    >
+                      <div className="text-xs font-semibold">Admin Panel</div>
+                    </div>
+                    <div className="p-4 space-y-2 bg-card">
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.secondary, opacity: 0.2 }}></div>
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.accent, opacity: 0.2 }}></div>
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.primary, opacity: 0.2 }}></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Marketplace Preview */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Marketplace do Cliente</p>
+                  <div className="rounded-lg border overflow-hidden">
+                    <div 
+                      className="h-8 flex items-center px-3"
+                      style={{ backgroundColor: brandPreview?.colors.primary, color: '#fff' }}
+                    >
+                      <div className="text-xs font-semibold">Loja Online</div>
+                    </div>
+                    <div className="p-4 space-y-2 bg-card">
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.accent, opacity: 0.2 }}></div>
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.secondary, opacity: 0.2 }}></div>
+                      <div className="h-8 rounded" style={{ backgroundColor: brandPreview?.colors.primary, opacity: 0.2 }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={handleCancelBrandPreview}
+              data-testid="button-cancel-preview"
+              className="gap-2"
+            >
+              <X className="h-4 w-4" />
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleApplyBrandPreview}
+              data-testid="button-apply-preview"
+              className="gap-2"
+            >
+              <Check className="h-4 w-4" />
+              Aplicar Esta Identidade
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
