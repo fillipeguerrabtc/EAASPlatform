@@ -51,22 +51,35 @@ function hexToHSL(hex: string): string {
 }
 
 export function BrandThemeProvider({ children }: { children: React.ReactNode }) {
-  const { data: tenants = [] } = useQuery<Tenant[]>({
+  const { data: tenants } = useQuery<Tenant[]>({
     queryKey: ["/api/tenants"],
   });
 
-  const currentTenant = tenants[0];
+  const currentTenant = tenants?.[0];
 
   useEffect(() => {
-    if (!currentTenant) return;
-
-    const theme = currentTenant.customTheme as CustomTheme | null;
-
-    // Remove existing brand theme style tag if present
+    // Always cleanup existing brand theme first
     const existingStyle = document.getElementById('brand-theme-override');
     if (existingStyle) {
       existingStyle.remove();
     }
+
+    // Reset favicon to default
+    let favicon = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
+    }
+    favicon.href = '/favicon.svg';
+
+    // Reset title to default
+    document.title = 'EAAS - Everything As A Service';
+
+    // If no tenant, stop here (cleanup done)
+    if (!currentTenant) return;
+
+    const theme = currentTenant.customTheme as CustomTheme | null;
 
     if (theme?.colors) {
       const primaryHSL = hexToHSL(theme.colors.primary);
@@ -98,32 +111,31 @@ export function BrandThemeProvider({ children }: { children: React.ReactNode }) 
             --accent-foreground: 0 0% 100%;
           ` : ''}
         }
+
+        :root:not(.dark) {
+          ${backgroundHSL ? `
+            --background: ${backgroundHSL};
+            --card: ${backgroundHSL};
+          ` : ''}
+          ${foregroundHSL ? `
+            --foreground: ${foregroundHSL};
+            --card-foreground: ${foregroundHSL};
+          ` : ''}
+        }
       `;
 
       styleTag.textContent = cssRules;
       document.head.appendChild(styleTag);
     }
 
-    // Handle favicon
-    let favicon = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-    if (!favicon) {
-      favicon = document.createElement('link');
-      favicon.rel = 'icon';
-      document.head.appendChild(favicon);
-    }
-
+    // Override favicon if tenant has one
     if (currentTenant.faviconUrl) {
       favicon.href = currentTenant.faviconUrl;
-    } else {
-      // Reset to default EAAS favicon
-      favicon.href = '/favicon.svg';
     }
 
-    // Update document title
+    // Override title if tenant has a name
     if (currentTenant.name) {
       document.title = `${currentTenant.name} - EAAS`;
-    } else {
-      document.title = 'EAAS - Everything As A Service';
     }
   }, [currentTenant]);
 
