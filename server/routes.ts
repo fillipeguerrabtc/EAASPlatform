@@ -5,9 +5,11 @@ import { storage } from "./storage";
 import {
   insertTenantSchema,
   insertProductSchema,
+  insertProductReviewSchema,
   insertCustomerSchema,
   insertConversationSchema,
   insertMessageSchema,
+  insertMessageTemplateSchema,
   insertKnowledgeBaseSchema,
   insertPaymentSchema,
   insertOrderSchema,
@@ -715,6 +717,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get Dashboard KPIs
+  app.get("/api/dashboard/kpis", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const tenantId = user.tenantId || "default";
+      const { startDate, endDate } = req.query;
+      
+      const filters: any = { tenantId };
+      
+      // Validate date parameters
+      if (startDate) {
+        const parsedStart = new Date(startDate as string);
+        if (isNaN(parsedStart.getTime())) {
+          return res.status(400).json({ error: "Invalid startDate format" });
+        }
+        filters.startDate = parsedStart;
+      }
+      if (endDate) {
+        const parsedEnd = new Date(endDate as string);
+        if (isNaN(parsedEnd.getTime())) {
+          return res.status(400).json({ error: "Invalid endDate format" });
+        }
+        filters.endDate = parsedEnd;
+      }
+      
+      const kpis = await storage.getDashboardKpis(filters);
+      res.json(kpis);
+    } catch (error: any) {
+      console.error("Failed to fetch dashboard KPIs:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
   // Get AI Governance Policies
   app.get("/api/ai/governance/policies", isAuthenticated, async (req: Request, res: Response) => {
     try {
@@ -845,6 +884,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/products/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       await storage.deleteProduct(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // PRODUCT REVIEWS
+  // ========================================
+
+  // List reviews (productId required, only approved reviews for public)
+  app.get("/api/reviews", async (req: Request, res: Response) => {
+    try {
+      const { productId } = req.query;
+      
+      if (!productId) {
+        return res.status(400).json({ error: "productId query parameter is required" });
+      }
+      
+      const allReviews = await storage.listProductReviews(productId as string);
+      
+      // Filter to only approved reviews (public endpoint)
+      const approvedReviews = allReviews.filter(review => review.isApproved);
+      
+      res.json(approvedReviews);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get product average rating
+  app.get("/api/products/:productId/rating", async (req: Request, res: Response) => {
+    try {
+      const avgRating = await storage.getProductAverageRating(req.params.productId);
+      res.json({ productId: req.params.productId, averageRating: avgRating });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create review (authenticated users only)
+  app.post("/api/reviews", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser((req.user as any).userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      const data = insertProductReviewSchema.parse({
+        ...req.body,
+        customerId: user.id,
+      });
+      
+      const review = await storage.createProductReview(data);
+      res.status(201).json(review);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update review (authenticated users only)
+  app.patch("/api/reviews/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductReviewSchema.partial().parse(req.body);
+      const review = await storage.updateProductReview(req.params.id, data);
+      if (!review) {
+        return res.status(404).json({ error: "Review not found" });
+      }
+      res.json(review);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete review (authenticated users only)
+  app.delete("/api/reviews/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProductReview(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -998,6 +1121,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // MESSAGE TEMPLATES
+  // ========================================
+
+  // List templates (optionally filtered by category)
+  app.get("/api/templates", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { category } = req.query;
+      const templates = await storage.listMessageTemplates(category as string | undefined);
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create template
+  app.post("/api/templates", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertMessageTemplateSchema.parse(req.body);
+      const template = await storage.createMessageTemplate(data);
+      res.status(201).json(template);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update template
+  app.patch("/api/templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertMessageTemplateSchema.partial().parse(req.body);
+      const template = await storage.updateMessageTemplate(req.params.id, data);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete template
+  app.delete("/api/templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteMessageTemplate(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Increment template usage
+  app.post("/api/templates/:id/use", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.incrementTemplateUsage(req.params.id);
+      res.status(200).json({ success: true });
+    } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });

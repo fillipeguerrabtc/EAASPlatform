@@ -148,6 +148,21 @@ export const categories = pgTable("categories", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Product Reviews
+export const productReviews = pgTable("product_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  rating: integer("rating").notNull(), // 1-5 stars
+  title: text("title"),
+  comment: text("comment"),
+  isVerifiedPurchase: boolean("is_verified_purchase").default(false).notNull(),
+  isApproved: boolean("is_approved").default(true).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Shopping Cart (supports anonymous + authenticated users)
 export const carts = pgTable("carts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -287,6 +302,20 @@ export const messages = pgTable("messages", {
   attachments: text("attachments").array(),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Message Templates (Quick Replies for Omnichat)
+export const messageTemplates = pgTable("message_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  content: text("content").notNull(),
+  category: text("category"), // e.g., "greeting", "support", "sales", "faq"
+  shortcuts: text("shortcuts").array(), // Quick access shortcuts like "/welcome"
+  isActive: boolean("is_active").default(true).notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ========================================
@@ -470,6 +499,13 @@ export const insertProductSchema = createInsertSchema(products).omit({ id: true,
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 
+// Product Reviews
+export const insertProductReviewSchema = createInsertSchema(productReviews).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  rating: z.number().int().min(1).max(5),
+});
+export type InsertProductReview = z.infer<typeof insertProductReviewSchema>;
+export type ProductReview = typeof productReviews.$inferSelect;
+
 // Categories
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
@@ -504,6 +540,11 @@ export type Conversation = typeof conversations.$inferSelect;
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true });
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+
+// Message Templates
+export const insertMessageTemplateSchema = createInsertSchema(messageTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMessageTemplate = z.infer<typeof insertMessageTemplateSchema>;
+export type MessageTemplate = typeof messageTemplates.$inferSelect;
 
 // Knowledge Base
 export const insertKnowledgeBaseSchema = createInsertSchema(knowledgeBase).omit({ id: true, createdAt: true, updatedAt: true });

@@ -146,6 +146,14 @@ export interface IStorage {
   updateProduct(id: string, data: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: string): Promise<void>;
   
+  // Product Reviews
+  listProductReviews(productId?: string): Promise<ProductReview[]>;
+  getProductReview(id: string): Promise<ProductReview | undefined>;
+  createProductReview(review: InsertProductReview): Promise<ProductReview>;
+  updateProductReview(id: string, data: Partial<InsertProductReview>): Promise<ProductReview | undefined>;
+  deleteProductReview(id: string): Promise<void>;
+  getProductAverageRating(productId: string): Promise<number>;
+  
   // Customers
   listCustomers(): Promise<Customer[]>;
   getCustomer(id: string): Promise<Customer | undefined>;
@@ -161,6 +169,14 @@ export interface IStorage {
   // Messages
   listMessages(conversationId: string): Promise<Message[]>;
   createMessage(message: InsertMessage): Promise<Message>;
+  
+  // Message Templates
+  listMessageTemplates(category?: string): Promise<MessageTemplate[]>;
+  getMessageTemplate(id: string): Promise<MessageTemplate | undefined>;
+  createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate>;
+  updateMessageTemplate(id: string, data: Partial<InsertMessageTemplate>): Promise<MessageTemplate | undefined>;
+  deleteMessageTemplate(id: string): Promise<void>;
+  incrementTemplateUsage(id: string): Promise<void>;
   
   // Knowledge Base
   listKnowledgeBase(): Promise<KnowledgeBase[]>;
@@ -581,6 +597,53 @@ export class DbStorage implements IStorage {
     await db.delete(products).where(eq(products.id, id));
   }
 
+  // Product Reviews
+  async listProductReviews(productId?: string): Promise<ProductReview[]> {
+    if (productId) {
+      return await db.select().from(productReviews)
+        .where(eq(productReviews.productId, productId))
+        .orderBy(desc(productReviews.createdAt));
+    }
+    return await db.select().from(productReviews)
+      .orderBy(desc(productReviews.createdAt));
+  }
+
+  async getProductReview(id: string): Promise<ProductReview | undefined> {
+    const result = await db.select().from(productReviews)
+      .where(eq(productReviews.id, id));
+    return result[0];
+  }
+
+  async createProductReview(review: InsertProductReview): Promise<ProductReview> {
+    const result = await db.insert(productReviews).values(review).returning();
+    return result[0];
+  }
+
+  async updateProductReview(id: string, data: Partial<InsertProductReview>): Promise<ProductReview | undefined> {
+    const result = await db.update(productReviews)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(productReviews.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProductReview(id: string): Promise<void> {
+    await db.delete(productReviews).where(eq(productReviews.id, id));
+  }
+
+  async getProductAverageRating(productId: string): Promise<number> {
+    const reviews = await db.select().from(productReviews)
+      .where(and(
+        eq(productReviews.productId, productId),
+        eq(productReviews.isApproved, true)
+      ));
+    
+    if (reviews.length === 0) return 0;
+    
+    const sum = reviews.reduce((acc, review) => acc + review.rating, 0);
+    return sum / reviews.length;
+  }
+
   // ========================================
   // CUSTOMERS
   // ========================================
@@ -652,6 +715,47 @@ export class DbStorage implements IStorage {
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     const result = await db.insert(messages).values(insertMessage).returning();
     return result[0];
+  }
+
+  // Message Templates
+  async listMessageTemplates(category?: string): Promise<MessageTemplate[]> {
+    if (category) {
+      return await db.select().from(messageTemplates)
+        .where(and(eq(messageTemplates.category, category), eq(messageTemplates.isActive, true)))
+        .orderBy(desc(messageTemplates.usageCount));
+    }
+    return await db.select().from(messageTemplates)
+      .where(eq(messageTemplates.isActive, true))
+      .orderBy(desc(messageTemplates.usageCount));
+  }
+
+  async getMessageTemplate(id: string): Promise<MessageTemplate | undefined> {
+    const result = await db.select().from(messageTemplates)
+      .where(eq(messageTemplates.id, id));
+    return result[0];
+  }
+
+  async createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate> {
+    const result = await db.insert(messageTemplates).values(template).returning();
+    return result[0];
+  }
+
+  async updateMessageTemplate(id: string, data: Partial<InsertMessageTemplate>): Promise<MessageTemplate | undefined> {
+    const result = await db.update(messageTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(messageTemplates.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteMessageTemplate(id: string): Promise<void> {
+    await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
+  }
+
+  async incrementTemplateUsage(id: string): Promise<void> {
+    await db.update(messageTemplates)
+      .set({ usageCount: sql`${messageTemplates.usageCount} + 1` })
+      .where(eq(messageTemplates.id, id));
   }
 
   // ========================================
