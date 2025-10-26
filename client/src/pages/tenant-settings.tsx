@@ -152,8 +152,12 @@ export default function TenantSettings() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const scanWebsiteBrandMutation = useMutation({
     mutationFn: async (url: string) => {
-      if (!currentTenant?.id) throw new Error("No tenant selected");
-      return apiRequest("POST", `/api/tenants/${currentTenant.id}/scan-brand`, { websiteUrl: url });
+      // Get tenant ID from query data
+      const tenant = tenants?.[0];
+      if (!tenant?.id) {
+        throw new Error("Nenhuma empresa configurada. Por favor, aguarde o carregamento.");
+      }
+      return apiRequest("POST", `/api/tenants/${tenant.id}/scan-brand`, { websiteUrl: url });
     },
     onSuccess: (data: any) => {
       const brand = data.brand;

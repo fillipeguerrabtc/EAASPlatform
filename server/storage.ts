@@ -19,8 +19,6 @@ import {
   type InsertOrder,
   type Cart,
   type InsertCart,
-  type UserTenant,
-  type InsertUserTenant,
   type CalendarEvent,
   type InsertCalendarEvent,
   type Category,
@@ -74,7 +72,6 @@ import {
   payments,
   orders,
   carts,
-  userTenants,
   calendarEvents,
   categories,
   financialTransactions,
@@ -106,8 +103,6 @@ export interface IStorage {
   getUserByReplitAuthId(replitAuthId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
-  getUserTenants(userId: string): Promise<UserTenant[]>;
-  addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant>;
   
   // Local Auth (Email/Password)
   registerUser(data: { email: string; password: string; name: string; userType: 'employee' | 'customer' }): Promise<User>;
@@ -340,17 +335,6 @@ export class DbStorage implements IStorage {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
-    return result[0];
-  }
-
-  async getUserTenants(userId: string): Promise<UserTenant[]> {
-    return await db.select().from(userTenants)
-      .where(eq(userTenants.userId, userId))
-      .orderBy(desc(userTenants.createdAt));
-  }
-
-  async addUserToTenant(userTenant: InsertUserTenant): Promise<UserTenant> {
-    const result = await db.insert(userTenants).values(userTenant).returning();
     return result[0];
   }
 

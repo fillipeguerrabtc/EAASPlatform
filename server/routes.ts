@@ -2082,8 +2082,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: user.name,
           email: user.email,
           phone: null,
-          status: 'active',
           userId: user.id,
+          lifecycleStage: 'customer',
         });
       } catch (crmError) {
         console.error("Error creating customer record:", crmError);

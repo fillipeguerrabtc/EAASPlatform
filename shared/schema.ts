@@ -115,17 +115,6 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// User-Tenant Membership (deprecated for single-tenant, keeping for migration compatibility)
-// TODO: Remove this table after migration
-export const userTenants = pgTable("user_tenants", {
-  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-  role: userRoleEnum("role").default("agent").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.userId, table.tenantId] }),
-}));
-
 // ========================================
 // MARKETPLACE UNIVERSAL
 // ========================================
@@ -545,11 +534,6 @@ export type FinancialAccount = typeof financialAccounts.$inferSelect;
 export const insertFinancialTransactionSchema = createInsertSchema(financialTransactions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
 export type FinancialTransaction = typeof financialTransactions.$inferSelect;
-
-// User-Tenant Membership
-export const insertUserTenantSchema = createInsertSchema(userTenants).omit({ createdAt: true });
-export type InsertUserTenant = z.infer<typeof insertUserTenantSchema>;
-export type UserTenant = typeof userTenants.$inferSelect;
 
 // Roles
 export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
