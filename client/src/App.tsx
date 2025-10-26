@@ -21,6 +21,8 @@ import CRMActivities from "@/pages/crm-activities";
 import CRMSegments from "@/pages/crm-segments";
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
+import RegisterEmployeePage from "@/pages/register-employee";
+import RegisterCustomerPage from "@/pages/register-customer";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import Omnichat from "@/pages/omnichat";
@@ -45,6 +47,7 @@ import TenantSettings from "@/pages/tenant-settings";
 import RBAC from "@/pages/rbac";
 import InventoryPage from "@/pages/inventory";
 import HRPage from "@/pages/hr";
+import UserApprovals from "@/pages/admin/user-approvals";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -70,6 +73,8 @@ function Router() {
         <Route path="/" component={CentralMarketplace} />
         <Route path="/login" component={LoginPage} />
         <Route path="/register" component={RegisterPage} />
+        <Route path="/register/employee" component={RegisterEmployeePage} />
+        <Route path="/register/customer" component={RegisterCustomerPage} />
         <Route component={CentralMarketplace} />
       </Switch>
     );
@@ -107,6 +112,8 @@ function Router() {
             <Route path="/cart" component={CartPage} />
             <Route path="/login" component={LoginPage} />
             <Route path="/register" component={RegisterPage} />
+            <Route path="/register/employee" component={RegisterEmployeePage} />
+            <Route path="/register/customer" component={RegisterCustomerPage} />
           </>
         ) : (
           <>
@@ -134,6 +141,7 @@ function Router() {
             <Route path="/admin/rbac" component={RBAC} />
             <Route path="/admin/inventory" component={InventoryPage} />
             <Route path="/admin/hr" component={HRPage} />
+            <Route path="/admin/user-approvals" component={UserApprovals} />
             <Route path="/" component={Shop} />
             <Route path="/shop" component={Shop} />
             <Route path="/cart" component={CartPage} />
@@ -153,6 +161,8 @@ function Router() {
           <Route path="/" component={Landing} />
           <Route path="/login" component={LoginPage} />
           <Route path="/register" component={RegisterPage} />
+          <Route path="/register/employee" component={RegisterEmployeePage} />
+          <Route path="/register/customer" component={RegisterCustomerPage} />
           <Route path="/forgot-password" component={ForgotPasswordPage} />
           <Route path="/reset-password" component={ResetPasswordPage} />
           <Route path="/shop" component={Shop} />
@@ -186,6 +196,7 @@ function Router() {
           <Route path="/rbac" component={RBAC} />
           <Route path="/inventory" component={InventoryPage} />
           <Route path="/hr" component={HRPage} />
+          <Route path="/admin/user-approvals" component={UserApprovals} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

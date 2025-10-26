@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export default function Shop() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const { toast } = useToast();
   const { t } = useTranslation();
+  const { user } = useAuth();
 
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -217,6 +219,24 @@ export default function Shop() {
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              {!user && (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => navigate("/login")}
+                    data-testid="button-shop-login"
+                  >
+                    Entrar
+                  </Button>
+                  <Button 
+                    variant="default" 
+                    onClick={() => navigate("/register/customer")}
+                    data-testid="button-shop-register"
+                  >
+                    Criar Conta
+                  </Button>
+                </>
+              )}
               <ThemeToggle />
               <Button 
                 variant="outline" 

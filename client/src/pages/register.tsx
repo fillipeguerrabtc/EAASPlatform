@@ -1,173 +1,69 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { UserCircle, ShoppingBag } from "lucide-react";
 
 export default function RegisterPage() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-  const [name, setName] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-
-  const registerMutation = useMutation({
-    mutationFn: async () => {
-      if (password !== confirmPassword) {
-        throw new Error("As senhas não coincidem");
-      }
-      
-      return await apiRequest("/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          companyName,
-          email,
-          password,
-        }),
-        headers: { "Content-Type": "application/json" },
-      });
-    },
-    onSuccess: () => {
-      toast({
-        title: "Conta criada",
-        description: "Sua conta foi criada com sucesso!",
-      });
-      setLocation("/");
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Erro no cadastro",
-        description: error.message || "Não foi possível criar a conta",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    registerMutation.mutate();
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md" data-testid="card-register">
-        <CardHeader>
-          <CardTitle data-testid="text-register-title">Criar Conta</CardTitle>
-          <CardDescription data-testid="text-register-description">
-            Preencha os dados para criar sua conta
+      <Card className="w-full max-w-2xl" data-testid="card-register-choose">
+        <CardHeader className="text-center">
+          <CardTitle className="text-3xl font-bold" data-testid="text-choose-title">
+            Criar Conta
+          </CardTitle>
+          <CardDescription data-testid="text-choose-description">
+            Escolha o tipo de conta que deseja criar
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name" data-testid="label-name">Nome</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Seu nome completo"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                data-testid="input-name"
-              />
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Employee Option */}
+          <button
+            onClick={() => setLocation("/register/employee")}
+            className="group p-8 border-2 border-border rounded-xl hover-elevate active-elevate-2 transition-all flex flex-col items-center gap-4 text-center"
+            data-testid="button-choose-employee"
+          >
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <UserCircle className="w-12 h-12 text-primary" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="companyName" data-testid="label-company-name">Nome da Empresa</Label>
-              <Input
-                id="companyName"
-                type="text"
-                placeholder="Sua Empresa Ltda"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                required
-                data-testid="input-company-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email" data-testid="label-email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                data-testid="input-email"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" data-testid="label-password">Senha</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  data-testid="input-password"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowPassword(!showPassword)}
-                  data-testid="button-toggle-password"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground" data-testid="text-password-hint">
-                Mínimo 8 caracteres, com maiúscula, minúscula e número
+            <div>
+              <h3 className="text-xl font-semibold mb-2">Sou Funcionário</h3>
+              <p className="text-sm text-muted-foreground">
+                Acesso à plataforma após aprovação do administrador
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword" data-testid="label-confirm-password">Confirmar Senha</Label>
-              <Input
-                id="confirmPassword"
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                data-testid="input-confirm-password"
-              />
+          </button>
+
+          {/* Customer Option */}
+          <button
+            onClick={() => setLocation("/register/customer")}
+            className="group p-8 border-2 border-border rounded-xl hover-elevate active-elevate-2 transition-all flex flex-col items-center gap-4 text-center"
+            data-testid="button-choose-customer"
+          >
+            <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+              <ShoppingBag className="w-12 h-12 text-emerald-600 dark:text-emerald-500" />
             </div>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-4">
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={registerMutation.isPending}
-              data-testid="button-register"
+            <div>
+              <h3 className="text-xl font-semibold mb-2">Sou Cliente</h3>
+              <p className="text-sm text-muted-foreground">
+                Acesso imediato à área de compras e serviços
+              </p>
+            </div>
+          </button>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-2">
+          <div className="text-sm text-center text-muted-foreground">
+            Já tem uma conta?{" "}
+            <button
+              type="button"
+              className="font-semibold text-primary hover:underline"
+              onClick={() => setLocation("/login")}
+              data-testid="button-go-to-login"
             >
-              {registerMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Criar Conta
-            </Button>
-            <div className="text-sm text-center text-muted-foreground">
-              Já tem uma conta?{" "}
-              <Button
-                type="button"
-                variant="link"
-                className="px-1"
-                onClick={() => setLocation("/login")}
-                data-testid="button-go-to-login"
-              >
-                Fazer login
-              </Button>
-            </div>
-          </CardFooter>
-        </form>
+              Entrar
+            </button>
+          </div>
+        </CardFooter>
       </Card>
     </div>
   );
