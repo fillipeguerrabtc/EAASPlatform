@@ -27,6 +27,7 @@ import {
   insertWishlistItemSchema,
   insertCrmWorkflowSchema,
   insertReportTemplateSchema,
+  insertBudgetSchema,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -4375,6 +4376,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error creating stock transfer:", error);
       res.status(500).json({ message: error.message || "Erro ao criar transferência" });
+    }
+  });
+
+  // ========================================
+  // FINANCE - BUDGET TRACKING
+  // ========================================
+  
+  app.get("/api/budgets", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { period, category, startDate, endDate } = req.query;
+      
+      const validPeriods = ["monthly", "quarterly", "yearly"];
+      const validCategories = ["revenue", "expenses", "marketing", "operations", "salaries", "infrastructure", "other"];
+      
+      if (period && typeof period === 'string' && !validPeriods.includes(period)) {
+        return res.status(400).json({ message: `Período inválido. Valores aceitos: ${validPeriods.join(', ')}` });
+      }
+      if (category && typeof category === 'string' && !validCategories.includes(category)) {
+        return res.status(400).json({ message: `Categoria inválida. Valores aceitos: ${validCategories.join(', ')}` });
+      }
+      
+      const filters: any = {};
+      if (period && typeof period === 'string') filters.period = period;
+      if (category && typeof category === 'string') filters.category = category;
+      if (startDate && typeof startDate === 'string') {
+        const parsed = new Date(startDate);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ message: "startDate inválido (use YYYY-MM-DD)" });
+        }
+        filters.startDate = parsed;
+      }
+      if (endDate && typeof endDate === 'string') {
+        const parsed = new Date(endDate);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ message: "endDate inválido (use YYYY-MM-DD)" });
+        }
+        filters.endDate = parsed;
+      }
+      
+      const budgets = await storage.listBudgets(filters);
+      res.json(budgets);
+    } catch (error: any) {
+      console.error("Error listing budgets:", error);
+      res.status(500).json({ message: "Erro ao buscar budgets" });
+    }
+  });
+  
+  app.get("/api/budgets/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const budget = await storage.getBudget(req.params.id);
+      if (!budget) {
+        return res.status(404).json({ message: "Budget não encontrado" });
+      }
+      res.json(budget);
+    } catch (error: any) {
+      console.error("Error getting budget:", error);
+      res.status(500).json({ message: "Erro ao buscar budget" });
+    }
+  });
+  
+  app.post("/api/budgets", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertBudgetSchema.parse(req.body);
+      const created = await storage.createBudget(validatedData);
+      res.status(201).json(created);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error creating budget:", error);
+      res.status(500).json({ message: "Erro ao criar budget" });
+    }
+  });
+  
+  app.patch("/api/budgets/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertBudgetSchema.partial().parse(req.body);
+      const updated = await storage.updateBudget(req.params.id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ message: "Budget não encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating budget:", error);
+      res.status(500).json({ message: "Erro ao atualizar budget" });
+    }
+  });
+  
+  app.delete("/api/budgets/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteBudget(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting budget:", error);
+      res.status(500).json({ message: "Erro ao deletar budget" });
+    }
+  });
+  
+  app.patch("/api/budgets/:id/actual", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        actualAmount: z.number().nonnegative("actualAmount deve ser não-negativo"),
+      });
+      const validatedData = schema.parse(req.body);
+      const updated = await storage.updateBudgetActual(req.params.id, validatedData.actualAmount);
+      if (!updated) {
+        return res.status(404).json({ message: "Budget não encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating budget actual:", error);
+      res.status(500).json({ message: "Erro ao atualizar valor real" });
     }
   });
 

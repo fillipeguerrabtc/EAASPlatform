@@ -31,6 +31,8 @@ export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biwe
 export const leaveStatusEnum = pgEnum("leave_status", ["pending", "approved", "rejected", "cancelled"]);
 export const leaveTypeEnum = pgEnum("leave_type", ["vacation", "sick", "personal", "bereavement", "parental", "other"]);
 export const reportTypeEnum = pgEnum("report_type", ["sales", "finance", "inventory", "hr", "crm", "custom"]);
+export const budgetPeriodEnum = pgEnum("budget_period", ["monthly", "quarterly", "yearly"]);
+export const budgetCategoryEnum = pgEnum("budget_category", ["revenue", "expenses", "marketing", "operations", "salaries", "infrastructure", "other"]);
 
 // ========================================
 // AUTHENTICATION (Replit Auth)
@@ -1189,6 +1191,39 @@ export const reportTemplates = pgTable("report_templates", {
 export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
+
+// ========================================
+// FINANCE - BUDGET TRACKING
+// ========================================
+
+export const budgets = pgTable("budgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: budgetCategoryEnum("category").notNull(),
+  period: budgetPeriodEnum("period").notNull(),
+  
+  // Date Range
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  
+  // Amounts
+  plannedAmount: decimal("planned_amount", { precision: 12, scale: 2 }).notNull(),
+  actualAmount: decimal("actual_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+  
+  // Alerts
+  alertThreshold: decimal("alert_threshold", { precision: 5, scale: 2 }).default("80").notNull(), // Percentage
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Budgets Schemas
+export const insertBudgetSchema = createInsertSchema(budgets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBudget = z.infer<typeof insertBudgetSchema>;
+export type Budget = typeof budgets.$inferSelect;
 
 // ========================================
 // THEME TOKENS INTERFACE (Design System)

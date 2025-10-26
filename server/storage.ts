@@ -82,6 +82,8 @@ import {
   type StockMovement,
   type InsertStockMovement,
   type ProductStock,
+  type Budget,
+  type InsertBudget,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -128,6 +130,7 @@ import {
   stockMovements,
   productStock,
   warehouses,
+  budgets,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -390,6 +393,14 @@ export interface IStorage {
   
   // Inventory - Stock Transfers
   createStockTransfer(productId: string, fromWarehouseId: string, toWarehouseId: string, quantity: number, userId: string, notes?: string): Promise<{ success: true; movements: StockMovement[] }>;
+  
+  // Finance - Budget Tracking
+  listBudgets(filters?: { period?: string; category?: string; startDate?: Date; endDate?: Date }): Promise<Budget[]>;
+  getBudget(id: string): Promise<Budget | undefined>;
+  createBudget(budget: InsertBudget): Promise<Budget>;
+  updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget | undefined>;
+  deleteBudget(id: string): Promise<void>;
+  updateBudgetActual(id: string, actualAmount: number): Promise<Budget | undefined>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -2001,6 +2012,69 @@ export class DbStorage implements IStorage {
         movements: [movementOut, movementIn]
       };
     });
+  }
+  
+  // ========================================
+  // FINANCE - BUDGET TRACKING
+  // ========================================
+  
+  async listBudgets(filters?: { period?: string; category?: string; startDate?: Date; endDate?: Date }): Promise<Budget[]> {
+    let query = db.select().from(budgets);
+    const conditions: any[] = [];
+    
+    if (filters?.period) {
+      conditions.push(eq(budgets.period, filters.period as any));
+    }
+    if (filters?.category) {
+      conditions.push(eq(budgets.category, filters.category as any));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(budgets.startDate, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(budgets.endDate, filters.endDate));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return await query.orderBy(desc(budgets.createdAt));
+  }
+  
+  async getBudget(id: string): Promise<Budget | undefined> {
+    const [budget] = await db.select().from(budgets)
+      .where(eq(budgets.id, id))
+      .limit(1);
+    return budget;
+  }
+  
+  async createBudget(budget: InsertBudget): Promise<Budget> {
+    const [created] = await db.insert(budgets)
+      .values(budget)
+      .returning();
+    return created;
+  }
+  
+  async updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget | undefined> {
+    const [updated] = await db.update(budgets)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(budgets.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteBudget(id: string): Promise<void> {
+    await db.delete(budgets)
+      .where(eq(budgets.id, id));
+  }
+  
+  async updateBudgetActual(id: string, actualAmount: number): Promise<Budget | undefined> {
+    const [updated] = await db.update(budgets)
+      .set({ actualAmount: actualAmount.toString(), updatedAt: new Date() })
+      .where(eq(budgets.id, id))
+      .returning();
+    return updated;
   }
   
   // ========================================
