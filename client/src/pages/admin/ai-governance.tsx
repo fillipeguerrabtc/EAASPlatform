@@ -1,12 +1,24 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Brain, TrendingUp, Shield, AlertTriangle, CheckCircle2, XCircle, BarChart3 } from "lucide-react";
+import { Brain, TrendingUp, Shield, AlertTriangle, CheckCircle2, XCircle, BarChart3, Plus, Pencil, Trash2, Power, PowerOff } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface AiTrace {
   id: string;
@@ -39,10 +51,38 @@ interface MetricsSummary {
   tracesBySource: Array<{ source: string; count: number }>;
 }
 
+interface AiGovernancePolicy {
+  id: string;
+  tenantId: string;
+  policyName: string;
+  policyType: string;
+  ltlFormula: string | null;
+  maxPersuasionLevel: string | null;
+  riskThreshold: string | null;
+  enforcementMode: string;
+  isActive: boolean;
+  metadata: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const policyFormSchema = z.object({
+  policyName: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
+  policyType: z.enum(["ltl", "ethical", "risk", "persuasion"]),
+  ltlFormula: z.string().optional(),
+  maxPersuasionLevel: z.string().optional(),
+  riskThreshold: z.string().optional(),
+  enforcementMode: z.enum(["enforce", "warn", "log"]).default("enforce"),
+  isActive: z.boolean().default(true),
+});
+
 const COLORS = ['#10A37F', '#8B5CF6', '#F59E0B', '#EF4444', '#3B82F6'];
 
 export default function AiGovernance() {
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d">("7d");
+  const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<AiGovernancePolicy | null>(null);
+  const { toast } = useToast();
   
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - (timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90));
@@ -71,6 +111,108 @@ export default function AiGovernance() {
       return response.json();
     },
   });
+  
+  const { data: policies = [], isLoading: policiesLoading } = useQuery<AiGovernancePolicy[]>({
+    queryKey: ["/api/ai/governance/policies"],
+  });
+  
+  const policyForm = useForm<z.infer<typeof policyFormSchema>>({
+    resolver: zodResolver(policyFormSchema),
+    defaultValues: {
+      policyName: "",
+      policyType: "ethical",
+      enforcementMode: "enforce",
+      isActive: true,
+    },
+  });
+  
+  const createPolicyMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof policyFormSchema>) => {
+      return apiRequest("POST", "/api/ai/governance/policies", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/governance/policies"] });
+      setPolicyDialogOpen(false);
+      setEditingPolicy(null);
+      policyForm.reset();
+      toast({
+        title: "Política criada",
+        description: "A política foi criada com sucesso.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao criar política",
+        description: error.message || "Não foi possível criar a política.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const updatePolicyMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: z.infer<typeof policyFormSchema> }) => {
+      return apiRequest("PUT", `/api/ai/governance/policies/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/governance/policies"] });
+      setPolicyDialogOpen(false);
+      setEditingPolicy(null);
+      policyForm.reset();
+      toast({
+        title: "Política atualizada",
+        description: "A política foi atualizada com sucesso.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao atualizar política",
+        description: error.message || "Não foi possível atualizar a política.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const deletePolicyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/ai/governance/policies/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai/governance/policies"] });
+      toast({
+        title: "Política deletada",
+        description: "A política foi removida com sucesso.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erro ao deletar política",
+        description: error.message || "Não foi possível deletar a política.",
+        variant: "destructive",
+      });
+    },
+  });
+  
+  const handleEditPolicy = (policy: AiGovernancePolicy) => {
+    setEditingPolicy(policy);
+    policyForm.reset({
+      policyName: policy.policyName,
+      policyType: policy.policyType as any,
+      ltlFormula: policy.ltlFormula || "",
+      maxPersuasionLevel: policy.maxPersuasionLevel || "",
+      riskThreshold: policy.riskThreshold || "",
+      enforcementMode: policy.enforcementMode as any,
+      isActive: policy.isActive,
+    });
+    setPolicyDialogOpen(true);
+  };
+  
+  const handleSubmitPolicy = (data: z.infer<typeof policyFormSchema>) => {
+    if (editingPolicy) {
+      updatePolicyMutation.mutate({ id: editingPolicy.id, data });
+    } else {
+      createPolicyMutation.mutate(data);
+    }
+  };
   
   const criticsChartData = metrics ? [
     { name: "Factual", score: metrics.avgFactualScore },
@@ -377,14 +519,299 @@ export default function AiGovernance() {
         
         <TabsContent value="policies" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>AI Governance Policies</CardTitle>
-              <CardDescription>Configure LTL+D policies and Critics thresholds</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+              <div>
+                <CardTitle>AI Governance Policies</CardTitle>
+                <CardDescription>Configure LTL+D policies and Critics thresholds</CardDescription>
+              </div>
+              <Dialog open={policyDialogOpen} onOpenChange={setPolicyDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    onClick={() => {
+                      setEditingPolicy(null);
+                      policyForm.reset();
+                    }}
+                    data-testid="button-create-policy"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nova Política
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {editingPolicy ? "Editar Política" : "Nova Política"}
+                    </DialogTitle>
+                    <DialogDescription>
+                      Configure políticas de governança baseadas em LTL+D para o sistema Critics
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Form {...policyForm}>
+                    <form onSubmit={policyForm.handleSubmit(handleSubmitPolicy)} className="space-y-4">
+                      <FormField
+                        control={policyForm.control}
+                        name="policyName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nome da Política</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ex: Limite de Persuasão Máximo" {...field} data-testid="input-policy-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={policyForm.control}
+                        name="policyType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Tipo de Política</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-policy-type">
+                                  <SelectValue placeholder="Selecione o tipo" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="ltl">LTL (Linear Temporal Logic)</SelectItem>
+                                <SelectItem value="ethical">Ética</SelectItem>
+                                <SelectItem value="risk">Risco</SelectItem>
+                                <SelectItem value="persuasion">Persuasão</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Tipo de validação aplicada pelo Critics
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={policyForm.control}
+                        name="ltlFormula"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Fórmula LTL+D (Opcional)</FormLabel>
+                            <FormControl>
+                              <Textarea 
+                                placeholder="Ex: G(request_refund -> F[0,24h] process_refund)" 
+                                {...field} 
+                                data-testid="input-ltl-formula"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Fórmula temporal para validação automática
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={policyForm.control}
+                          name="maxPersuasionLevel"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Max Persuasão (0.00-1.00)</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number" 
+                                  step="0.01" 
+                                  min="0" 
+                                  max="1" 
+                                  placeholder="0.70" 
+                                  {...field} 
+                                  data-testid="input-max-persuasion"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={policyForm.control}
+                          name="riskThreshold"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Limite de Risco (0.00-1.00)</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number" 
+                                  step="0.01" 
+                                  min="0" 
+                                  max="1" 
+                                  placeholder="0.80" 
+                                  {...field} 
+                                  data-testid="input-risk-threshold"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <FormField
+                        control={policyForm.control}
+                        name="enforcementMode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Modo de Enforcement</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-enforcement-mode">
+                                  <SelectValue placeholder="Selecione o modo" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="enforce">Enforce (Bloquear)</SelectItem>
+                                <SelectItem value="warn">Warn (Avisar)</SelectItem>
+                                <SelectItem value="log">Log (Apenas registrar)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Como o sistema deve reagir a violações
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={policyForm.control}
+                        name="isActive"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel>Política Ativa</FormLabel>
+                              <FormDescription>
+                                Ativar/desativar esta política
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="switch-is-active"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <DialogFooter>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => setPolicyDialogOpen(false)}
+                          data-testid="button-cancel-policy"
+                        >
+                          Cancelar
+                        </Button>
+                        <Button 
+                          type="submit" 
+                          disabled={createPolicyMutation.isPending || updatePolicyMutation.isPending}
+                          data-testid="button-submit-policy"
+                        >
+                          {createPolicyMutation.isPending || updatePolicyMutation.isPending ? "Salvando..." : "Salvar Política"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-muted-foreground py-8">
-                Policy management coming soon
-              </div>
+              {policiesLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
+                </div>
+              ) : policies.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Enforcement</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {policies.map((policy) => (
+                      <TableRow key={policy.id} data-testid={`policy-row-${policy.id}`}>
+                        <TableCell className="font-medium">{policy.policyName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" data-testid={`badge-type-${policy.id}`}>
+                            {policy.policyType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={policy.enforcementMode === "enforce" ? "default" : "secondary"}
+                            data-testid={`badge-enforcement-${policy.id}`}
+                          >
+                            {policy.enforcementMode}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {policy.isActive ? (
+                            <Badge variant="default" className="bg-green-600" data-testid={`badge-active-${policy.id}`}>
+                              <Power className="h-3 w-3 mr-1" />
+                              Ativa
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" data-testid={`badge-inactive-${policy.id}`}>
+                              <PowerOff className="h-3 w-3 mr-1" />
+                              Inativa
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditPolicy(policy)}
+                              data-testid={`button-edit-${policy.id}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deletePolicyMutation.mutate(policy.id)}
+                              disabled={deletePolicyMutation.isPending}
+                              data-testid={`button-delete-${policy.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center text-muted-foreground py-12">
+                  <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">Nenhuma política configurada</p>
+                  <p className="text-sm mb-4">
+                    Crie políticas LTL+D para governar o comportamento da IA
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      setEditingPolicy(null);
+                      policyForm.reset();
+                      setPolicyDialogOpen(true);
+                    }}
+                    data-testid="button-create-first-policy"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Criar Primeira Política
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
