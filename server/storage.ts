@@ -133,6 +133,7 @@ import {
   budgets,
   customers,
   interactions,
+  performanceReviews,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -407,6 +408,14 @@ export interface IStorage {
   // CRM - Lead Scoring Automation
   calculateLeadScore(customerId: string): Promise<Customer>;
   listTopLeads(limit?: number): Promise<Customer[]>;
+  
+  // HR - Performance Reviews
+  listPerformanceReviews(filters?: { employeeId?: string; reviewerId?: string; status?: string; reviewCycle?: string }): Promise<PerformanceReview[]>;
+  getPerformanceReview(id: string): Promise<PerformanceReview | undefined>;
+  createPerformanceReview(review: InsertPerformanceReview): Promise<PerformanceReview>;
+  updatePerformanceReview(id: string, data: Partial<InsertPerformanceReview>): Promise<PerformanceReview | undefined>;
+  updatePerformanceReviewStatus(id: string, status: string, completedDate?: Date): Promise<PerformanceReview | undefined>;
+  deletePerformanceReview(id: string): Promise<void>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -2173,6 +2182,89 @@ export class DbStorage implements IStorage {
       .where(eq(customers.lifecycleStage, "lead"))
       .orderBy(desc(customers.leadScore))
       .limit(limit);
+  }
+  
+  // ========================================
+  // HR - PERFORMANCE REVIEWS
+  // ========================================
+  
+  async listPerformanceReviews(filters?: { 
+    employeeId?: string; 
+    reviewerId?: string; 
+    status?: string; 
+    reviewCycle?: string;
+  }): Promise<PerformanceReview[]> {
+    const conditions = [];
+    
+    if (filters?.employeeId) {
+      conditions.push(eq(performanceReviews.employeeId, filters.employeeId));
+    }
+    if (filters?.reviewerId) {
+      conditions.push(eq(performanceReviews.reviewerId, filters.reviewerId));
+    }
+    if (filters?.status) {
+      conditions.push(sql`${performanceReviews.status}::text = ${filters.status}`);
+    }
+    if (filters?.reviewCycle) {
+      conditions.push(eq(performanceReviews.reviewCycle, filters.reviewCycle));
+    }
+    
+    const query = conditions.length > 0
+      ? db.select().from(performanceReviews).where(and(...conditions))
+      : db.select().from(performanceReviews);
+    
+    return await query.orderBy(desc(performanceReviews.createdAt));
+  }
+  
+  async getPerformanceReview(id: string): Promise<PerformanceReview | undefined> {
+    const [review] = await db.select().from(performanceReviews)
+      .where(eq(performanceReviews.id, id))
+      .limit(1);
+    return review;
+  }
+  
+  async createPerformanceReview(review: InsertPerformanceReview): Promise<PerformanceReview> {
+    const [created] = await db.insert(performanceReviews)
+      .values(review)
+      .returning();
+    return created;
+  }
+  
+  async updatePerformanceReview(
+    id: string, 
+    data: Partial<InsertPerformanceReview>
+  ): Promise<PerformanceReview | undefined> {
+    const [updated] = await db.update(performanceReviews)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(performanceReviews.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async updatePerformanceReviewStatus(
+    id: string, 
+    status: string, 
+    completedDate?: Date
+  ): Promise<PerformanceReview | undefined> {
+    const updateData: any = {
+      status: sql`${status}::performance_review_status`,
+      updatedAt: new Date(),
+    };
+    
+    if (status === 'completed' && completedDate) {
+      updateData.completedDate = completedDate;
+    }
+    
+    const [updated] = await db.update(performanceReviews)
+      .set(updateData)
+      .where(eq(performanceReviews.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deletePerformanceReview(id: string): Promise<void> {
+    await db.delete(performanceReviews)
+      .where(eq(performanceReviews.id, id));
   }
   
   // ========================================

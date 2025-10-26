@@ -799,6 +799,42 @@ export const hrLeaveRequests = pgTable("hr_leave_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Performance Review Status
+export const performanceReviewStatusEnum = pgEnum("performance_review_status", [
+  "draft",
+  "in_progress",
+  "completed",
+  "cancelled"
+]);
+
+// Performance Reviews
+export const performanceReviews = pgTable("performance_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
+  reviewerId: varchar("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+  
+  reviewCycle: text("review_cycle").notNull(), // e.g., "2024-Q4", "2024-Annual"
+  status: performanceReviewStatusEnum("status").default("draft").notNull(),
+  
+  startDate: timestamp("start_date").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  completedDate: timestamp("completed_date"),
+  
+  // Ratings and Scores
+  ratings: jsonb("ratings"), // { "technical": 4.5, "communication": 5.0, "leadership": 3.5, ... }
+  overallScore: decimal("overall_score", { precision: 3, scale: 2 }), // e.g., 4.25 out of 5.00
+  
+  // Feedback
+  strengths: text("strengths"),
+  areasForImprovement: text("areas_for_improvement"),
+  goals: text("goals"),
+  managerComments: text("manager_comments"),
+  employeeComments: text("employee_comments"), // Self-review
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Warehouses
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
@@ -838,6 +874,11 @@ export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
 export const insertHrLeaveRequestSchema = createInsertSchema(hrLeaveRequests).omit({ id: true, createdAt: true, updatedAt: true, approvedAt: true });
 export type InsertHrLeaveRequest = z.infer<typeof insertHrLeaveRequestSchema>;
 export type HrLeaveRequest = typeof hrLeaveRequests.$inferSelect;
+
+// Performance Reviews
+export const insertPerformanceReviewSchema = createInsertSchema(performanceReviews).omit({ id: true, createdAt: true, updatedAt: true, completedDate: true });
+export type InsertPerformanceReview = z.infer<typeof insertPerformanceReviewSchema>;
+export type PerformanceReview = typeof performanceReviews.$inferSelect;
 
 // Wishlist Items
 export const insertWishlistItemSchema = createInsertSchema(wishlistItems).omit({ id: true, addedAt: true });
