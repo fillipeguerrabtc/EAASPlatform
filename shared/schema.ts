@@ -97,11 +97,23 @@ export const users = pgTable("users", {
   avatar: text("avatar"),
   role: userRoleEnum("role").default("customer").notNull(),
   customRoleId: varchar("custom_role_id").references(() => roles.id, { onDelete: "set null" }),
-  password: text("password"),
+  
+  // Authentication
+  password: text("password"), // bcrypt hash
+  passwordHash: text("password_hash"), // New field for local auth
   replitAuthId: text("replit_auth_id").unique(),
   googleId: text("google_id").unique(),
   appleId: text("apple_id").unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
+  
+  // User Type & Approval System
+  userType: text("user_type").default("customer").notNull(), // 'employee' | 'customer'
+  approvalStatus: text("approval_status").default("approved").notNull(), // 'pending_approval' | 'approved' | 'rejected'
+  requestedAt: timestamp("requested_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references((): any => users.id, { onDelete: "set null" }),
+  rejectionReason: text("rejection_reason"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
