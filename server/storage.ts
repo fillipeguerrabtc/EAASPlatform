@@ -374,6 +374,24 @@ export interface IStorage {
     topViolations: Array<{ violation: string; count: number }>;
     tracesBySource: Array<{ source: string; count: number }>;
   }>;
+  
+  // Dashboard KPIs
+  getDashboardKpis(filters: { tenantId: string; startDate?: Date; endDate?: Date }): Promise<{
+    totalRevenue: number;
+    revenueGrowth: number;
+    totalOrders: number;
+    ordersGrowth: number;
+    totalCustomers: number;
+    customersGrowth: number;
+    conversionRate: number;
+    activeConversations: number;
+    criticalAlerts: {
+      lowStockProducts: number;
+      pendingPayments: number;
+      criticsEscalations: number;
+    };
+    salesTrend: Array<{ date: string; revenue: number; orders: number }>;
+  }>;
 }
 
 export class DbStorage implements IStorage {
@@ -1824,6 +1842,178 @@ export class DbStorage implements IStorage {
       passRate: Math.round(passRate * 100) / 100,
       topViolations,
       tracesBySource,
+    };
+  }
+  
+  // ========================================
+  // DASHBOARD KPIS
+  // ========================================
+  
+  async getDashboardKpis(filters: { tenantId: string; startDate?: Date; endDate?: Date }) {
+    const { tenantId, startDate, endDate } = filters;
+    const now = endDate || new Date();
+    const defaultStart = startDate || new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    // Calculate previous period for growth comparison
+    const periodDuration = now.getTime() - defaultStart.getTime();
+    const previousPeriodStart = new Date(defaultStart.getTime() - periodDuration);
+    const previousPeriodEnd = defaultStart;
+    
+    // Current period - Orders with payment data
+    let currentOrdersQuery = db
+      .select({
+        id: orders.id,
+        status: orders.status,
+        total: orders.total,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, defaultStart),
+        lte(orders.createdAt, now)
+      ));
+    
+    const currentOrders = await currentOrdersQuery;
+    const totalOrders = currentOrders.length;
+    const totalRevenue = currentOrders.reduce((sum, order) => 
+      sum + parseFloat(order.total.toString()), 0
+    );
+    
+    // Previous period - Orders
+    let previousOrdersQuery = db
+      .select({
+        id: orders.id,
+        total: orders.total,
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, previousPeriodStart),
+        lte(orders.createdAt, previousPeriodEnd)
+      ));
+    
+    const previousOrders = await previousOrdersQuery;
+    const previousTotalOrders = previousOrders.length;
+    const previousRevenue = previousOrders.reduce((sum, order) => 
+      sum + parseFloat(order.total.toString()), 0
+    );
+    
+    // Calculate growth
+    const ordersGrowth = previousTotalOrders > 0 
+      ? ((totalOrders - previousTotalOrders) / previousTotalOrders) * 100 
+      : 0;
+    const revenueGrowth = previousRevenue > 0 
+      ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 
+      : 0;
+    
+    // Customers - Current period
+    const currentCustomers = await db
+      .select()
+      .from(customers)
+      .where(and(
+        gte(customers.createdAt, defaultStart),
+        lte(customers.createdAt, now)
+      ));
+    
+    // Customers - Previous period
+    const previousCustomers = await db
+      .select()
+      .from(customers)
+      .where(and(
+        gte(customers.createdAt, previousPeriodStart),
+        lte(customers.createdAt, previousPeriodEnd)
+      ));
+    
+    const totalCustomers = currentCustomers.length;
+    const customersGrowth = previousCustomers.length > 0 
+      ? ((totalCustomers - previousCustomers.length) / previousCustomers.length) * 100 
+      : 0;
+    
+    // Conversion Rate (orders / customers)
+    const conversionRate = totalCustomers > 0 
+      ? (totalOrders / totalCustomers) * 100 
+      : 0;
+    
+    // Active Conversations
+    const activeConvs = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.status, 'open'));
+    
+    const activeConversations = activeConvs.length;
+    
+    // Critical Alerts - Low Stock Products
+    const lowStockItems = await db
+      .select()
+      .from(productStock)
+      .where(sql`${productStock.quantity} <= ${productStock.minQuantity}`);
+    
+    // Critical Alerts - Pending Payments
+    const pendingPaymentsResult = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.status, 'pending'));
+    
+    // Critical Alerts - Critics Escalations
+    const escalationsResult = await db
+      .select()
+      .from(aiTraces)
+      .where(and(
+        eq(aiTraces.tenantId, tenantId),
+        eq(aiTraces.shouldEscalateToHuman, true),
+        gte(aiTraces.createdAt, defaultStart),
+        lte(aiTraces.createdAt, now)
+      ));
+    
+    const criticalAlerts = {
+      lowStockProducts: lowStockItems.length,
+      pendingPayments: pendingPaymentsResult.length,
+      criticsEscalations: escalationsResult.length,
+    };
+    
+    // Sales Trend - Last 7 days (or period duration)
+    const trendDays = Math.min(7, Math.ceil(periodDuration / (1000 * 60 * 60 * 24)));
+    const salesTrend = [];
+    
+    for (let i = trendDays - 1; i >= 0; i--) {
+      const dayStart = new Date(now);
+      dayStart.setDate(dayStart.getDate() - i);
+      dayStart.setHours(0, 0, 0, 0);
+      
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const dayOrders = await db
+        .select({
+          total: orders.total,
+        })
+        .from(orders)
+        .where(and(
+          gte(orders.createdAt, dayStart),
+          lte(orders.createdAt, dayEnd)
+        ));
+      
+      const dayRevenue = dayOrders.reduce((sum, order) => 
+        sum + parseFloat(order.total.toString()), 0
+      );
+      
+      salesTrend.push({
+        date: dayStart.toISOString().split('T')[0],
+        revenue: Math.round(dayRevenue * 100) / 100,
+        orders: dayOrders.length,
+      });
+    }
+    
+    return {
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      revenueGrowth: Math.round(revenueGrowth * 100) / 100,
+      totalOrders,
+      ordersGrowth: Math.round(ordersGrowth * 100) / 100,
+      totalCustomers,
+      customersGrowth: Math.round(customersGrowth * 100) / 100,
+      conversionRate: Math.round(conversionRate * 100) / 100,
+      activeConversations,
+      criticalAlerts,
+      salesTrend,
     };
   }
 }
