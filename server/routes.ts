@@ -2155,6 +2155,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // ADMIN - USER APPROVALS
+  // ========================================
+
+  // List pending user approvals (admin only)
+  app.get("/api/admin/user-approvals", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const currentUser = await storage.getUser(userId!);
+      
+      // Check if user is admin
+      if (!currentUser || (currentUser.role !== 'super_admin' && currentUser.role !== 'tenant_admin' && currentUser.role !== 'manager')) {
+        return res.status(403).json({ message: "Acesso negado. Apenas administradores podem ver solicitações." });
+      }
+      
+      const pendingUsers = await storage.listPendingApprovals();
+      res.json(pendingUsers);
+    } catch (error: any) {
+      console.error("Error listing pending approvals:", error);
+      res.status(500).json({ message: "Erro ao listar solicitações" });
+    }
+  });
+
+  // Approve user (admin only)
+  app.post("/api/admin/user-approvals/:id/approve", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const currentUser = await storage.getUser(userId!);
+      
+      // Check if user is admin
+      if (!currentUser || (currentUser.role !== 'super_admin' && currentUser.role !== 'tenant_admin' && currentUser.role !== 'manager')) {
+        return res.status(403).json({ message: "Acesso negado. Apenas administradores podem aprovar usuários." });
+      }
+      
+      const approvedUser = await storage.approveUser(req.params.id, userId!);
+      
+      if (!approvedUser) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+      
+      res.json({ message: "Usuário aprovado com sucesso", user: approvedUser });
+    } catch (error: any) {
+      console.error("Error approving user:", error);
+      res.status(500).json({ message: "Erro ao aprovar usuário" });
+    }
+  });
+
+  // Reject user (admin only)
+  app.post("/api/admin/user-approvals/:id/reject", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const rejectSchema = z.object({
+        reason: z.string().min(1, { message: "Motivo da rejeição é obrigatório" }),
+      });
+      
+      const { reason } = rejectSchema.parse(req.body);
+      const userId = getUserIdFromSession(req);
+      const currentUser = await storage.getUser(userId!);
+      
+      // Check if user is admin
+      if (!currentUser || (currentUser.role !== 'super_admin' && currentUser.role !== 'tenant_admin' && currentUser.role !== 'manager')) {
+        return res.status(403).json({ message: "Acesso negado. Apenas administradores podem rejeitar usuários." });
+      }
+      
+      const rejectedUser = await storage.rejectUser(req.params.id, userId!, reason);
+      
+      if (!rejectedUser) {
+        return res.status(404).json({ message: "Usuário não encontrado" });
+      }
+      
+      res.json({ message: "Usuário rejeitado", user: rejectedUser });
+    } catch (error: any) {
+      console.error("Error rejecting user:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao rejeitar usuário" });
+    }
+  });
+
   // Forgot password - request reset token
   app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
     try {
