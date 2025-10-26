@@ -51,6 +51,43 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Seed default super admin user if not exists
+  try {
+    const { storage } = await import("./storage");
+    const { db } = await import("./db");
+    const { users } = await import("../shared/schema");
+    const bcrypt = await import("bcrypt");
+    const { sql } = await import("drizzle-orm");
+    
+    // Check if any super_admin exists
+    const existingAdmins = await db.select().from(users).where(sql`${users.role} = 'super_admin'`).limit(1);
+    
+    if (existingAdmins.length === 0) {
+      log("🔧 Creating default super admin user...");
+      
+      // Create super admin directly with bcrypt
+      const passwordHash = await bcrypt.hash("admin123", 10);
+      
+      await db.insert(users).values({
+        email: "admin@eaas.com",
+        name: "Administrador",
+        passwordHash,
+        userType: "employee",
+        role: "super_admin",
+        approvalStatus: "approved",
+        requestedAt: new Date(),
+        approvedAt: new Date(),
+      });
+      
+      log("✅ Default super admin created:");
+      log("   Email: admin@eaas.com");
+      log("   Password: admin123");
+      log("   ⚠️  CHANGE PASSWORD AFTER FIRST LOGIN");
+    }
+  } catch (error) {
+    console.error("Error seeding super admin:", error);
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
