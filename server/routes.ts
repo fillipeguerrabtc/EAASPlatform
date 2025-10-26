@@ -1448,6 +1448,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
             knowledgeBaseMatch: bestMatch.item,
           });
           
+          // Persist AI trace to database
+          try {
+            const customer = customerId ? await storage.getCustomer(customerId) : undefined;
+            await storage.createAiTrace({
+              tenantId: customer?.tenantId || "default",
+              customerId: customerId || undefined,
+              conversationId: conversationId || undefined,
+              messageContent: message,
+              aiResponse: response,
+              responseSource: "knowledge_base",
+              factualScore: criticResults.criticsResults.factual.confidence.toFixed(2),
+              numericScore: criticResults.criticsResults.numeric.confidence.toFixed(2),
+              ethicalScore: criticResults.criticsResults.ethical.confidence.toFixed(2),
+              riskScore: criticResults.criticsResults.risk.confidence.toFixed(2),
+              overallConfidence: criticResults.overallConfidence.toFixed(2),
+              passed: criticResults.passed,
+              shouldEscalateToHuman: criticResults.shouldEscalateToHuman,
+              finalRecommendation: criticResults.finalRecommendation,
+              factualViolations: criticResults.criticsResults.factual.issues,
+              numericViolations: criticResults.criticsResults.numeric.issues,
+              ethicalViolations: criticResults.criticsResults.ethical.issues,
+              riskViolations: criticResults.criticsResults.risk.issues,
+              knowledgeBaseMatchId: bestMatch.item.id?.toString(),
+            });
+          } catch (traceError: any) {
+            console.error("[AI Trace] Failed to persist KB trace:", traceError.message);
+          }
+          
           // Log critic feedback
           console.info(`[AI Critics] Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
           console.info(`[AI Critics] Recommendation: ${criticResults.finalRecommendation}`);
@@ -1492,6 +1520,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             customerId,
           });
           
+          // Persist AI trace to database
+          try {
+            const customer = customerId ? await storage.getCustomer(customerId) : undefined;
+            await storage.createAiTrace({
+              tenantId: customer?.tenantId || "default",
+              customerId: customerId || undefined,
+              conversationId: conversationId || undefined,
+              messageContent: message,
+              aiResponse: response,
+              responseSource: "openai",
+              factualScore: criticResults.criticsResults.factual.confidence.toFixed(2),
+              numericScore: criticResults.criticsResults.numeric.confidence.toFixed(2),
+              ethicalScore: criticResults.criticsResults.ethical.confidence.toFixed(2),
+              riskScore: criticResults.criticsResults.risk.confidence.toFixed(2),
+              overallConfidence: criticResults.overallConfidence.toFixed(2),
+              passed: criticResults.passed,
+              shouldEscalateToHuman: criticResults.shouldEscalateToHuman,
+              finalRecommendation: criticResults.finalRecommendation,
+              factualViolations: criticResults.criticsResults.factual.issues,
+              numericViolations: criticResults.criticsResults.numeric.issues,
+              ethicalViolations: criticResults.criticsResults.ethical.issues,
+              riskViolations: criticResults.criticsResults.risk.issues,
+            });
+          } catch (traceError: any) {
+            console.error("[AI Trace] Failed to persist OpenAI trace:", traceError.message);
+          }
+          
           // Log critic feedback
           console.info(`[AI Critics] OpenAI Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
           console.info(`[AI Critics] Recommendation: ${criticResults.finalRecommendation}`);
@@ -1517,6 +1572,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customerId,
           cartValue: cart ? parseFloat(cart.total) : undefined,
         });
+        
+        // Persist AI trace to database
+        try {
+          const customer = customerId ? await storage.getCustomer(customerId) : undefined;
+          await storage.createAiTrace({
+            tenantId: customer?.tenantId || "default",
+            customerId: customerId || undefined,
+            conversationId: conversationId || undefined,
+            messageContent: message,
+            aiResponse: response,
+            responseSource: "autonomous_sales",
+            factualScore: criticResults.criticsResults.factual.confidence.toFixed(2),
+            numericScore: criticResults.criticsResults.numeric.confidence.toFixed(2),
+            ethicalScore: criticResults.criticsResults.ethical.confidence.toFixed(2),
+            riskScore: criticResults.criticsResults.risk.confidence.toFixed(2),
+            overallConfidence: criticResults.overallConfidence.toFixed(2),
+            passed: criticResults.passed,
+            shouldEscalateToHuman: criticResults.shouldEscalateToHuman,
+            finalRecommendation: criticResults.finalRecommendation,
+            factualViolations: criticResults.criticsResults.factual.issues,
+            numericViolations: criticResults.criticsResults.numeric.issues,
+            ethicalViolations: criticResults.criticsResults.ethical.issues,
+            riskViolations: criticResults.criticsResults.risk.issues,
+            cartValue: cart ? parseFloat(cart.total).toFixed(2) : undefined,
+          });
+        } catch (traceError: any) {
+          console.error("[AI Trace] Failed to persist autonomous sales trace:", traceError.message);
+        }
         
         // Log critic feedback
         console.info(`[AI Critics] Autonomous Sales Validation - Confidence: ${criticResults.overallConfidence.toFixed(2)}, Passed: ${criticResults.passed}`);
@@ -2164,6 +2247,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customerId: customer!.id,
         knowledgeBaseMatch: matchedItem,
       });
+      
+      // Persist AI trace to database
+      try {
+        await storage.createAiTrace({
+          tenantId: customer!.tenantId || "default",
+          customerId: customer!.id,
+          conversationId: conversation.id,
+          messageContent: Body,
+          aiResponse,
+          responseSource: source,
+          factualScore: criticResults.criticsResults.factual.confidence.toFixed(2),
+          numericScore: criticResults.criticsResults.numeric.confidence.toFixed(2),
+          ethicalScore: criticResults.criticsResults.ethical.confidence.toFixed(2),
+          riskScore: criticResults.criticsResults.risk.confidence.toFixed(2),
+          overallConfidence: criticResults.overallConfidence.toFixed(2),
+          passed: criticResults.passed,
+          shouldEscalateToHuman: criticResults.shouldEscalateToHuman,
+          finalRecommendation: criticResults.finalRecommendation,
+          factualViolations: criticResults.criticsResults.factual.issues,
+          numericViolations: criticResults.criticsResults.numeric.issues,
+          ethicalViolations: criticResults.criticsResults.ethical.issues,
+          riskViolations: criticResults.criticsResults.risk.issues,
+          knowledgeBaseMatchId: matchedItem?.id?.toString(),
+        });
+      } catch (traceError: any) {
+        console.error("[AI Trace] Failed to persist trace:", traceError.message);
+      }
       
       // If Critics recommend escalation, disable AI and notify human
       if (criticResults.shouldEscalateToHuman) {
