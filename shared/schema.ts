@@ -220,6 +220,13 @@ export const customers = pgTable("customers", {
   segment: text("segment"),
   lifecycleStage: text("lifecycle_stage").default("lead").notNull(),
   lifetimeValue: decimal("lifetime_value", { precision: 10, scale: 2 }).default("0").notNull(),
+  
+  // Lead Scoring (Automation)
+  leadScore: integer("lead_score").default(0).notNull(), // 0-100
+  engagementScore: integer("engagement_score").default(0).notNull(), // 0-100
+  demographicScore: integer("demographic_score").default(0).notNull(), // 0-100
+  lastScoreUpdate: timestamp("last_score_update"),
+  
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

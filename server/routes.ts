@@ -4497,6 +4497,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // CRM - LEAD SCORING AUTOMATION
+  // ========================================
+  
+  app.post("/api/leads/:id/calculate-score", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.calculateLeadScore(req.params.id);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error calculating lead score:", error);
+      res.status(500).json({ message: error.message || "Erro ao calcular score" });
+    }
+  });
+  
+  app.get("/api/leads/top", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { limit } = req.query;
+      
+      let parsedLimit = 10;
+      if (limit && typeof limit === 'string') {
+        parsedLimit = parseInt(limit, 10);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          return res.status(400).json({ message: "limit deve ser um número positivo" });
+        }
+        parsedLimit = Math.min(parsedLimit, 100); // Max 100
+      }
+      
+      const topLeads = await storage.listTopLeads(parsedLimit);
+      res.json(topLeads);
+    } catch (error: any) {
+      console.error("Error listing top leads:", error);
+      res.status(500).json({ message: "Erro ao buscar top leads" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

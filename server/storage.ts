@@ -131,6 +131,8 @@ import {
   productStock,
   warehouses,
   budgets,
+  customers,
+  interactions,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -401,6 +403,10 @@ export interface IStorage {
   updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget | undefined>;
   deleteBudget(id: string): Promise<void>;
   updateBudgetActual(id: string, actualAmount: number): Promise<Budget | undefined>;
+  
+  // CRM - Lead Scoring Automation
+  calculateLeadScore(customerId: string): Promise<Customer>;
+  listTopLeads(limit?: number): Promise<Customer[]>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -2075,6 +2081,98 @@ export class DbStorage implements IStorage {
       .where(eq(budgets.id, id))
       .returning();
     return updated;
+  }
+  
+  // ========================================
+  // CRM - LEAD SCORING AUTOMATION
+  // ========================================
+  
+  async calculateLeadScore(customerId: string): Promise<Customer> {
+    const [customer] = await db.select().from(customers)
+      .where(eq(customers.id, customerId))
+      .limit(1);
+    
+    if (!customer) {
+      throw new Error("Customer não encontrado");
+    }
+    
+    // Calculate Engagement Score (0-100) based on interactions
+    const customerInteractions = await db.select().from(interactions)
+      .where(eq(interactions.customerId, customerId));
+    
+    let engagementScore = 0;
+    
+    // Base score from interaction count (max 40 points)
+    const interactionCount = customerInteractions.length;
+    engagementScore += Math.min(interactionCount * 5, 40);
+    
+    // Recency bonus (max 30 points)
+    if (customerInteractions.length > 0) {
+      const latestInteraction = customerInteractions.reduce((latest, current) => {
+        return current.createdAt > latest.createdAt ? current : latest;
+      });
+      
+      const daysSinceLastInteraction = Math.floor(
+        (Date.now() - latestInteraction.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      if (daysSinceLastInteraction <= 7) {
+        engagementScore += 30;
+      } else if (daysSinceLastInteraction <= 30) {
+        engagementScore += 20;
+      } else if (daysSinceLastInteraction <= 90) {
+        engagementScore += 10;
+      }
+    }
+    
+    // Diversity bonus (different channels, max 30 points)
+    const uniqueChannels = new Set(customerInteractions.map(i => i.channel).filter(Boolean));
+    engagementScore += Math.min(uniqueChannels.size * 10, 30);
+    
+    engagementScore = Math.min(engagementScore, 100);
+    
+    // Calculate Demographic Score (0-100) based on metadata
+    let demographicScore = 0;
+    const metadata = customer.metadata as any || {};
+    
+    // Has email (20 points)
+    if (customer.email) demographicScore += 20;
+    
+    // Has phone/whatsapp (20 points)
+    if (customer.phone || customer.whatsapp) demographicScore += 20;
+    
+    // Has location/company data in metadata (20 points each)
+    if (metadata.location || metadata.city || metadata.country) demographicScore += 20;
+    if (metadata.company || metadata.companySize) demographicScore += 20;
+    
+    // Has tags (20 points)
+    if (customer.tags && customer.tags.length > 0) demographicScore += 20;
+    
+    demographicScore = Math.min(demographicScore, 100);
+    
+    // Combined Lead Score (weighted average: 60% engagement, 40% demographic)
+    const leadScore = Math.round((engagementScore * 0.6) + (demographicScore * 0.4));
+    
+    // Update customer
+    const [updated] = await db.update(customers)
+      .set({
+        leadScore,
+        engagementScore,
+        demographicScore,
+        lastScoreUpdate: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(customers.id, customerId))
+      .returning();
+    
+    return updated;
+  }
+  
+  async listTopLeads(limit: number = 10): Promise<Customer[]> {
+    return await db.select().from(customers)
+      .where(eq(customers.lifecycleStage, "lead"))
+      .orderBy(desc(customers.leadScore))
+      .limit(limit);
   }
   
   // ========================================
