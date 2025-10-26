@@ -179,6 +179,28 @@ export const wishlistItems = pgTable("wishlist_items", {
   addedAt: timestamp("added_at").defaultNow().notNull(),
 });
 
+// Product Bundles (Packages/Kits)
+export const productBundles = pgTable("product_bundles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  bundlePrice: decimal("bundle_price", { precision: 10, scale: 2 }).notNull(),
+  discount: decimal("discount", { precision: 5, scale: 2 }).default("0"), // % or fixed amount
+  isActive: boolean("is_active").default(true).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Product Bundle Items (Junction table: bundles ↔ products)
+export const productBundleItems = pgTable("product_bundle_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bundleId: varchar("bundle_id").references(() => productBundles.id, { onDelete: "cascade" }).notNull(),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  quantity: integer("quantity").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Shopping Cart (supports anonymous + authenticated users)
 export const carts = pgTable("carts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -884,6 +906,16 @@ export type PerformanceReview = typeof performanceReviews.$inferSelect;
 export const insertWishlistItemSchema = createInsertSchema(wishlistItems).omit({ id: true, addedAt: true });
 export type InsertWishlistItem = z.infer<typeof insertWishlistItemSchema>;
 export type WishlistItem = typeof wishlistItems.$inferSelect;
+
+// Product Bundles
+export const insertProductBundleSchema = createInsertSchema(productBundles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProductBundle = z.infer<typeof insertProductBundleSchema>;
+export type ProductBundle = typeof productBundles.$inferSelect;
+
+// Product Bundle Items
+export const insertProductBundleItemSchema = createInsertSchema(productBundleItems).omit({ id: true, createdAt: true });
+export type InsertProductBundleItem = z.infer<typeof insertProductBundleItemSchema>;
+export type ProductBundleItem = typeof productBundleItems.$inferSelect;
 
 // CRM Workflows
 export const insertCrmWorkflowSchema = createInsertSchema(crmWorkflows).omit({ id: true, createdAt: true, updatedAt: true, lastExecutedAt: true, executionCount: true });

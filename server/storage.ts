@@ -134,6 +134,9 @@ import {
   customers,
   interactions,
   performanceReviews,
+  productBundles,
+  productBundleItems,
+  products,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -416,6 +419,16 @@ export interface IStorage {
   updatePerformanceReview(id: string, data: Partial<InsertPerformanceReview>): Promise<PerformanceReview | undefined>;
   updatePerformanceReviewStatus(id: string, status: string, completedDate?: Date): Promise<PerformanceReview | undefined>;
   deletePerformanceReview(id: string): Promise<void>;
+  
+  // Marketplace - Product Bundles
+  listProductBundles(filters?: { isActive?: boolean }): Promise<ProductBundle[]>;
+  getProductBundle(id: string): Promise<ProductBundle | undefined>;
+  getProductBundleWithItems(id: string): Promise<{ bundle: ProductBundle; items: (ProductBundleItem & { product?: any })[] } | undefined>;
+  createProductBundle(bundle: InsertProductBundle, items: InsertProductBundleItem[]): Promise<ProductBundle>;
+  updateProductBundle(id: string, data: Partial<InsertProductBundle>): Promise<ProductBundle | undefined>;
+  addItemToBundle(bundleId: string, productId: string, quantity: number): Promise<ProductBundleItem>;
+  removeItemFromBundle(bundleId: string, itemId: string): Promise<void>;
+  deleteProductBundle(id: string): Promise<void>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -2265,6 +2278,154 @@ export class DbStorage implements IStorage {
   async deletePerformanceReview(id: string): Promise<void> {
     await db.delete(performanceReviews)
       .where(eq(performanceReviews.id, id));
+  }
+  
+  // ========================================
+  // MARKETPLACE - PRODUCT BUNDLES
+  // ========================================
+  
+  async listProductBundles(filters?: { isActive?: boolean }): Promise<ProductBundle[]> {
+    const conditions = [];
+    
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(productBundles.isActive, filters.isActive));
+    }
+    
+    const query = conditions.length > 0
+      ? db.select().from(productBundles).where(and(...conditions))
+      : db.select().from(productBundles);
+    
+    return await query.orderBy(desc(productBundles.createdAt));
+  }
+  
+  async getProductBundle(id: string): Promise<ProductBundle | undefined> {
+    const [bundle] = await db.select().from(productBundles)
+      .where(eq(productBundles.id, id))
+      .limit(1);
+    return bundle;
+  }
+  
+  async getProductBundleWithItems(id: string): Promise<{ bundle: ProductBundle; items: (ProductBundleItem & { product?: any })[] } | undefined> {
+    const [bundle] = await db.select().from(productBundles)
+      .where(eq(productBundles.id, id))
+      .limit(1);
+    
+    if (!bundle) {
+      return undefined;
+    }
+    
+    // Get all items for this bundle with product details
+    const items = await db.select({
+      id: productBundleItems.id,
+      bundleId: productBundleItems.bundleId,
+      productId: productBundleItems.productId,
+      quantity: productBundleItems.quantity,
+      createdAt: productBundleItems.createdAt,
+      product: products,
+    })
+    .from(productBundleItems)
+    .leftJoin(products, eq(productBundleItems.productId, products.id))
+    .where(eq(productBundleItems.bundleId, id));
+    
+    return { bundle, items };
+  }
+  
+  async createProductBundle(
+    bundle: InsertProductBundle, 
+    items: InsertProductBundleItem[]
+  ): Promise<ProductBundle> {
+    // Validate all products exist before creating bundle
+    const productIds = items.map(item => item.productId);
+    const uniqueProductIds = [...new Set(productIds)];
+    
+    const existingProducts = await db.select({ id: products.id })
+      .from(products)
+      .where(sql`${products.id} = ANY(${uniqueProductIds})`);
+    
+    const existingProductIds = new Set(existingProducts.map(p => p.id));
+    const missingProductIds = uniqueProductIds.filter(id => !existingProductIds.has(id));
+    
+    if (missingProductIds.length > 0) {
+      throw new Error(`Products não encontrados: ${missingProductIds.join(', ')}`);
+    }
+    
+    // Use transaction to ensure atomicity
+    return await db.transaction(async (tx) => {
+      // Create bundle
+      const [createdBundle] = await tx.insert(productBundles)
+        .values(bundle)
+        .returning();
+      
+      // Create all bundle items
+      if (items.length > 0) {
+        const itemsWithBundleId = items.map(item => ({
+          ...item,
+          bundleId: createdBundle.id,
+        }));
+        
+        await tx.insert(productBundleItems)
+          .values(itemsWithBundleId);
+      }
+      
+      return createdBundle;
+    });
+  }
+  
+  async updateProductBundle(
+    id: string, 
+    data: Partial<InsertProductBundle>
+  ): Promise<ProductBundle | undefined> {
+    const [updated] = await db.update(productBundles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(productBundles.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async addItemToBundle(
+    bundleId: string, 
+    productId: string, 
+    quantity: number
+  ): Promise<ProductBundleItem> {
+    // Validate bundle exists
+    const bundle = await this.getProductBundle(bundleId);
+    if (!bundle) {
+      throw new Error("Bundle não encontrado");
+    }
+    
+    // Validate product exists
+    const [product] = await db.select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+    
+    if (!product) {
+      throw new Error("Product não encontrado");
+    }
+    
+    const [item] = await db.insert(productBundleItems)
+      .values({
+        bundleId,
+        productId,
+        quantity,
+      })
+      .returning();
+    return item;
+  }
+  
+  async removeItemFromBundle(bundleId: string, itemId: string): Promise<void> {
+    await db.delete(productBundleItems)
+      .where(
+        and(
+          eq(productBundleItems.id, itemId),
+          eq(productBundleItems.bundleId, bundleId)
+        )
+      );
+  }
+  
+  async deleteProductBundle(id: string): Promise<void> {
+    await db.delete(productBundles)
+      .where(eq(productBundles.id, id));
   }
   
   // ========================================

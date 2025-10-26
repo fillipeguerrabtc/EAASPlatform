@@ -29,6 +29,8 @@ import {
   insertReportTemplateSchema,
   insertBudgetSchema,
   insertPerformanceReviewSchema,
+  insertProductBundleSchema,
+  insertProductBundleItemSchema,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -4650,6 +4652,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting performance review:", error);
       res.status(500).json({ message: "Erro ao deletar performance review" });
+    }
+  });
+
+  // ========================================
+  // MARKETPLACE - PRODUCT BUNDLES
+  // ========================================
+  
+  app.get("/api/product-bundles", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { isActive } = req.query;
+      
+      const filters: any = {};
+      if (isActive && typeof isActive === 'string') {
+        filters.isActive = isActive === 'true';
+      }
+      
+      const bundles = await storage.listProductBundles(filters);
+      res.json(bundles);
+    } catch (error: any) {
+      console.error("Error listing product bundles:", error);
+      res.status(500).json({ message: "Erro ao buscar product bundles" });
+    }
+  });
+  
+  app.get("/api/product-bundles/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const bundleWithItems = await storage.getProductBundleWithItems(req.params.id);
+      if (!bundleWithItems) {
+        return res.status(404).json({ message: "Product bundle não encontrado" });
+      }
+      res.json(bundleWithItems);
+    } catch (error: any) {
+      console.error("Error getting product bundle:", error);
+      res.status(500).json({ message: "Erro ao buscar product bundle" });
+    }
+  });
+  
+  app.post("/api/product-bundles", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        bundle: insertProductBundleSchema,
+        items: z.array(insertProductBundleItemSchema.omit({ bundleId: true })).min(1, "Bundle deve ter pelo menos 1 item"),
+      });
+      
+      const validatedData = schema.parse(req.body);
+      const created = await storage.createProductBundle(validatedData.bundle, validatedData.items);
+      res.status(201).json(created);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      // Validation errors from storage (missing products/bundles)
+      if (error.message && error.message.includes("não encontrado")) {
+        return res.status(400).json({ message: error.message });
+      }
+      console.error("Error creating product bundle:", error);
+      res.status(500).json({ message: "Erro ao criar product bundle" });
+    }
+  });
+  
+  app.patch("/api/product-bundles/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertProductBundleSchema.partial().parse(req.body);
+      const updated = await storage.updateProductBundle(req.params.id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ message: "Product bundle não encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating product bundle:", error);
+      res.status(500).json({ message: "Erro ao atualizar product bundle" });
+    }
+  });
+  
+  app.post("/api/product-bundles/:id/items", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        productId: z.string().min(1, "productId é obrigatório"),
+        quantity: z.number().int().positive("Quantidade deve ser positiva"),
+      });
+      
+      const validatedData = schema.parse(req.body);
+      const item = await storage.addItemToBundle(
+        req.params.id, 
+        validatedData.productId, 
+        validatedData.quantity
+      );
+      res.status(201).json(item);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      // Validation errors from storage (missing products/bundles)
+      if (error.message && error.message.includes("não encontrado")) {
+        return res.status(400).json({ message: error.message });
+      }
+      console.error("Error adding item to bundle:", error);
+      res.status(500).json({ message: "Erro ao adicionar item ao bundle" });
+    }
+  });
+  
+  app.delete("/api/product-bundles/:bundleId/items/:itemId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.removeItemFromBundle(req.params.bundleId, req.params.itemId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error removing item from bundle:", error);
+      res.status(500).json({ message: "Erro ao remover item do bundle" });
+    }
+  });
+  
+  app.delete("/api/product-bundles/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProductBundle(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting product bundle:", error);
+      res.status(500).json({ message: "Erro ao deletar product bundle" });
     }
   });
 
