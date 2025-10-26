@@ -55,6 +55,12 @@ import {
   type InsertPayrollRecord,
   type AttendanceRecord,
   type InsertAttendanceRecord,
+  type HrLeaveRequest,
+  type InsertHrLeaveRequest,
+  type WishlistItem,
+  type InsertWishlistItem,
+  type CrmWorkflow,
+  type InsertCrmWorkflow,
   type PlanSession,
   type InsertPlanSession,
   type PlanNode,
@@ -102,6 +108,9 @@ import {
   employees,
   payrollRecords,
   attendanceRecords,
+  hrLeaveRequests,
+  wishlistItems,
+  crmWorkflows,
   planSessions,
   planNodes,
   brandJobs,
@@ -331,6 +340,29 @@ export interface IStorage {
   createAttendanceRecord(record: InsertAttendanceRecord): Promise<AttendanceRecord>;
   updateAttendanceRecord(id: string, data: Partial<InsertAttendanceRecord>): Promise<AttendanceRecord | undefined>;
   deleteAttendanceRecord(id: string): Promise<void>;
+  
+  // HR - Leave Requests
+  listLeaveRequests(filters?: { employeeId?: string; status?: string }): Promise<HrLeaveRequest[]>;
+  getLeaveRequest(id: string): Promise<HrLeaveRequest | undefined>;
+  createLeaveRequest(request: InsertHrLeaveRequest): Promise<HrLeaveRequest>;
+  updateLeaveRequest(id: string, data: Partial<InsertHrLeaveRequest>): Promise<HrLeaveRequest | undefined>;
+  approveLeaveRequest(id: string, approvedBy: string): Promise<HrLeaveRequest | undefined>;
+  rejectLeaveRequest(id: string, rejectionReason: string): Promise<HrLeaveRequest | undefined>;
+  deleteLeaveRequest(id: string): Promise<void>;
+  
+  // Marketplace - Wishlist
+  listWishlistItems(customerId: string): Promise<WishlistItem[]>;
+  getWishlistItem(customerId: string, productId: string): Promise<WishlistItem | undefined>;
+  addToWishlist(item: InsertWishlistItem): Promise<WishlistItem>;
+  removeFromWishlist(customerId: string, productId: string): Promise<void>;
+  
+  // CRM - Workflows
+  listCrmWorkflows(): Promise<CrmWorkflow[]>;
+  getCrmWorkflow(id: string): Promise<CrmWorkflow | undefined>;
+  createCrmWorkflow(workflow: InsertCrmWorkflow): Promise<CrmWorkflow>;
+  updateCrmWorkflow(id: string, data: Partial<InsertCrmWorkflow>): Promise<CrmWorkflow | undefined>;
+  deleteCrmWorkflow(id: string): Promise<void>;
+  executeCrmWorkflow(id: string): Promise<CrmWorkflow | undefined>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -1567,6 +1599,153 @@ export class DbStorage implements IStorage {
   async deleteAttendanceRecord(id: string): Promise<void> {
     await db.delete(attendanceRecords)
       .where(eq(attendanceRecords.id, id));
+  }
+  
+  // ========================================
+  // HR - LEAVE REQUESTS
+  // ========================================
+  
+  async listLeaveRequests(filters?: { employeeId?: string; status?: string }): Promise<HrLeaveRequest[]> {
+    let conditions: any[] = [];
+    
+    if (filters?.employeeId) {
+      conditions.push(eq(hrLeaveRequests.employeeId, filters.employeeId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(hrLeaveRequests.status, filters.status as any));
+    }
+    
+    const query = conditions.length > 0
+      ? db.select().from(hrLeaveRequests).where(and(...conditions))
+      : db.select().from(hrLeaveRequests);
+    
+    return await query.orderBy(desc(hrLeaveRequests.createdAt));
+  }
+  
+  async getLeaveRequest(id: string): Promise<HrLeaveRequest | undefined> {
+    const [request] = await db.select().from(hrLeaveRequests)
+      .where(eq(hrLeaveRequests.id, id));
+    return request;
+  }
+  
+  async createLeaveRequest(request: InsertHrLeaveRequest): Promise<HrLeaveRequest> {
+    const [newRequest] = await db.insert(hrLeaveRequests).values(request).returning();
+    return newRequest;
+  }
+  
+  async updateLeaveRequest(id: string, data: Partial<InsertHrLeaveRequest>): Promise<HrLeaveRequest | undefined> {
+    const [updated] = await db.update(hrLeaveRequests)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(hrLeaveRequests.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async approveLeaveRequest(id: string, approvedBy: string): Promise<HrLeaveRequest | undefined> {
+    const [approved] = await db.update(hrLeaveRequests)
+      .set({ 
+        status: 'approved' as any,
+        approvedBy,
+        approvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(hrLeaveRequests.id, id))
+      .returning();
+    return approved;
+  }
+  
+  async rejectLeaveRequest(id: string, rejectionReason: string): Promise<HrLeaveRequest | undefined> {
+    const [rejected] = await db.update(hrLeaveRequests)
+      .set({ 
+        status: 'rejected' as any,
+        rejectionReason,
+        updatedAt: new Date()
+      })
+      .where(eq(hrLeaveRequests.id, id))
+      .returning();
+    return rejected;
+  }
+  
+  async deleteLeaveRequest(id: string): Promise<void> {
+    await db.delete(hrLeaveRequests)
+      .where(eq(hrLeaveRequests.id, id));
+  }
+  
+  // ========================================
+  // MARKETPLACE - WISHLIST
+  // ========================================
+  
+  async listWishlistItems(customerId: string): Promise<WishlistItem[]> {
+    return await db.select().from(wishlistItems)
+      .where(eq(wishlistItems.customerId, customerId))
+      .orderBy(desc(wishlistItems.addedAt));
+  }
+  
+  async getWishlistItem(customerId: string, productId: string): Promise<WishlistItem | undefined> {
+    const [item] = await db.select().from(wishlistItems)
+      .where(and(
+        eq(wishlistItems.customerId, customerId),
+        eq(wishlistItems.productId, productId)
+      ));
+    return item;
+  }
+  
+  async addToWishlist(item: InsertWishlistItem): Promise<WishlistItem> {
+    const [newItem] = await db.insert(wishlistItems).values(item).returning();
+    return newItem;
+  }
+  
+  async removeFromWishlist(customerId: string, productId: string): Promise<void> {
+    await db.delete(wishlistItems)
+      .where(and(
+        eq(wishlistItems.customerId, customerId),
+        eq(wishlistItems.productId, productId)
+      ));
+  }
+  
+  // ========================================
+  // CRM - WORKFLOWS
+  // ========================================
+  
+  async listCrmWorkflows(): Promise<CrmWorkflow[]> {
+    return await db.select().from(crmWorkflows)
+      .orderBy(desc(crmWorkflows.createdAt));
+  }
+  
+  async getCrmWorkflow(id: string): Promise<CrmWorkflow | undefined> {
+    const [workflow] = await db.select().from(crmWorkflows)
+      .where(eq(crmWorkflows.id, id));
+    return workflow;
+  }
+  
+  async createCrmWorkflow(workflow: InsertCrmWorkflow): Promise<CrmWorkflow> {
+    const [newWorkflow] = await db.insert(crmWorkflows).values(workflow).returning();
+    return newWorkflow;
+  }
+  
+  async updateCrmWorkflow(id: string, data: Partial<InsertCrmWorkflow>): Promise<CrmWorkflow | undefined> {
+    const [updated] = await db.update(crmWorkflows)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(crmWorkflows.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteCrmWorkflow(id: string): Promise<void> {
+    await db.delete(crmWorkflows)
+      .where(eq(crmWorkflows.id, id));
+  }
+  
+  async executeCrmWorkflow(id: string): Promise<CrmWorkflow | undefined> {
+    const [executed] = await db.update(crmWorkflows)
+      .set({ 
+        lastExecutedAt: new Date(),
+        executionCount: sql`${crmWorkflows.executionCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(crmWorkflows.id, id))
+      .returning();
+    return executed;
   }
   
   // ========================================

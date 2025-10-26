@@ -25,6 +25,11 @@ export const featureEnum = pgEnum("feature", [
   "settings"        // Tenant Settings (branding, etc)
 ]);
 export const activityTypeEnum = pgEnum("activity_type", ["call", "email", "meeting", "note", "task", "other"]);
+export const employmentTypeEnum = pgEnum("employment_type", ["full_time", "part_time", "contractor", "intern", "temporary"]);
+export const employmentStatusEnum = pgEnum("employment_status", ["active", "on_leave", "terminated", "suspended"]);
+export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biweekly", "monthly"]);
+export const leaveStatusEnum = pgEnum("leave_status", ["pending", "approved", "rejected", "cancelled"]);
+export const leaveTypeEnum = pgEnum("leave_type", ["vacation", "sick", "personal", "bereavement", "parental", "other"]);
 
 // ========================================
 // AUTHENTICATION (Replit Auth)
@@ -163,6 +168,14 @@ export const productReviews = pgTable("product_reviews", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Wishlist Items
+export const wishlistItems = pgTable("wishlist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  customerId: varchar("customer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+});
+
 // Shopping Cart (supports anonymous + authenticated users)
 export const carts = pgTable("carts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -273,6 +286,21 @@ export const activities = pgTable("activities", {
   completedAt: timestamp("completed_at"),
   createdBy: varchar("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// CRM Workflows (Automation)
+export const crmWorkflows = pgTable("crm_workflows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  trigger: text("trigger").notNull(),
+  conditions: jsonb("conditions").default({}),
+  actions: jsonb("actions").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  lastExecutedAt: timestamp("last_executed_at"),
+  executionCount: integer("execution_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ========================================
@@ -673,11 +701,6 @@ export const stockMovements = pgTable("stock_movements", {
 // HR MANAGEMENT (ERP)
 // ========================================
 
-// Employment Types
-export const employmentTypeEnum = pgEnum("employment_type", ["full_time", "part_time", "contractor", "intern", "temporary"]);
-export const employmentStatusEnum = pgEnum("employment_status", ["active", "on_leave", "terminated", "suspended"]);
-export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biweekly", "monthly"]);
-
 // Departments
 export const departments = pgTable("departments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -748,6 +771,23 @@ export const attendanceRecords = pgTable("attendance_records", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Leave Requests (Vacation/Time Off Management)
+export const hrLeaveRequests = pgTable("hr_leave_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "cascade" }).notNull(),
+  type: leaveTypeEnum("type").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  totalDays: decimal("total_days", { precision: 5, scale: 1 }).notNull(),
+  reason: text("reason"),
+  status: leaveStatusEnum("status").default("pending").notNull(),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Warehouses
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
@@ -782,6 +822,21 @@ export type PayrollRecord = typeof payrollRecords.$inferSelect;
 export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true });
 export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
 export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
+
+// HR Leave Requests
+export const insertHrLeaveRequestSchema = createInsertSchema(hrLeaveRequests).omit({ id: true, createdAt: true, updatedAt: true, approvedAt: true });
+export type InsertHrLeaveRequest = z.infer<typeof insertHrLeaveRequestSchema>;
+export type HrLeaveRequest = typeof hrLeaveRequests.$inferSelect;
+
+// Wishlist Items
+export const insertWishlistItemSchema = createInsertSchema(wishlistItems).omit({ id: true, addedAt: true });
+export type InsertWishlistItem = z.infer<typeof insertWishlistItemSchema>;
+export type WishlistItem = typeof wishlistItems.$inferSelect;
+
+// CRM Workflows
+export const insertCrmWorkflowSchema = createInsertSchema(crmWorkflows).omit({ id: true, createdAt: true, updatedAt: true, lastExecutedAt: true, executionCount: true });
+export type InsertCrmWorkflow = z.infer<typeof insertCrmWorkflowSchema>;
+export type CrmWorkflow = typeof crmWorkflows.$inferSelect;
 
 // ========================================
 // AI PLANNING SESSIONS (EAAS Whitepaper 02 - POMDP + ToT)

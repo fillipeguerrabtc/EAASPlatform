@@ -23,6 +23,9 @@ import {
   insertDealSchema,
   insertCustomerSegmentSchema,
   insertActivitySchema,
+  insertHrLeaveRequestSchema,
+  insertWishlistItemSchema,
+  insertCrmWorkflowSchema,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -3885,6 +3888,240 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting attendance record:", error);
       res.status(500).json({ message: "Erro ao deletar registro de presença" });
+    }
+  });
+
+  // ========================================
+  // HR - LEAVE REQUESTS
+  // ========================================
+  
+  app.get("/api/leave-requests", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { employeeId, status } = req.query;
+      const requests = await storage.listLeaveRequests({
+        employeeId: employeeId as string,
+        status: status as string
+      });
+      res.json(requests);
+    } catch (error: any) {
+      console.error("Error fetching leave requests:", error);
+      res.status(500).json({ message: "Erro ao buscar solicitações de folga" });
+    }
+  });
+  
+  app.get("/api/leave-requests/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const request = await storage.getLeaveRequest(req.params.id);
+      if (!request) {
+        return res.status(404).json({ message: "Solicitação não encontrada" });
+      }
+      res.json(request);
+    } catch (error: any) {
+      console.error("Error fetching leave request:", error);
+      res.status(500).json({ message: "Erro ao buscar solicitação" });
+    }
+  });
+  
+  app.post("/api/leave-requests", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertHrLeaveRequestSchema.parse(req.body);
+      const newRequest = await storage.createLeaveRequest(validatedData);
+      res.status(201).json(newRequest);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error creating leave request:", error);
+      res.status(500).json({ message: "Erro ao criar solicitação de folga" });
+    }
+  });
+  
+  app.patch("/api/leave-requests/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertHrLeaveRequestSchema.partial().parse(req.body);
+      const updated = await storage.updateLeaveRequest(req.params.id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ message: "Solicitação não encontrada" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating leave request:", error);
+      res.status(500).json({ message: "Erro ao atualizar solicitação" });
+    }
+  });
+  
+  app.post("/api/leave-requests/:id/approve", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { approvedBy } = z.object({ approvedBy: z.string().min(1) }).parse(req.body);
+      const approved = await storage.approveLeaveRequest(req.params.id, approvedBy);
+      if (!approved) {
+        return res.status(404).json({ message: "Solicitação não encontrada" });
+      }
+      res.json(approved);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "approvedBy é obrigatório", errors: error.errors });
+      }
+      console.error("Error approving leave request:", error);
+      res.status(500).json({ message: "Erro ao aprovar solicitação" });
+    }
+  });
+  
+  app.post("/api/leave-requests/:id/reject", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { rejectionReason } = z.object({ rejectionReason: z.string().min(1) }).parse(req.body);
+      const rejected = await storage.rejectLeaveRequest(req.params.id, rejectionReason);
+      if (!rejected) {
+        return res.status(404).json({ message: "Solicitação não encontrada" });
+      }
+      res.json(rejected);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "rejectionReason é obrigatório", errors: error.errors });
+      }
+      console.error("Error rejecting leave request:", error);
+      res.status(500).json({ message: "Erro ao rejeitar solicitação" });
+    }
+  });
+  
+  app.delete("/api/leave-requests/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteLeaveRequest(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting leave request:", error);
+      res.status(500).json({ message: "Erro ao deletar solicitação" });
+    }
+  });
+
+  // ========================================
+  // MARKETPLACE - WISHLIST
+  // ========================================
+  
+  app.get("/api/wishlist", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const customerId = req.user!.id;
+      const items = await storage.listWishlistItems(customerId);
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching wishlist:", error);
+      res.status(500).json({ message: "Erro ao buscar lista de desejos" });
+    }
+  });
+  
+  app.post("/api/wishlist", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const customerId = req.user!.id;
+      const { productId } = z.object({ productId: z.string().min(1) }).parse(req.body);
+      
+      const existing = await storage.getWishlistItem(customerId, productId);
+      if (existing) {
+        return res.status(409).json({ message: "Produto já está na lista de desejos" });
+      }
+      
+      const newItem = await storage.addToWishlist({ customerId, productId });
+      res.status(201).json(newItem);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "productId inválido", errors: error.errors });
+      }
+      console.error("Error adding to wishlist:", error);
+      res.status(500).json({ message: "Erro ao adicionar à lista de desejos" });
+    }
+  });
+  
+  app.delete("/api/wishlist/:productId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const customerId = req.user!.id;
+      await storage.removeFromWishlist(customerId, req.params.productId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error removing from wishlist:", error);
+      res.status(500).json({ message: "Erro ao remover da lista de desejos" });
+    }
+  });
+
+  // ========================================
+  // CRM - WORKFLOWS
+  // ========================================
+  
+  app.get("/api/crm-workflows", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const workflows = await storage.listCrmWorkflows();
+      res.json(workflows);
+    } catch (error: any) {
+      console.error("Error fetching CRM workflows:", error);
+      res.status(500).json({ message: "Erro ao buscar workflows" });
+    }
+  });
+  
+  app.get("/api/crm-workflows/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const workflow = await storage.getCrmWorkflow(req.params.id);
+      if (!workflow) {
+        return res.status(404).json({ message: "Workflow não encontrado" });
+      }
+      res.json(workflow);
+    } catch (error: any) {
+      console.error("Error fetching CRM workflow:", error);
+      res.status(500).json({ message: "Erro ao buscar workflow" });
+    }
+  });
+  
+  app.post("/api/crm-workflows", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertCrmWorkflowSchema.parse(req.body);
+      const newWorkflow = await storage.createCrmWorkflow(validatedData);
+      res.status(201).json(newWorkflow);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error creating CRM workflow:", error);
+      res.status(500).json({ message: "Erro ao criar workflow" });
+    }
+  });
+  
+  app.patch("/api/crm-workflows/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertCrmWorkflowSchema.partial().parse(req.body);
+      const updated = await storage.updateCrmWorkflow(req.params.id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ message: "Workflow não encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating CRM workflow:", error);
+      res.status(500).json({ message: "Erro ao atualizar workflow" });
+    }
+  });
+  
+  app.post("/api/crm-workflows/:id/execute", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const executed = await storage.executeCrmWorkflow(req.params.id);
+      if (!executed) {
+        return res.status(404).json({ message: "Workflow não encontrado" });
+      }
+      res.json(executed);
+    } catch (error: any) {
+      console.error("Error executing CRM workflow:", error);
+      res.status(500).json({ message: "Erro ao executar workflow" });
+    }
+  });
+  
+  app.delete("/api/crm-workflows/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteCrmWorkflow(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting CRM workflow:", error);
+      res.status(500).json({ message: "Erro ao deletar workflow" });
     }
   });
 
