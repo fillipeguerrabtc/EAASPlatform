@@ -101,7 +101,6 @@ async function upsertUserFromOAuth(claims: any, userType?: 'employee' | 'custome
         name: user.name,
         email: user.email,
         phone: null,
-        status: 'active',
         userId: user.id,
       });
     } catch (error) {
@@ -221,7 +220,7 @@ export async function setupAuth(app: Express) {
         delete (req.session as any).oauthUserType;
         
         // Redirect based on userType
-        const redirectUrl = userType === 'employee' ? "/admin" : "/shop";
+        const redirectUrl = userType === 'employee' ? "/" : "/shop";
         return res.redirect(redirectUrl);
       });
     })(req, res, next);
