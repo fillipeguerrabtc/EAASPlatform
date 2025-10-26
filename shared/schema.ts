@@ -30,6 +30,7 @@ export const employmentStatusEnum = pgEnum("employment_status", ["active", "on_l
 export const payrollFrequencyEnum = pgEnum("payroll_frequency", ["weekly", "biweekly", "monthly"]);
 export const leaveStatusEnum = pgEnum("leave_status", ["pending", "approved", "rejected", "cancelled"]);
 export const leaveTypeEnum = pgEnum("leave_type", ["vacation", "sick", "personal", "bereavement", "parental", "other"]);
+export const reportTypeEnum = pgEnum("report_type", ["sales", "finance", "inventory", "hr", "crm", "custom"]);
 
 // ========================================
 // AUTHENTICATION (Replit Auth)
@@ -1162,6 +1163,31 @@ export type AiTrace = typeof aiTraces.$inferSelect;
 export const insertAiMetricSchema = createInsertSchema(aiMetrics).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAiMetric = z.infer<typeof insertAiMetricSchema>;
 export type AiMetric = typeof aiMetrics.$inferSelect;
+
+// ========================================
+// REPORTS - CUSTOM REPORT TEMPLATES
+// ========================================
+
+export const reportTemplates = pgTable("report_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  reportType: reportTypeEnum("report_type").notNull(),
+  
+  // Report Configuration (JSONB)
+  aggregations: jsonb("aggregations").notNull(), // { fields: [], groupBy: [], metrics: [] }
+  filters: jsonb("filters"), // { dateRange, status, etc }
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Report Templates Schemas
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
 
 // ========================================
 // THEME TOKENS INTERFACE (Design System)

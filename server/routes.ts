@@ -26,6 +26,7 @@ import {
   insertHrLeaveRequestSchema,
   insertWishlistItemSchema,
   insertCrmWorkflowSchema,
+  insertReportTemplateSchema,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -4251,6 +4252,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error checking resource availability:", error);
       res.status(500).json({ message: "Erro ao verificar disponibilidade" });
+    }
+  });
+
+  // ========================================
+  // REPORTS - CUSTOM REPORT TEMPLATES
+  // ========================================
+  
+  app.get("/api/reports/templates", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { type } = req.query;
+      
+      const validTypes = ["sales", "finance", "inventory", "hr", "crm", "custom"];
+      let filterType: string | undefined;
+      
+      if (type && typeof type === 'string') {
+        if (!validTypes.includes(type)) {
+          return res.status(400).json({ message: `Tipo inválido. Valores aceitos: ${validTypes.join(', ')}` });
+        }
+        filterType = type;
+      }
+      
+      const templates = await storage.listReportTemplates(filterType);
+      res.json(templates);
+    } catch (error: any) {
+      console.error("Error listing report templates:", error);
+      res.status(500).json({ message: "Erro ao buscar templates" });
+    }
+  });
+  
+  app.get("/api/reports/templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const template = await storage.getReportTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template não encontrado" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      console.error("Error getting report template:", error);
+      res.status(500).json({ message: "Erro ao buscar template" });
+    }
+  });
+  
+  app.post("/api/reports/templates", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertReportTemplateSchema.parse(req.body);
+      const created = await storage.createReportTemplate(validatedData);
+      res.status(201).json(created);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error creating report template:", error);
+      res.status(500).json({ message: "Erro ao criar template" });
+    }
+  });
+  
+  app.patch("/api/reports/templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertReportTemplateSchema.partial().parse(req.body);
+      const updated = await storage.updateReportTemplate(req.params.id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ message: "Template não encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error updating report template:", error);
+      res.status(500).json({ message: "Erro ao atualizar template" });
+    }
+  });
+  
+  app.delete("/api/reports/templates/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteReportTemplate(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting report template:", error);
+      res.status(500).json({ message: "Erro ao deletar template" });
     }
   });
 

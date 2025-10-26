@@ -77,6 +77,8 @@ import {
   type InsertAiTrace,
   type AiMetric,
   type InsertAiMetric,
+  type ReportTemplate,
+  type InsertReportTemplate,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -119,6 +121,7 @@ import {
   aiGovernance,
   aiTraces,
   aiMetrics,
+  reportTemplates,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -371,6 +374,13 @@ export interface IStorage {
   // Calendar - Resource Scheduling
   checkResourceConflicts(resourceId: string, startTime: Date, endTime: Date, excludeEventId?: string): Promise<CalendarEvent[]>;
   listResourceAvailability(resourceId: string, date: Date): Promise<{ busy: CalendarEvent[]; available: boolean }>;
+  
+  // Reports - Custom Report Templates
+  listReportTemplates(type?: string): Promise<ReportTemplate[]>;
+  getReportTemplate(id: string): Promise<ReportTemplate | undefined>;
+  createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
+  updateReportTemplate(id: string, data: Partial<InsertReportTemplate>): Promise<ReportTemplate | undefined>;
+  deleteReportTemplate(id: string): Promise<void>;
   
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
@@ -1831,6 +1841,47 @@ export class DbStorage implements IStorage {
       busy,
       available: busy.length === 0
     };
+  }
+  
+  // ========================================
+  // REPORTS - CUSTOM REPORT TEMPLATES
+  // ========================================
+  
+  async listReportTemplates(type?: string): Promise<ReportTemplate[]> {
+    if (type) {
+      return await db.select().from(reportTemplates)
+        .where(eq(reportTemplates.reportType, type as any))
+        .orderBy(desc(reportTemplates.createdAt));
+    }
+    return await db.select().from(reportTemplates)
+      .orderBy(desc(reportTemplates.createdAt));
+  }
+  
+  async getReportTemplate(id: string): Promise<ReportTemplate | undefined> {
+    const [template] = await db.select().from(reportTemplates)
+      .where(eq(reportTemplates.id, id))
+      .limit(1);
+    return template;
+  }
+  
+  async createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate> {
+    const [created] = await db.insert(reportTemplates)
+      .values(template)
+      .returning();
+    return created;
+  }
+  
+  async updateReportTemplate(id: string, data: Partial<InsertReportTemplate>): Promise<ReportTemplate | undefined> {
+    const [updated] = await db.update(reportTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reportTemplates.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteReportTemplate(id: string): Promise<void> {
+    await db.delete(reportTemplates)
+      .where(eq(reportTemplates.id, id));
   }
   
   // ========================================
