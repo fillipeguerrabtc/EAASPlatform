@@ -53,7 +53,7 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUserFromOAuth(claims: any): Promise<{ userId: string; isNewUser: boolean }> {
+async function upsertUserFromOAuth(claims: any, userType?: 'employee' | 'customer'): Promise<{ userId: string; isNewUser: boolean }> {
   const replitAuthId = claims["sub"];
   const email = claims["email"];
   const firstName = claims["first_name"];
@@ -79,14 +79,35 @@ async function upsertUserFromOAuth(claims: any): Promise<{ userId: string; isNew
 
   // New user - create user (single-tenant mode: no tenant creation needed)
   const displayName = `${firstName || ""} ${lastName || ""}`.trim() || email || "User";
+  const finalUserType = userType || 'customer'; // Default to customer if not specified
+  const approvalStatus = finalUserType === 'customer' ? 'approved' : 'pending_approval';
+  const role = finalUserType === 'customer' ? 'customer' : 'agent';
   
   user = await storage.createUser({
     email: email || `user-${replitAuthId}@eaas.local`,
     name: displayName,
     avatar: profileImageUrl || null,
-    role: "customer", // Default role for new users in single-tenant mode
+    role: role,
     replitAuthId,
+    userType: finalUserType,
+    approvalStatus: approvalStatus,
+    requestedAt: finalUserType === 'employee' ? new Date() : undefined,
   });
+
+  // Auto-create customer record in CRM if customer type and approved
+  if (finalUserType === 'customer' && approvalStatus === 'approved') {
+    try {
+      await storage.createCustomer({
+        name: user.name,
+        email: user.email,
+        phone: null,
+        status: 'active',
+        userId: user.id,
+      });
+    } catch (error) {
+      console.error("Error creating customer record from OAuth:", error);
+    }
+  }
 
   return {
     userId: user.id,
@@ -104,13 +125,17 @@ export async function setupAuth(app: Express) {
 
   const verify: VerifyFunction = async (
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
-    verified: passport.AuthenticateCallback
+    verified: passport.AuthenticateCallback,
+    req?: any
   ) => {
     const user: any = {};
     updateUserSession(user, tokens);
     
+    // Extract userType from state parameter (set in OAuth redirect)
+    const userType = req?.query?.type as 'employee' | 'customer' | undefined;
+    
     // Upsert user (single-tenant mode: no tenant context needed)
-    const { userId, isNewUser } = await upsertUserFromOAuth(tokens.claims());
+    const { userId, isNewUser } = await upsertUserFromOAuth(tokens.claims(), userType);
     
     // Store user ID in session
     user.userId = userId;
@@ -136,16 +161,31 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
+    const userType = req.query.type || 'customer'; // Default to customer
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
+      state: userType as string, // Pass userType through OAuth flow
+    })(req, res, next);
+  });
+  
+  // Alternative OAuth endpoint to support legacy /api/auth/replit route
+  app.get("/api/auth/replit", (req, res, next) => {
+    const userType = req.query.type || 'customer';
+    passport.authenticate(`replitauth:${req.hostname}`, {
+      prompt: "login consent",
+      scope: ["openid", "email", "profile", "offline_access"],
+      state: userType as string,
     })(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
+    // Extract userType from state parameter
+    const userType = req.query.state as 'employee' | 'customer' | undefined;
+    
     passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
+      successReturnToOrRedirect: userType === 'employee' ? "/admin/dashboard" : "/shop",
+      failureRedirect: "/login",
     })(req, res, next);
   });
 
