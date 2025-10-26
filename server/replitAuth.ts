@@ -53,7 +53,7 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUserFromOAuth(claims: any): Promise<{ userId: string; tenantId: string; isNewUser: boolean }> {
+async function upsertUserFromOAuth(claims: any): Promise<{ userId: string; isNewUser: boolean }> {
   const replitAuthId = claims["sub"];
   const email = claims["email"];
   const firstName = claims["first_name"];
@@ -73,41 +73,23 @@ async function upsertUserFromOAuth(claims: any): Promise<{ userId: string; tenan
     
     return {
       userId: user.id,
-      tenantId: user.tenantId,
       isNewUser: false,
     };
   }
 
-  // New user - create default personal tenant
+  // New user - create user (single-tenant mode: no tenant creation needed)
   const displayName = `${firstName || ""} ${lastName || ""}`.trim() || email || "User";
-  const subdomain = `user-${replitAuthId}`;
   
-  const tenant = await storage.createTenant({
-    name: `${displayName}'s Workspace`,
-    subdomain,
-    status: "active",
-  });
-
-  // Create user linked to their personal tenant
   user = await storage.createUser({
-    tenantId: tenant.id,
     email: email || `user-${replitAuthId}@eaas.local`,
     name: displayName,
     avatar: profileImageUrl || null,
-    role: "tenant_admin",
+    role: "customer", // Default role for new users in single-tenant mode
     replitAuthId,
-  });
-
-  // Add user to their tenant in the membership table
-  await storage.addUserToTenant({
-    userId: user.id,
-    tenantId: tenant.id,
-    role: "tenant_admin",
   });
 
   return {
     userId: user.id,
-    tenantId: tenant.id,
     isNewUser: true,
   };
 }
@@ -127,12 +109,11 @@ export async function setupAuth(app: Express) {
     const user: any = {};
     updateUserSession(user, tokens);
     
-    // Upsert user and get their tenant context
-    const { userId, tenantId, isNewUser } = await upsertUserFromOAuth(tokens.claims());
+    // Upsert user (single-tenant mode: no tenant context needed)
+    const { userId, isNewUser } = await upsertUserFromOAuth(tokens.claims());
     
-    // Store user ID and tenant ID in session
+    // Store user ID in session
     user.userId = userId;
-    user.tenantId = tenantId;
     user.isNewUser = isNewUser;
     
     verified(null, user);
@@ -209,22 +190,8 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   }
 };
 
-// Get tenant ID from authenticated session (throws 401 if missing)
-export function getTenantIdFromSession(req: any): string {
-  if (!req.user || !req.user.tenantId) {
-    throw new Error("Unauthorized: No tenant context in session");
-  }
-  return req.user.tenantId;
-}
-
-// Get tenant ID from session with fallback (for backward compatibility)
-export function getTenantIdFromSessionOrHeader(req: any): string {
-  if (req.user && req.user.tenantId) {
-    return req.user.tenantId;
-  }
-  // Fallback for backward compatibility with header-based approach
-  return req.headers["x-tenant-id"] as string || "default";
-}
+// Legacy functions removed for single-tenant mode
+// No longer needed: getTenantIdFromSession, getTenantIdFromSessionOrHeader
 
 // Get user ID from authenticated session
 export function getUserIdFromSession(req: any): string | null {
