@@ -33,13 +33,38 @@ export default function CRM() {
 
   const recalculateScoreMutation = useMutation({
     mutationFn: async (customerId: string) => {
-      return await apiRequest(`/api/customers/${customerId}/calculate-score`, "POST");
+      return await apiRequest(`/api/leads/${customerId}/calculate-score`, "POST");
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+    onMutate: async (customerId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/customers"] });
+      const previousCustomers = queryClient.getQueryData<Customer[]>(["/api/customers"]);
+      
+      queryClient.setQueryData<Customer[]>(["/api/customers"], (old) => {
+        if (!old) return old;
+        return old.map(customer => 
+          customer.id === customerId 
+            ? { ...customer, leadScore: null }
+            : customer
+        );
+      });
+      
+      return { previousCustomers };
+    },
+    onSuccess: (updatedLead) => {
+      queryClient.setQueryData<Customer[]>(["/api/customers"], (old) => {
+        if (!old) return old;
+        return old.map(customer => 
+          customer.id === updatedLead.id 
+            ? { ...customer, leadScore: updatedLead.leadScore }
+            : customer
+        );
+      });
       toast({ title: "Lead score recalculado com sucesso" });
     },
-    onError: (error: any) => {
+    onError: (error: any, customerId, context) => {
+      if (context?.previousCustomers) {
+        queryClient.setQueryData(["/api/customers"], context.previousCustomers);
+      }
       toast({ title: "Erro ao recalcular score", description: error.message, variant: "destructive" });
     },
   });
@@ -117,6 +142,17 @@ export default function CRM() {
                     </TableCell>
                     <TableCell>
                       {(() => {
+                        const isRecalculating = recalculateScoreMutation.isPending && 
+                          recalculateScoreMutation.variables === customer.id;
+                        
+                        if (isRecalculating) {
+                          return (
+                            <Badge variant="secondary" data-testid={`badge-lead-score-${customer.id}`}>
+                              <span className="text-muted-foreground">Recalculando...</span>
+                            </Badge>
+                          );
+                        }
+                        
                         const scoreBadge = getLeadScoreBadge(customer.leadScore);
                         return (
                           <div className="flex items-center gap-2">
