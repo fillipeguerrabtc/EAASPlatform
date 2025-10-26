@@ -364,6 +364,14 @@ export interface IStorage {
   deleteCrmWorkflow(id: string): Promise<void>;
   executeCrmWorkflow(id: string): Promise<CrmWorkflow | undefined>;
   
+  // AI - Knowledge Base Advanced
+  bulkImportKnowledgeBase(items: InsertKnowledgeBase[]): Promise<KnowledgeBase[]>;
+  searchKnowledgeBase(query: string, filters?: { category?: string; limit?: number }): Promise<KnowledgeBase[]>;
+  
+  // Calendar - Resource Scheduling
+  checkResourceConflicts(resourceId: string, startTime: Date, endTime: Date, excludeEventId?: string): Promise<CalendarEvent[]>;
+  listResourceAvailability(resourceId: string, date: Date): Promise<{ busy: CalendarEvent[]; available: boolean }>;
+  
   // AI Planning - Plan Sessions
   getPlanSession(id: string): Promise<PlanSession | undefined>;
   getActivePlanSession(conversationId: string): Promise<PlanSession | undefined>;
@@ -1746,6 +1754,83 @@ export class DbStorage implements IStorage {
       .where(eq(crmWorkflows.id, id))
       .returning();
     return executed;
+  }
+  
+  // ========================================
+  // AI - KNOWLEDGE BASE ADVANCED
+  // ========================================
+  
+  async bulkImportKnowledgeBase(items: InsertKnowledgeBase[]): Promise<KnowledgeBase[]> {
+    if (items.length === 0) return [];
+    const inserted = await db.insert(knowledgeBase).values(items).returning();
+    return inserted;
+  }
+  
+  async searchKnowledgeBase(query: string, filters?: { category?: string; limit?: number }): Promise<KnowledgeBase[]> {
+    const lowerQuery = query.toLowerCase();
+    let results = await db.select().from(knowledgeBase);
+    
+    results = results.filter(item => 
+      item.question.toLowerCase().includes(lowerQuery) ||
+      item.answer.toLowerCase().includes(lowerQuery) ||
+      (item.tags && item.tags.some(tag => tag.toLowerCase().includes(lowerQuery)))
+    );
+    
+    if (filters?.category) {
+      results = results.filter(item => item.category === filters.category);
+    }
+    
+    if (filters?.limit) {
+      results = results.slice(0, filters.limit);
+    }
+    
+    return results;
+  }
+  
+  // ========================================
+  // CALENDAR - RESOURCE SCHEDULING
+  // ========================================
+  
+  async checkResourceConflicts(resourceId: string, startTime: Date, endTime: Date, excludeEventId?: string): Promise<CalendarEvent[]> {
+    let query = db.select().from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.resourceId, resourceId),
+          sql`${calendarEvents.startTime} < ${endTime}`,
+          sql`${calendarEvents.endTime} > ${startTime}`
+        )
+      );
+    
+    const events = await query;
+    
+    if (excludeEventId) {
+      return events.filter(event => event.id !== excludeEventId);
+    }
+    
+    return events;
+  }
+  
+  async listResourceAvailability(resourceId: string, date: Date): Promise<{ busy: CalendarEvent[]; available: boolean }> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const busy = await db.select().from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.resourceId, resourceId),
+          sql`${calendarEvents.startTime} < ${endOfDay}`,
+          sql`${calendarEvents.endTime} > ${startOfDay}`
+        )
+      )
+      .orderBy(calendarEvents.startTime);
+    
+    return {
+      busy,
+      available: busy.length === 0
+    };
   }
   
   // ========================================

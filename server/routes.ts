@@ -4125,6 +4125,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========================================
+  // AI - KNOWLEDGE BASE ADVANCED
+  // ========================================
+  
+  app.post("/api/knowledge-base/bulk-import", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { items } = z.object({ 
+        items: z.array(insertKnowledgeBaseSchema).min(1, "Array vazio não é permitido") 
+      }).parse(req.body);
+      
+      const imported = await storage.bulkImportKnowledgeBase(items);
+      res.status(201).json({ 
+        success: true, 
+        count: imported.length, 
+        items: imported 
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Error bulk importing knowledge base:", error);
+      res.status(500).json({ message: "Erro ao importar itens" });
+    }
+  });
+  
+  app.get("/api/knowledge-base/search", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { q, category, limit } = req.query;
+      
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ message: "Query parameter 'q' é obrigatório" });
+      }
+      
+      const filters: { category?: string; limit?: number } = {};
+      if (category && typeof category === 'string') {
+        filters.category = category;
+      }
+      if (limit && typeof limit === 'string') {
+        const parsedLimit = parseInt(limit, 10);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          return res.status(400).json({ message: "limit deve ser um número positivo" });
+        }
+        filters.limit = parsedLimit;
+      }
+      
+      const results = await storage.searchKnowledgeBase(q, filters);
+      res.json(results);
+    } catch (error: any) {
+      console.error("Error searching knowledge base:", error);
+      res.status(500).json({ message: "Erro ao buscar itens" });
+    }
+  });
+  
+  // ========================================
+  // CALENDAR - RESOURCE SCHEDULING
+  // ========================================
+  
+  app.get("/api/calendar/conflicts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { resourceId, startTime, endTime, excludeEventId } = req.query;
+      
+      if (!resourceId || typeof resourceId !== 'string') {
+        return res.status(400).json({ message: "resourceId é obrigatório" });
+      }
+      if (!startTime || typeof startTime !== 'string') {
+        return res.status(400).json({ message: "startTime é obrigatório (ISO 8601)" });
+      }
+      if (!endTime || typeof endTime !== 'string') {
+        return res.status(400).json({ message: "endTime é obrigatório (ISO 8601)" });
+      }
+      
+      const startDate = new Date(startTime);
+      const endDate = new Date(endTime);
+      
+      if (isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: "startTime inválido" });
+      }
+      if (isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: "endTime inválido" });
+      }
+      if (endDate <= startDate) {
+        return res.status(400).json({ message: "endTime deve ser posterior a startTime" });
+      }
+      
+      const conflicts = await storage.checkResourceConflicts(
+        resourceId, 
+        startDate, 
+        endDate,
+        excludeEventId && typeof excludeEventId === 'string' ? excludeEventId : undefined
+      );
+      
+      res.json({ 
+        hasConflicts: conflicts.length > 0,
+        conflicts 
+      });
+    } catch (error: any) {
+      console.error("Error checking resource conflicts:", error);
+      res.status(500).json({ message: "Erro ao verificar conflitos" });
+    }
+  });
+  
+  app.get("/api/calendar/availability", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { resourceId, date } = req.query;
+      
+      if (!resourceId || typeof resourceId !== 'string') {
+        return res.status(400).json({ message: "resourceId é obrigatório" });
+      }
+      if (!date || typeof date !== 'string') {
+        return res.status(400).json({ message: "date é obrigatório (YYYY-MM-DD)" });
+      }
+      
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: "date inválido (use YYYY-MM-DD)" });
+      }
+      
+      const availability = await storage.listResourceAvailability(
+        resourceId,
+        parsedDate
+      );
+      
+      res.json(availability);
+    } catch (error: any) {
+      console.error("Error checking resource availability:", error);
+      res.status(500).json({ message: "Erro ao verificar disponibilidade" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
