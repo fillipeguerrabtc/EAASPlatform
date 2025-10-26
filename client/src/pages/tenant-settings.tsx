@@ -360,7 +360,7 @@ export default function TenantSettings() {
   return (
     <>
       <SEO
-        title="Configurações do Tenant - EAAS"
+        title="Configurações da Empresa - EAAS"
         description="Configure o logo, favicon e identidade visual da sua empresa"
       />
 
