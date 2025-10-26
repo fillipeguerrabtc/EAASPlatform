@@ -46,19 +46,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION
   // ========================================
 
-  // Get tenant context from subdomain detection (PUBLIC endpoint)
-  app.get('/api/tenant-context', async (req: Request, res: Response) => {
-    try {
-      res.json({
-        detectedTenant: req.detectedTenant || null,
-        isSuperAdminRoute: req.isSuperAdminRoute || false,
-        isCentralMarketplace: req.isCentralMarketplace || false,
-      });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // Get current authenticated user with permissions (no auth guard - returns null if not authenticated)
   app.get('/api/auth/user', async (req: any, res) => {
     try {
@@ -2023,99 +2010,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
-  // ENHANCED AUTHENTICATION - EMAIL/PASSWORD
+  // LOCAL AUTH (Email/Password) - Dual-Track System
   // ========================================
-
-  // Register with email/password
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  
+  // Register as EMPLOYEE (requires admin approval)
+  app.post("/api/auth/register-employee", async (req: Request, res: Response) => {
     try {
-      const { email, password, name, tenantId, companyName } = req.body;
+      const registerSchema = z.object({
+        email: z.string().email({ message: "Email inválido" }),
+        password: z.string().min(8, { message: "Senha deve ter pelo menos 8 caracteres" }),
+        name: z.string().min(1, { message: "Nome é obrigatório" }),
+      });
       
-      // Validate email
-      if (!isValidEmail(email)) {
-        return res.status(400).json({ message: "Email inválido" });
-      }
+      const { email, password, name } = registerSchema.parse(req.body);
       
-      // Validate password strength
-      const passwordValidation = isStrongPassword(password);
-      if (!passwordValidation.valid) {
-        return res.status(400).json({ message: passwordValidation.message });
-      }
-      
-      // Check if user already exists GLOBALLY (email must be unique across all tenants)
+      // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return res.status(400).json({ message: "Este email já está cadastrado" });
       }
       
-      // Auto-create tenant if not provided
-      let finalTenantId = tenantId;
-      let isNewTenant = false;
+      // Register user (will be pending approval)
+      const user = await storage.registerUser({
+        email,
+        password,
+        name,
+        userType: 'employee',
+      });
       
-      if (!finalTenantId) {
-        const subdomain = companyName 
-          ? companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30)
-          : email.split('@')[0];
-        
-        const newTenant = await storage.createTenant({
-          name: companyName || `${name}'s Company`,
-          subdomain,
-          primaryColor: "#10A37F",
-        });
-        
-        finalTenantId = newTenant.id;
-        isNewTenant = true;
+      res.status(201).json({ 
+        message: "Solicitação enviada com sucesso. Aguarde aprovação de um administrador.",
+        user: { id: user.id, email: user.email, name: user.name, approvalStatus: user.approvalStatus }
+      });
+    } catch (error: any) {
+      console.error("Error registering employee:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar solicitação" });
+    }
+  });
+  
+  // Register as CUSTOMER (auto-approved)
+  app.post("/api/auth/register-customer", async (req: Request, res: Response) => {
+    try {
+      const registerSchema = z.object({
+        email: z.string().email({ message: "Email inválido" }),
+        password: z.string().min(8, { message: "Senha deve ter pelo menos 8 caracteres" }),
+        name: z.string().min(1, { message: "Nome é obrigatório" }),
+      });
+      
+      const { email, password, name } = registerSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Este email já está cadastrado" });
       }
       
-      // Hash password
-      const hashedPassword = await hashPassword(password);
-      
-      // Create user
-      // SECURITY: Only assign tenant_admin role if creating a new tenant
-      // For existing tenants, default to least-privilege role (agent)
-      const user = await storage.createUser({
+      // Register user (auto-approved for customers)
+      const user = await storage.registerUser({
         email,
-        password: hashedPassword,
+        password,
         name,
-        tenantId: finalTenantId,
-        emailVerified: false,
-        role: isNewTenant ? "tenant_admin" : "agent",
+        userType: 'customer',
       });
+      
+      // Auto-create customer record in CRM
+      try {
+        await storage.createCustomer({
+          name: user.name,
+          email: user.email,
+          phone: null,
+          status: 'active',
+          userId: user.id,
+        });
+      } catch (crmError) {
+        console.error("Error creating customer record:", crmError);
+        // Continue anyway - customer can be created later
+      }
       
       // Create session
       (req as any).session.userId = user.id;
       
-      res.status(201).json({ message: "Usuário criado com sucesso", user: { id: user.id, email: user.email, name: user.name } });
+      res.status(201).json({ 
+        message: "Conta criada com sucesso!",
+        user: { id: user.id, email: user.email, name: user.name, role: user.role }
+      });
     } catch (error: any) {
-      console.error("Error registering user:", error);
-      res.status(500).json({ message: "Erro ao criar usuário" });
+      console.error("Error registering customer:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar conta" });
     }
   });
-
+  
   // Login with email/password
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const { email, password } = req.body;
+      const loginSchema = z.object({
+        email: z.string().email({ message: "Email inválido" }),
+        password: z.string().min(1, { message: "Senha é obrigatória" }),
+      });
       
-      // Find user (search across all tenants)
-      const user = await storage.getUserByEmail(email);
-      if (!user || !user.password) {
-        return res.status(401).json({ message: "Email ou senha inválidos" });
-      }
+      const { email, password } = loginSchema.parse(req.body);
       
-      // Verify password
-      const isValid = await verifyPassword(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Email ou senha inválidos" });
+      // Authenticate user
+      const user = await storage.loginUser(email, password);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Email ou senha inválidos, ou conta aguardando aprovação" });
       }
       
       // Create session
       (req as any).session.userId = user.id;
       
-      res.json({ message: "Login realizado com sucesso", user: { id: user.id, email: user.email, name: user.name } });
+      res.json({ 
+        message: "Login realizado com sucesso",
+        user: { id: user.id, email: user.email, name: user.name, role: user.role }
+      });
     } catch (error: any) {
       console.error("Error logging in:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ errors: error.errors });
+      }
       res.status(500).json({ message: "Erro ao fazer login" });
+    }
+  });
+  
+  // Logout
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    try {
+      (req as any).session.destroy((err: any) => {
+        if (err) {
+          console.error("Error destroying session:", err);
+          return res.status(500).json({ message: "Erro ao fazer logout" });
+        }
+        res.json({ message: "Logout realizado com sucesso" });
+      });
+    } catch (error: any) {
+      console.error("Error logging out:", error);
+      res.status(500).json({ message: "Erro ao fazer logout" });
     }
   });
 
