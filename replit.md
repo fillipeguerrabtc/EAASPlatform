@@ -37,6 +37,13 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Backend API:** Comprehensive CRUD operations for all major entities including tenants, products, customers, conversations, knowledge base, orders, carts, payments, warehouses, stock, stock movements, departments, employees, payroll, and attendance. All POST/PATCH routes have Zod validation.
 - **Public Marketplace (`/shop`):** Secure product display, search, filtering, and server-side calculated pricing for cart management and Stripe checkout (sandbox).
 - **AI Autonomous Sales System (Enhanced with Whitepaper 02 Mathematics):**
+  - **Planner/ToT (Tree-of-Thought) System** (server/ai/planner.ts): POMDP-based intelligent action planning with scoring formula score(a|s) = λ₁Q̂(s,a) - λ₂risk(s,a) + λ₃explain(s,a)
+    - Action Generation: Generates 7 candidate action types (add_to_cart, checkout, answer_question, search_products, escalate_human, clarify_intent, multi_step_plan)
+    - Q-Value Estimation: Expected utility calculation Q̂(s,a) based on state context (cart, products, KB)
+    - Risk Assessment: Fraud detection and high-value transaction monitoring risk(s,a)
+    - Explainability Scoring: SHAP-like attribution explain(s,a) for transparency
+    - Default weights: λ₁=0.5 (utility), λ₂=0.3 (risk penalty), λ₃=0.2 (explainability)
+    - Integrated in POST /api/ai/chat endpoint - selects best action before execution
   - **Multi-Layer Critics System** (server/ai/critics.ts): Four independent validation layers before response delivery:
     1. **Factual Critic**: Validates KB grounding and prevents hallucinations using LTL policy G(answer → O citation)
     2. **Numeric Critic**: Validates arithmetic, prices, quantities (double-entry principle: ∑Débitos = ∑Créditos)
@@ -54,7 +61,12 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
     - `aiEthicalPolicies`: JSON-encoded LTL+D policies
     - `enabledAITools`: Allowed tool access (CRM/ERP/Market/KB)
     - `riskThreshold`: τ for human escalation (default 0.70)
-  - **Self-Consistency & Reflection**: Future implementation of Dream Loops with coherence metric Coherence=1−E[rt]²/Var(rt)
+  - **Remaining Whitepaper 02 Features** (To be implemented):
+    1. LTL+D Model Checking: Formal verification of ethical constraints
+    2. Dream Loops: Self-consistency with coherence metric Coherence=1−E[rt]²/Var(rt)
+    3. SHAP Causal Reasoning: Full ϕᵢ attribution for explainability
+    4. Complete Affective Modeling: Ht+1=ρHt+(1-ρ)σ(w⊤zt) emotional state tracking
+    5. Federated Learning with DP: Multi-tenant learning with Differential Privacy (DP-SGD)
   - RAG-based knowledge base search with OpenAI GPT-5 fallback, per-tenant isolation. AI detects purchase intent, automatically searches products, adds to cart, validates with critics before response.
 - **Inventory Management ERP:** Complete inventory control with 3 database tables (warehouses, productStock, stockMovements). Features multi-warehouse support, real-time stock levels tracking, automatic movement logging (IN/OUT/TRANSFER/ADJUSTMENT), low-stock alerts, and comprehensive audit trail. Full CRUD API with Zod validation and multi-tab UI (Warehouses, Stock Levels, Movements).
 - **HR Management ERP:** Complete human resources system with 4 database tables (departments, employees, payrollRecords, attendanceRecords). Features organizational hierarchy, employee lifecycle management, automated payroll calculations (base salary + bonuses - deductions = net salary), attendance tracking with clock-in/out timestamps, and comprehensive reporting. Full CRUD API with Zod validation and multi-tab UI (Employees, Departments, Payroll, Attendance).

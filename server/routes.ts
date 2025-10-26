@@ -36,6 +36,7 @@ import { setupAuth, isAuthenticated, getTenantIdFromSession, getTenantIdFromSess
 // AI Modules (EAAS Whitepaper 02 implementation)
 import { runAllCritics } from "./ai/critics.js";
 import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag.js";
+import { planAction, type PlannerState } from "./ai/planner.js";
 
 // Tenant context middleware - PRIORITY ORDER:
 // 1. Detected tenant from subdomain (req.detectedTenant)
@@ -146,13 +147,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tenants", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = getUserIdFromSession(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(userId);
       
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
       
-      let tenantsList = [];
+      let tenantsList: any[] = [];
       
       if (user.role === 'super_admin') {
         // Super admins can see ALL tenants
@@ -175,6 +180,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const requestedTenantId = req.params.id;
       const userId = getUserIdFromSession(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(userId);
       
       if (!user) {
@@ -213,6 +222,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const requestedTenantId = req.params.id;
       const userId = getUserIdFromSession(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
       const user = await storage.getUser(userId);
       
       if (!user) {
@@ -469,19 +482,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Role not found" });
       }
       
-      // Validate request body with Zod
-      const permissionData = insertRolePermissionSchema.omit({ id: true, createdAt: true, roleId: true }).parse({
-        feature: req.params.feature,
-        accessLevel: req.body.accessLevel
+      // Validate request body with Zod schema (just accessLevel from body)
+      const bodySchema = z.object({
+        accessLevel: z.enum(['no_access', 'read', 'write', 'admin'])
       });
+      const validatedBody = bodySchema.parse(req.body);
       
-      const permission = await storage.updateRolePermission(req.params.roleId, permissionData.feature, permissionData.accessLevel);
+      const permission = await storage.updateRolePermission(req.params.roleId, req.params.feature as any, validatedBody.accessLevel);
       if (!permission) {
         // Create if doesn't exist
         const newPermission = await storage.createRolePermission({
           roleId: req.params.roleId,
-          feature: permissionData.feature as any,
-          accessLevel: permissionData.accessLevel as any
+          feature: req.params.feature as any,
+          accessLevel: validatedBody.accessLevel
         });
         return res.json(newPermission);
       }
@@ -1002,7 +1015,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tenantId = getTenantId(req);
         customerId = getUserIdFromSession(req);
         // Find cart by customerId for authenticated users
-        cart = await storage.getActiveCart(customerId, tenantId);
+        if (customerId) {
+          cart = await storage.getActiveCart(customerId, tenantId);
+        }
       } catch {
         // Anonymous user
         tenantId = getTenantIdFromSessionOrHeader(req);
@@ -1178,123 +1193,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = aiChatSchema.parse(req.body);
       const { message, conversationId } = validatedData;
       
-      const messageLower = message.toLowerCase();
-      let response: string;
-      let source: "knowledge_base" | "openai" | "autonomous_sales";
+      // ====== EAAS WHITEPAPER 02: PLANNER/ToT INTEGRATION ======
+      // Gather context for intelligent planning
+      const products = await storage.listProducts(tenantId);
+      const cart = await storage.getActiveCart(customerId, tenantId);
+      const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
+      
+      // Prepare planner state
+      const plannerState: PlannerState = {
+        customerId,
+        tenantId,
+        message,
+        currentCart: cart,
+        availableProducts: products,
+        knowledgeBase: knowledgeBaseItems,
+      };
+      
+      // Plan best action using ToT scoring
+      const plannedAction = planAction(plannerState);
+      
+      console.info(`[AI Planner] Executing action: ${plannedAction.type}`);
+      console.info(`[AI Planner] Score breakdown: Q=${plannedAction.breakdown.qValue.toFixed(2)}, Risk=${plannedAction.breakdown.risk.toFixed(2)}, Explain=${plannedAction.breakdown.explainability.toFixed(2)}`);
+      
+      // Execute planned action based on Planner decision
+      let response: string = "";
+      let source: "knowledge_base" | "openai" | "autonomous_sales" = "autonomous_sales";
       let cartAction: any = null;
       
-      // AUTONOMOUS SALES: Detect purchase intent commands
-      const buyCommands = ["comprar", "adicionar ao carrinho", "add to cart", "buy", "quero", "gostaria de"];
-      const checkoutCommands = ["finalizar compra", "checkout", "pagar", "concluir"];
-      const cartCommands = ["ver carrinho", "meu carrinho", "show cart", "view cart"];
-      
-      const isBuyCommand = buyCommands.some(cmd => messageLower.includes(cmd));
-      const isCheckoutCommand = checkoutCommands.some(cmd => messageLower.includes(cmd));
-      const isCartCommand = cartCommands.some(cmd => messageLower.includes(cmd));
-      
-      if (isBuyCommand || isCheckoutCommand || isCartCommand) {
-        // AUTONOMOUS SALES MODE
-        const products = await storage.listProducts(tenantId);
+      // === EXECUTION PHASE: Execute planned action ===
+      if (plannedAction.type === "escalate_human") {
+        // Human escalation
+        response = "Entendo que você precisa de ajuda especializada. Vou transferir você para um de nossos atendentes humanos. Um momento, por favor.";
+        source = "autonomous_sales";
+        cartAction = { type: "escalate", reason: plannedAction.params.reason };
         
-        if (isCartCommand) {
-          // Show cart contents
-          const cart = await storage.getActiveCart(customerId, tenantId);
-          const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
+      } else if (plannedAction.type === "clarify_intent") {
+        // Intent clarification
+        response = "Olá! Como posso ajudá-lo hoje? Posso responder perguntas, mostrar produtos disponíveis, ou ajudar com sua compra. O que você gostaria de fazer?";
+        source = "autonomous_sales";
+        
+      } else if (plannedAction.type === "search_products") {
+        // Product search/browsing
+        const activeProducts = products.filter(p => p.isActive);
+        if (activeProducts.length > 0) {
+          const suggestions = activeProducts.slice(0, 5).map(p => 
+            `- ${p.name} (R$ ${p.price})`
+          ).join('\n');
+          response = `Aqui estão alguns produtos disponíveis:\n\n${suggestions}\n\nDeseja adicionar algum ao carrinho?`;
+        } else {
+          response = "No momento não temos produtos disponíveis, mas em breve teremos novidades!";
+        }
+        source = "autonomous_sales";
+        
+      } else if (plannedAction.type === "checkout") {
+        // Checkout flow - show cart and initiate checkout
+        const currentCart = await storage.getActiveCart(customerId, tenantId);
+        const cartItems = Array.isArray(currentCart?.items) ? currentCart.items as any[] : [];
+        
+        if (cartItems.length === 0) {
+          response = "Seu carrinho está vazio. Adicione produtos antes de finalizar a compra.";
+        } else {
+          const itemsDesc = cartItems.map((item: any) => {
+            const product = products.find(p => p.id === item.productId);
+            return product ? `- ${product.name} (${item.quantity}x) - R$ ${(parseFloat(product.price) * item.quantity).toFixed(2)}` : null;
+          }).filter(Boolean).join('\n');
           
-          if (cartItems.length === 0) {
-            response = "Seu carrinho está vazio. Posso ajudá-lo a encontrar produtos?";
+          response = `Ótimo! Aqui está seu carrinho:\n\n${itemsDesc}\n\nTotal: R$ ${currentCart?.total || '0.00'}\n\n[Clique para finalizar a compra →]`;
+          cartAction = { type: "checkout", url: "/cart" };
+        }
+        source = "autonomous_sales";
+        
+      } else if (plannedAction.type === "add_to_cart") {
+        // Add product to cart based on intent
+        const messageLower = message.toLowerCase();
+        
+        // Find product by name in message
+        const foundProduct = products.find(p => 
+          p.isActive && messageLower.includes(p.name.toLowerCase())
+        );
+        
+        if (foundProduct) {
+          // Add to cart
+          let currentCart = await storage.getActiveCart(customerId, tenantId);
+          const cartItems = Array.isArray(currentCart?.items) ? currentCart.items as any[] : [];
+          
+          // Check if product already in cart
+          const existingItem = cartItems.find((item: any) => item.productId === foundProduct.id);
+          
+          let updatedItems;
+          if (existingItem) {
+            // Increment quantity
+            updatedItems = cartItems.map((item: any) => 
+              item.productId === foundProduct.id 
+                ? { ...item, quantity: item.quantity + 1 }
+                : item
+            );
           } else {
-            const itemsDesc = cartItems.map((item: any) => {
-              const product = products.find(p => p.id === item.productId);
-              return product ? `- ${product.name} (${item.quantity}x) - R$ ${parseFloat(product.price) * item.quantity}` : null;
-            }).filter(Boolean).join('\n');
-            
-            response = `Seu carrinho:\n${itemsDesc}\n\nTotal: R$ ${cart.total}\n\nDeseja finalizar a compra?`;
+            // Add new item
+            updatedItems = [...cartItems, { productId: foundProduct.id, quantity: 1 }];
           }
-          source = "autonomous_sales";
           
-        } else if (isCheckoutCommand) {
-          // Initiate checkout
-          const cart = await storage.getActiveCart(customerId, tenantId);
-          const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
-          
-          if (cartItems.length === 0) {
-            response = "Seu carrinho está vazio. Adicione produtos antes de finalizar a compra.";
-          } else {
-            response = `Ótimo! Você será redirecionado para o checkout seguro.\n\nTotal: R$ ${cart.total}\n\n[Clique aqui para pagar →]`;
-            cartAction = { type: "checkout", url: "/cart" };
+          // Validate and recalculate total
+          const validatedItems = [];
+          let total = 0;
+          for (const item of updatedItems) {
+            const product = products.find(p => p.id === item.productId);
+            if (product && product.isActive) {
+              validatedItems.push({
+                productId: item.productId,
+                quantity: Math.max(1, parseInt(item.quantity) || 1),
+                price: product.price
+              });
+              total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+            }
           }
-          source = "autonomous_sales";
           
-        } else if (isBuyCommand) {
-          // Find product by name in message
-          const foundProduct = products.find(p => 
-            p.isActive && messageLower.includes(p.name.toLowerCase())
-          );
-          
-          if (foundProduct) {
-            // Add to cart
-            let cart = await storage.getActiveCart(customerId, tenantId);
-            const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
-            
-            // Check if product already in cart
-            const existingItem = cartItems.find((item: any) => item.productId === foundProduct.id);
-            
-            let updatedItems;
-            if (existingItem) {
-              // Increment quantity
-              updatedItems = cartItems.map((item: any) => 
-                item.productId === foundProduct.id 
-                  ? { ...item, quantity: item.quantity + 1 }
-                  : item
-              );
-            } else {
-              // Add new item
-              updatedItems = [...cartItems, { productId: foundProduct.id, quantity: 1 }];
-            }
-            
-            // Validate and recalculate total
-            const validatedItems = [];
-            let total = 0;
-            for (const item of updatedItems) {
-              const product = products.find(p => p.id === item.productId);
-              if (product && product.isActive) {
-                validatedItems.push({
-                  productId: item.productId,
-                  quantity: Math.max(1, parseInt(item.quantity) || 1),
-                  price: product.price
-                });
-                total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
-              }
-            }
-            
-            // Update cart
-            cart = await storage.updateCart(cart.id, tenantId, {
+          // Update cart
+          if (currentCart) {
+            currentCart = await storage.updateCart(currentCart.id, tenantId, {
               items: validatedItems,
               total: total.toFixed(2),
             });
             
-            response = `✅ ${foundProduct.name} adicionado ao carrinho!\n\nPreço: R$ ${foundProduct.price}\nTotal no carrinho: R$ ${cart.total}\n\nDeseja continuar comprando ou finalizar a compra?`;
+            response = `✅ ${foundProduct.name} adicionado ao carrinho!\n\nPreço: R$ ${foundProduct.price}\nTotal no carrinho: R$ ${currentCart?.total || '0.00'}\n\nDeseja continuar comprando ou finalizar a compra?`;
             cartAction = { type: "added", productId: foundProduct.id, productName: foundProduct.name };
-            source = "autonomous_sales";
-            
           } else {
-            // Product not found - suggest alternatives
-            const activeProducts = products.filter(p => p.isActive);
-            if (activeProducts.length > 0) {
-              const suggestions = activeProducts.slice(0, 3).map(p => 
-                `- ${p.name} (R$ ${p.price})`
-              ).join('\n');
-              
-              response = `Não encontrei esse produto exato. Veja algumas opções disponíveis:\n\n${suggestions}\n\nDigite o nome do produto que deseja comprar.`;
-            } else {
-              response = "Desculpe, não encontrei esse produto. Podemos adicionar novos produtos ao catálogo em breve!";
-            }
-            source = "autonomous_sales";
+            response = "Erro ao atualizar carrinho. Tente novamente.";
           }
+          source = "autonomous_sales";
+          
+        } else {
+          // Product not found - suggest alternatives
+          const activeProducts = products.filter(p => p.isActive);
+          if (activeProducts.length > 0) {
+            const suggestions = activeProducts.slice(0, 3).map(p => 
+              `- ${p.name} (R$ ${p.price})`
+            ).join('\n');
+            
+            response = `Não encontrei esse produto exato. Veja algumas opções disponíveis:\n\n${suggestions}\n\nDigite o nome do produto que deseja comprar.`;
+          } else {
+            response = "Desculpe, não encontrei esse produto. Podemos adicionar novos produtos ao catálogo em breve!";
+          }
+          source = "autonomous_sales";
         }
-      } else {
-        // REGULAR AI MODE: Hybrid RAG + OpenAI with Critics validation
+        
+      } else if (plannedAction.type === "answer_question") {
+        // KNOWLEDGE BASE MODE: Hybrid RAG + OpenAI with Critics validation
         const knowledgeBaseItems = await storage.listKnowledgeBase(tenantId);
         
         // Convert KB items to expected format (id should be number)
@@ -1340,9 +1384,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.warn(`[AI Critics] Critical issues detected, falling back to OpenAI`);
             source = "openai"; // Will trigger OpenAI below
           }
+        } else {
+          source = "openai"; // No KB match, use OpenAI
         }
         
-        if (source !== "knowledge_base") {
+        if (source === "openai") {
           // Fallback to OpenAI
           const OpenAI = (await import("openai")).default;
           const openai = new OpenAI({
@@ -1360,7 +1406,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
-          source = "openai";
           
           // Validate OpenAI response with critics
           const criticResults = runAllCritics({
@@ -1379,6 +1424,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.warn(`[AI Critics] ESCALATION RECOMMENDED: ${criticResults.finalRecommendation}`);
           }
         }
+        
+      } else {
+        // Default fallback for any other action types
+        response = "Como posso ajudá-lo hoje?";
+        source = "autonomous_sales";
       }
       
       // Save message to conversation if conversationId provided
