@@ -137,7 +137,7 @@ export default function CRM() {
                       )}
                     </TableCell>
                     <TableCell className="text-right font-semibold">
-                      {formatCurrency(customer.lifetimeValue, i18n.language)}
+                      {formatCurrency(customer.lifetimeValue ? Number(customer.lifetimeValue) : null, i18n.language)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
