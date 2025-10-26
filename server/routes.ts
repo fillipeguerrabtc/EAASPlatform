@@ -2090,12 +2090,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Continue anyway - customer can be created later
       }
       
-      // Create session
+      // Create session and save it explicitly
       (req as any).session.userId = user.id;
       
-      res.status(201).json({ 
-        message: "Conta criada com sucesso!",
-        user: { id: user.id, email: user.email, name: user.name, role: user.role }
+      // Save session to ensure cookie is sent
+      (req as any).session.save((err: any) => {
+        if (err) {
+          console.error("Error saving session:", err);
+          return res.status(500).json({ message: "Erro ao criar sessão" });
+        }
+        
+        res.status(201).json({ 
+          message: "Conta criada com sucesso!",
+          user: { id: user.id, email: user.email, name: user.name, role: user.role }
+        });
       });
     } catch (error: any) {
       console.error("Error registering customer:", error);
@@ -2123,19 +2131,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Email ou senha inválidos, ou conta aguardando aprovação" });
       }
       
-      // Create session
+      // Create session and save it explicitly
       (req as any).session.userId = user.id;
       
-      res.json({ 
-        message: "Login realizado com sucesso",
-        user: { 
-          id: user.id, 
-          email: user.email, 
-          name: user.name, 
-          role: user.role,
-          userType: user.userType,
-          approvalStatus: user.approvalStatus
+      // Save session to ensure cookie is sent
+      (req as any).session.save((err: any) => {
+        if (err) {
+          console.error("Error saving session:", err);
+          return res.status(500).json({ message: "Erro ao criar sessão" });
         }
+        
+        res.json({ 
+          message: "Login realizado com sucesso",
+          user: { 
+            id: user.id, 
+            email: user.email, 
+            name: user.name, 
+            role: user.role,
+            userType: user.userType,
+            approvalStatus: user.approvalStatus
+          }
+        });
       });
     } catch (error: any) {
       console.error("Error logging in:", error);

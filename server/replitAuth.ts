@@ -37,7 +37,7 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production', // Only require HTTPS in production
       maxAge: sessionTtl,
     },
   });
@@ -240,8 +240,17 @@ export async function setupAuth(app: Express) {
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
+  const session = req.session as any;
 
-  if (!req.isAuthenticated() || !user.expires_at) {
+  // Support both OAuth (Passport) and local (email/password) authentication
+  
+  // Check for local authentication via session
+  if (session?.userId) {
+    return next();
+  }
+
+  // Check for OAuth authentication via Passport
+  if (!req.isAuthenticated() || !user?.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
@@ -270,7 +279,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 // Legacy functions removed for single-tenant mode
 // No longer needed: getTenantIdFromSession, getTenantIdFromSessionOrHeader
 
-// Get user ID from authenticated session
+// Get user ID from authenticated session (supports both OAuth and local auth)
 export function getUserIdFromSession(req: any): string | null {
-  return req.user?.userId || null;
+  return req.user?.userId || req.session?.userId || null;
 }
