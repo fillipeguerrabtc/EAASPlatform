@@ -97,4 +97,11 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **OpenAI:** For AI capabilities and fallback (`OPENAI_API_KEY`).
 - **PostgreSQL (Neon):** Primary database.
 - **Drizzle ORM:** Object-Relational Mapper for database interactions.
-- **Puppeteer:** (Planned) For the Intelligent Brand Scanner to scrape website branding.
+- **Puppeteer + Chromium:** For the Intelligent Brand Scanner (PRODUCTION) to extract website branding automatically.
+
+### Default Super Admin
+- **Email:** admin@eaas.com
+- **Password:** admin123 (⚠️ CHANGE ON FIRST LOGIN)
+- **Role:** super_admin
+- Auto-created on first server startup if no super admin exists
+- Full access to all admin features including user approvals
