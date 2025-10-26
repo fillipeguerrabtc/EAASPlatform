@@ -50,6 +50,7 @@ import RBAC from "@/pages/rbac";
 import InventoryPage from "@/pages/inventory";
 import HRPage from "@/pages/hr";
 import UserApprovals from "@/pages/admin/user-approvals";
+import AiGovernance from "@/pages/admin/ai-governance";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -144,6 +145,7 @@ function Router() {
             <Route path="/admin/inventory" component={InventoryPage} />
             <Route path="/admin/hr" component={HRPage} />
             <Route path="/admin/user-approvals" component={UserApprovals} />
+            <Route path="/admin/ai-governance" component={AiGovernance} />
             <Route path="/" component={Shop} />
             <Route path="/shop" component={Shop} />
             <Route path="/cart" component={CartPage} />
@@ -199,6 +201,7 @@ function Router() {
           <Route path="/inventory" component={InventoryPage} />
           <Route path="/hr" component={HRPage} />
           <Route path="/admin/user-approvals" component={UserApprovals} />
+          <Route path="/admin/ai-governance" component={AiGovernance} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

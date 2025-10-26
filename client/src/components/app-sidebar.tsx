@@ -16,7 +16,8 @@ import {
   Activity,
   Tag,
   Warehouse,
-  UserCog
+  UserCog,
+  Brain
 } from "lucide-react";
 import {
   Sidebar,
@@ -145,6 +146,12 @@ export function AppSidebar() {
       url: "/rbac",
       icon: Shield,
       testId: "rbac",
+    },
+    {
+      title: "AI Governance",
+      url: "/admin/ai-governance",
+      icon: Brain,
+      testId: "ai-governance",
     },
     {
       title: "Configurações",
