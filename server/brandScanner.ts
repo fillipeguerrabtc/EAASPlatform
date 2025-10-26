@@ -45,8 +45,12 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
   let browser;
   
   try {
-    // Launch Puppeteer with bundled Chromium
+    // Launch Puppeteer with system Chromium installed via Nix
+    // In Replit, Chromium is available at a specific Nix store path
+    const chromiumPath = '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium-browser';
+    
     browser = await puppeteer.launch({
+      executablePath: chromiumPath,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -54,6 +58,7 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
+        '--single-process',
         '--disable-gpu'
       ],
       headless: true,
