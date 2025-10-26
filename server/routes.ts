@@ -2128,7 +2128,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ 
         message: "Login realizado com sucesso",
-        user: { id: user.id, email: user.email, name: user.name, role: user.role }
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name, 
+          role: user.role,
+          userType: user.userType,
+          approvalStatus: user.approvalStatus
+        }
       });
     } catch (error: any) {
       console.error("Error logging in:", error);

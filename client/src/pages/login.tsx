@@ -31,13 +31,52 @@ export default function LoginPage() {
       }
       return await res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    onSuccess: async (response) => {
+      // Invalidate cache to get fresh user data
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      
       toast({
         title: "Login realizado",
         description: "Bem-vindo de volta!",
       });
-      setLocation("/admin/dashboard");
+      
+      // Use response data directly to determine redirect
+      const user = response.user;
+      
+      if (!user) {
+        // Fallback if no user data
+        setLocation('/admin/dashboard');
+        return;
+      }
+      
+      // Check approval status first
+      if (user.approvalStatus === 'pending_approval') {
+        toast({
+          title: "Conta pendente",
+          description: "Sua conta ainda está aguardando aprovação.",
+          variant: "destructive",
+        });
+        setLocation('/login');
+        return;
+      }
+      
+      if (user.approvalStatus === 'rejected') {
+        toast({
+          title: "Conta rejeitada",
+          description: "Sua solicitação de conta foi rejeitada.",
+          variant: "destructive",
+        });
+        setLocation('/login');
+        return;
+      }
+      
+      // Redirect based on userType for approved users
+      if (user.userType === 'customer') {
+        setLocation('/shop');
+      } else {
+        // Employee or other types go to admin dashboard
+        setLocation('/admin/dashboard');
+      }
     },
     onError: (error: any) => {
       toast({
