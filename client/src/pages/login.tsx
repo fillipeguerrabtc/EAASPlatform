@@ -45,7 +45,7 @@ export default function LoginPage() {
       
       if (!user) {
         // Fallback if no user data
-        setLocation('/admin/dashboard');
+        setLocation('/admin');
         return;
       }
       
@@ -75,7 +75,7 @@ export default function LoginPage() {
         setLocation('/shop');
       } else {
         // Employee or other types go to admin dashboard
-        setLocation('/admin/dashboard');
+        setLocation('/admin');
       }
     },
     onError: (error: any) => {

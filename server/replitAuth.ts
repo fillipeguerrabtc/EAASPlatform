@@ -221,7 +221,7 @@ export async function setupAuth(app: Express) {
         delete (req.session as any).oauthUserType;
         
         // Redirect based on userType
-        const redirectUrl = userType === 'employee' ? "/admin/dashboard" : "/shop";
+        const redirectUrl = userType === 'employee' ? "/admin" : "/shop";
         return res.redirect(redirectUrl);
       });
     })(req, res, next);
