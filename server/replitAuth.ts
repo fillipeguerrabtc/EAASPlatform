@@ -123,16 +123,22 @@ export async function setupAuth(app: Express) {
 
   const config = await getOidcConfig();
 
+  // Global store for userType during OAuth flow (keyed by session ID)
+  const oauthUserTypeStore: Record<string, 'employee' | 'customer'> = {};
+
   const verify: VerifyFunction = async (
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
-    verified: passport.AuthenticateCallback,
-    req?: any
+    verified: passport.AuthenticateCallback
   ) => {
     const user: any = {};
     updateUserSession(user, tokens);
     
-    // Extract userType from state parameter (set in OAuth redirect)
-    const userType = req?.query?.type as 'employee' | 'customer' | undefined;
+    // Note: We'll set userType in the session during /api/login or /api/auth/replit
+    // and retrieve it in /api/callback to pass through authentication process
+    // The verify callback will receive it via user object after deserialization
+    
+    // For now, default to customer if no userType is available
+    const userType = (user as any).oauthUserType as 'employee' | 'customer' | undefined;
     
     // Upsert user (single-tenant mode: no tenant context needed)
     const { userId, isNewUser } = await upsertUserFromOAuth(tokens.claims(), userType);
@@ -140,6 +146,7 @@ export async function setupAuth(app: Express) {
     // Store user ID in session
     user.userId = userId;
     user.isNewUser = isNewUser;
+    user.userType = userType; // Keep userType for redirect logic
     
     verified(null, user);
   };
@@ -151,6 +158,7 @@ export async function setupAuth(app: Express) {
         config,
         scope: "openid email profile offline_access",
         callbackURL: `https://${domain}/api/callback`,
+        passReqToCallback: false, // Passport OpenID Strategy doesn't support passReqToCallback
       },
       verify,
     );
@@ -161,31 +169,61 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    const userType = req.query.type || 'customer'; // Default to customer
+    const userType = (req.query.type as string) || 'customer'; // Default to customer
+    // Store userType in session before OAuth redirect
+    (req.session as any).oauthUserType = userType;
+    
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
-      state: userType as string, // Pass userType through OAuth flow
     })(req, res, next);
   });
   
-  // Alternative OAuth endpoint to support legacy /api/auth/replit route
+  // Alternative OAuth endpoint to support frontend /api/auth/replit route
   app.get("/api/auth/replit", (req, res, next) => {
-    const userType = req.query.type || 'customer';
+    const userType = (req.query.type as string) || 'customer';
+    // Store userType in session before OAuth redirect
+    (req.session as any).oauthUserType = userType;
+    
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
-      state: userType as string,
     })(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
-    // Extract userType from state parameter
-    const userType = req.query.state as 'employee' | 'customer' | undefined;
+    // Retrieve userType from session (stored during /api/login or /api/auth/replit)
+    const userType = (req.session as any).oauthUserType as 'employee' | 'customer' | undefined;
     
-    passport.authenticate(`replitauth:${req.hostname}`, {
-      successReturnToOrRedirect: userType === 'employee' ? "/admin/dashboard" : "/shop",
-      failureRedirect: "/login",
+    passport.authenticate(`replitauth:${req.hostname}`, (err: any, user: any, info: any) => {
+      if (err) {
+        console.error("OAuth callback error:", err);
+        return res.redirect("/login?error=oauth_failed");
+      }
+      
+      if (!user) {
+        console.error("OAuth callback failed - no user:", info);
+        return res.redirect("/login?error=oauth_failed");
+      }
+      
+      // Inject userType into user object before login
+      user.oauthUserType = userType;
+      user.userType = userType;
+      
+      // Login the user
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          console.error("Login error:", loginErr);
+          return res.redirect("/login?error=login_failed");
+        }
+        
+        // Clean up session
+        delete (req.session as any).oauthUserType;
+        
+        // Redirect based on userType
+        const redirectUrl = userType === 'employee' ? "/admin/dashboard" : "/shop";
+        return res.redirect(redirectUrl);
+      });
     })(req, res, next);
   });
 
