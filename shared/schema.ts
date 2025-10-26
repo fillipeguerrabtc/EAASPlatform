@@ -964,6 +964,110 @@ export type InsertCloneArtifact = z.infer<typeof insertCloneArtifactSchema>;
 export type CloneArtifact = typeof cloneArtifacts.$inferSelect;
 
 // ========================================
+// AI GOVERNANCE & TRACES (EAAS Whitepaper 02)
+// ========================================
+
+// AI Governance Policies (LTL+D Rules, Ethical Constraints)
+export const aiGovernance = pgTable("ai_governance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  policyName: text("policy_name").notNull(), // Human-readable name
+  policyType: text("policy_type").notNull(), // "ltl", "ethical", "risk", "persuasion"
+  ltlFormula: text("ltl_formula"), // LTL+D formula (e.g., "G(request_refund -> F[0,24h] process_refund)")
+  maxPersuasionLevel: decimal("max_persuasion_level", { precision: 3, scale: 2 }), // Override tenant default
+  riskThreshold: decimal("risk_threshold", { precision: 3, scale: 2 }), // Max acceptable risk score
+  enforcementMode: text("enforcement_mode").default("enforce"), // "enforce" | "warn" | "log"
+  isActive: boolean("is_active").default(true).notNull(),
+  metadata: jsonb("metadata"), // Additional policy config
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// AI Decision Traces (Critics System History)
+export const aiTraces = pgTable("ai_traces", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  customerId: varchar("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+  messageContent: text("message_content").notNull(), // User input
+  aiResponse: text("ai_response").notNull(), // AI output
+  responseSource: text("response_source").notNull(), // "knowledge_base" | "openai" | "autonomous_sales"
+  
+  // Critics Scores (from runAllCritics)
+  factualScore: decimal("factual_score", { precision: 3, scale: 2 }).notNull(),
+  numericScore: decimal("numeric_score", { precision: 3, scale: 2 }).notNull(),
+  ethicalScore: decimal("ethical_score", { precision: 3, scale: 2 }).notNull(),
+  riskScore: decimal("risk_score", { precision: 3, scale: 2 }).notNull(),
+  overallConfidence: decimal("overall_confidence", { precision: 3, scale: 2 }).notNull(),
+  
+  // Decision Outcomes
+  passed: boolean("passed").notNull(), // All critics passed
+  shouldEscalateToHuman: boolean("should_escalate_to_human").notNull(),
+  finalRecommendation: text("final_recommendation"), // Human-readable explanation
+  
+  // Violations
+  factualViolations: jsonb("factual_violations"), // Array of violation details
+  numericViolations: jsonb("numeric_violations"),
+  ethicalViolations: jsonb("ethical_violations"),
+  riskViolations: jsonb("risk_violations"),
+  
+  // Context
+  cartValue: decimal("cart_value", { precision: 10, scale: 2 }), // If applicable
+  knowledgeBaseMatchId: varchar("knowledge_base_match_id"), // If KB was used
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// AI Metrics (Aggregated Daily/Weekly Stats)
+export const aiMetrics = pgTable("ai_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  metricDate: timestamp("metric_date").notNull(), // Date being measured
+  aggregationPeriod: text("aggregation_period").notNull(), // "day" | "week" | "month"
+  
+  // Volume Metrics
+  totalInteractions: integer("total_interactions").default(0).notNull(),
+  totalEscalations: integer("total_escalations").default(0).notNull(),
+  escalationRate: decimal("escalation_rate", { precision: 5, scale: 2 }), // Percentage
+  
+  // Average Scores
+  avgFactualScore: decimal("avg_factual_score", { precision: 3, scale: 2 }),
+  avgNumericScore: decimal("avg_numeric_score", { precision: 3, scale: 2 }),
+  avgEthicalScore: decimal("avg_ethical_score", { precision: 3, scale: 2 }),
+  avgRiskScore: decimal("avg_risk_score", { precision: 3, scale: 2 }),
+  avgOverallConfidence: decimal("avg_overall_confidence", { precision: 3, scale: 2 }),
+  
+  // Violation Counts
+  factualViolationCount: integer("factual_violation_count").default(0),
+  numericViolationCount: integer("numeric_violation_count").default(0),
+  ethicalViolationCount: integer("ethical_violation_count").default(0),
+  riskViolationCount: integer("risk_violation_count").default(0),
+  
+  // Response Source Distribution
+  knowledgeBaseResponseCount: integer("knowledge_base_response_count").default(0),
+  openaiResponseCount: integer("openai_response_count").default(0),
+  autonomousSalesResponseCount: integer("autonomous_sales_response_count").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// AI Governance Schemas
+export const insertAiGovernanceSchema = createInsertSchema(aiGovernance).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiGovernance = z.infer<typeof insertAiGovernanceSchema>;
+export type AiGovernance = typeof aiGovernance.$inferSelect;
+
+// AI Traces Schemas
+export const insertAiTraceSchema = createInsertSchema(aiTraces).omit({ id: true, createdAt: true });
+export type InsertAiTrace = z.infer<typeof insertAiTraceSchema>;
+export type AiTrace = typeof aiTraces.$inferSelect;
+
+// AI Metrics Schemas
+export const insertAiMetricSchema = createInsertSchema(aiMetrics).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiMetric = z.infer<typeof insertAiMetricSchema>;
+export type AiMetric = typeof aiMetrics.$inferSelect;
+
+// ========================================
 // THEME TOKENS INTERFACE (Design System)
 // ========================================
 

@@ -33,10 +33,10 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Backend:** Node.js with Express, PostgreSQL (Neon) managed by Drizzle ORM, and TypeScript.
 - **Architecture:** Single-tenant, Role-Based Access Control (RBAC).
 - **URL Structure:** `/admin/*`, `/shop`, `/my-account`.
-- **Database Schema:** 29 tables covering tenant settings, users, marketplace, CRM, Omnichat, AI knowledge base, payments, calendar events, Inventory, HR, and AI Planning.
+- **Database Schema:** 32 tables covering tenant settings, users, marketplace, CRM, Omnichat, AI knowledge base, payments, calendar events, Inventory, HR, AI Planning, and **AI Governance** (aiGovernance for LTL+D policies, aiTraces for Critics decision history, aiMetrics for aggregated stats).
 - **Backend API:** Comprehensive CRUD operations with Zod validation.
 - **Public Marketplace (`/shop`):** Secure product display, search, filtering, and server-side calculated pricing for cart management and Stripe checkout (sandbox).
-- **AI Autonomous Sales System:** Incorporates a Planner/ToT (Tree-of-Thought) System based on POMDP for action planning, a Multi-Layer Critics System for validation (Factual, Numeric, Ethical, Risk), and Hybrid RAG Scoring for multi-component relevance. AI Governance Fields are configured in the `tenants` table.
+- **AI Autonomous Sales System:** Incorporates a Planner/ToT (Tree-of-Thought) System based on POMDP for action planning, a Multi-Layer Critics System for validation (Factual, Numeric, Ethical, Risk), and Hybrid RAG Scoring for multi-component relevance. AI Governance Fields are configured in the `tenants` table. **Critics System is fully integrated** in all AI response flows (WhatsApp, Knowledge Base, OpenAI, Autonomous Sales) with persistence in `aiTraces` table and aggregated metrics in `aiMetrics`.
 - **Inventory Management ERP:** Complete inventory control with multi-warehouse support, real-time stock levels, automatic movement logging, and low-stock alerts.
 - **HR Management ERP:** Complete human resources system with organizational hierarchy, employee lifecycle management, automated payroll, and attendance tracking.
 - **Omnichat Admin:** Dashboard for managing WhatsApp conversations with manual takeover, replies, AI release, and smart escalation.

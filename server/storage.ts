@@ -65,6 +65,12 @@ import {
   type InsertThemeBundle,
   type CloneArtifact,
   type InsertCloneArtifact,
+  type AiGovernance,
+  type InsertAiGovernance,
+  type AiTrace,
+  type InsertAiTrace,
+  type AiMetric,
+  type InsertAiMetric,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -101,6 +107,9 @@ import {
   brandJobs,
   themeBundles,
   cloneArtifacts,
+  aiGovernance,
+  aiTraces,
+  aiMetrics,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -334,6 +343,25 @@ export interface IStorage {
   getNextCloneVersion(tenantId: string): Promise<number>;
   createCloneArtifact(artifact: InsertCloneArtifact): Promise<CloneArtifact>;
   activateCloneArtifact(id: string, tenantId: string): Promise<CloneArtifact | undefined>;
+  
+  // AI Governance - Policies
+  getAiGovernance(id: string): Promise<AiGovernance | undefined>;
+  listAiGovernance(tenantId: string): Promise<AiGovernance[]>;
+  listActiveAiPolicies(tenantId: string): Promise<AiGovernance[]>;
+  createAiGovernance(policy: InsertAiGovernance): Promise<AiGovernance>;
+  updateAiGovernance(id: string, data: Partial<InsertAiGovernance>): Promise<AiGovernance | undefined>;
+  deleteAiGovernance(id: string): Promise<void>;
+  
+  // AI Traces - Decision History
+  getAiTrace(id: string): Promise<AiTrace | undefined>;
+  listAiTraces(filters?: { tenantId?: string; customerId?: string; startDate?: Date; endDate?: Date }): Promise<AiTrace[]>;
+  createAiTrace(trace: InsertAiTrace): Promise<AiTrace>;
+  
+  // AI Metrics - Aggregated Stats
+  getAiMetric(id: string): Promise<AiMetric | undefined>;
+  listAiMetrics(filters: { tenantId: string; startDate?: Date; endDate?: Date; aggregationPeriod?: string }): Promise<AiMetric[]>;
+  createAiMetric(metric: InsertAiMetric): Promise<AiMetric>;
+  updateAiMetric(id: string, data: Partial<InsertAiMetric>): Promise<AiMetric | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -1572,6 +1600,119 @@ export class DbStorage implements IStorage {
       .returning();
     
     return activated;
+  }
+  
+  // ========================================
+  // AI GOVERNANCE - POLICIES
+  // ========================================
+  
+  async getAiGovernance(id: string): Promise<AiGovernance | undefined> {
+    const [policy] = await db.select().from(aiGovernance)
+      .where(eq(aiGovernance.id, id))
+      .limit(1);
+    return policy;
+  }
+  
+  async listAiGovernance(tenantId: string): Promise<AiGovernance[]> {
+    return await db.select().from(aiGovernance)
+      .where(eq(aiGovernance.tenantId, tenantId))
+      .orderBy(desc(aiGovernance.createdAt));
+  }
+  
+  async listActiveAiPolicies(tenantId: string): Promise<AiGovernance[]> {
+    return await db.select().from(aiGovernance)
+      .where(and(
+        eq(aiGovernance.tenantId, tenantId),
+        eq(aiGovernance.isActive, true)
+      ))
+      .orderBy(desc(aiGovernance.createdAt));
+  }
+  
+  async createAiGovernance(policy: InsertAiGovernance): Promise<AiGovernance> {
+    const [newPolicy] = await db.insert(aiGovernance).values(policy).returning();
+    return newPolicy;
+  }
+  
+  async updateAiGovernance(id: string, data: Partial<InsertAiGovernance>): Promise<AiGovernance | undefined> {
+    const [updated] = await db.update(aiGovernance)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiGovernance.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteAiGovernance(id: string): Promise<void> {
+    await db.delete(aiGovernance).where(eq(aiGovernance.id, id));
+  }
+  
+  // ========================================
+  // AI TRACES - DECISION HISTORY
+  // ========================================
+  
+  async getAiTrace(id: string): Promise<AiTrace | undefined> {
+    const [trace] = await db.select().from(aiTraces)
+      .where(eq(aiTraces.id, id))
+      .limit(1);
+    return trace;
+  }
+  
+  async listAiTraces(filters?: { tenantId?: string; customerId?: string; startDate?: Date; endDate?: Date }): Promise<AiTrace[]> {
+    let query = db.select().from(aiTraces);
+    
+    const conditions = [];
+    if (filters?.tenantId) {
+      conditions.push(eq(aiTraces.tenantId, filters.tenantId));
+    }
+    if (filters?.customerId) {
+      conditions.push(eq(aiTraces.customerId, filters.customerId));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return await query.orderBy(desc(aiTraces.createdAt));
+  }
+  
+  async createAiTrace(trace: InsertAiTrace): Promise<AiTrace> {
+    const [newTrace] = await db.insert(aiTraces).values(trace).returning();
+    return newTrace;
+  }
+  
+  // ========================================
+  // AI METRICS - AGGREGATED STATS
+  // ========================================
+  
+  async getAiMetric(id: string): Promise<AiMetric | undefined> {
+    const [metric] = await db.select().from(aiMetrics)
+      .where(eq(aiMetrics.id, id))
+      .limit(1);
+    return metric;
+  }
+  
+  async listAiMetrics(filters: { tenantId: string; startDate?: Date; endDate?: Date; aggregationPeriod?: string }): Promise<AiMetric[]> {
+    const conditions = [eq(aiMetrics.tenantId, filters.tenantId)];
+    
+    if (filters.aggregationPeriod) {
+      conditions.push(eq(aiMetrics.aggregationPeriod, filters.aggregationPeriod));
+    }
+    
+    return await db.select().from(aiMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(aiMetrics.metricDate));
+  }
+  
+  async createAiMetric(metric: InsertAiMetric): Promise<AiMetric> {
+    const [newMetric] = await db.insert(aiMetrics).values(metric).returning();
+    return newMetric;
+  }
+  
+  async updateAiMetric(id: string, data: Partial<InsertAiMetric>): Promise<AiMetric | undefined> {
+    const [updated] = await db.update(aiMetrics)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(aiMetrics.id, id))
+      .returning();
+    return updated;
   }
 }
 
