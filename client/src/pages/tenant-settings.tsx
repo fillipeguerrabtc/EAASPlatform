@@ -136,6 +136,38 @@ export default function TenantSettings() {
     },
   });
 
+  // Mutation to scan complete brand identity from website URL
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const scanWebsiteBrandMutation = useMutation({
+    mutationFn: async (url: string) => {
+      if (!currentTenant?.id) throw new Error("No tenant selected");
+      return apiRequest("POST", `/api/tenants/${currentTenant.id}/scan-brand`, { websiteUrl: url });
+    },
+    onSuccess: (data: any) => {
+      if (data.colors) {
+        setThemeColors(data.colors);
+      }
+      if (data.assets?.logo) {
+        setLogoPreview(data.assets.logo);
+      }
+      if (data.assets?.favicon) {
+        setFaviconPreview(data.assets.favicon);
+      }
+      toast({
+        title: "✨ Identidade Visual Capturada!",
+        description: `Extraídos: ${data.colors ? 'cores' : ''} ${data.assets?.logo ? ', logo' : ''} ${data.assets?.favicon ? ', favicon' : ''} ${data.typography ? ', fontes' : ''}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "❌ Erro ao Escanear Site",
+        description: error.message || "Não foi possível escanear o site. Verifique a URL.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleFileChange = (
     file: File | undefined,
     type: "logo" | "favicon"
@@ -260,6 +292,77 @@ export default function TenantSettings() {
             </CardContent>
           </Card>
         )}
+
+        {/* Brand Scanner Inteligente */}
+        <Card className="border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-purple-950/20 dark:via-background dark:to-blue-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-6 w-6 text-purple-500" />
+              🤖 Brand Scanner Inteligente
+            </CardTitle>
+            <CardDescription>
+              Copie automaticamente a identidade visual completa do seu site: cores, logo, favicon, fontes e espaçamento - tudo 100% igual!
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <Label htmlFor="website-url" className="text-sm font-medium mb-2 block">
+                  URL do Site da Empresa
+                </Label>
+                <Input
+                  id="website-url"
+                  type="url"
+                  placeholder="https://suaempresa.com.br"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  className="flex-1"
+                  data-testid="input-website-url"
+                  disabled={scanWebsiteBrandMutation.isPending}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={() => websiteUrl && scanWebsiteBrandMutation.mutate(websiteUrl)}
+                  disabled={!websiteUrl || scanWebsiteBrandMutation.isPending}
+                  className="gap-2 min-w-[140px]"
+                  size="default"
+                  data-testid="button-scan-website"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {scanWebsiteBrandMutation.isPending ? "Escaneando..." : "Escanear Site"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Palette className="h-4 w-4 text-purple-500" />
+                <span>6 cores automáticas</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <ImageIcon className="h-4 w-4 text-purple-500" />
+                <span>Logo + Favicon</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                <span>Fontes e espaçamento</span>
+              </div>
+            </div>
+
+            {scanWebsiteBrandMutation.isPending && (
+              <div className="p-4 bg-white/80 dark:bg-background/80 rounded-lg border border-purple-200 dark:border-purple-800">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-500 border-t-transparent"></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Analisando identidade visual...</p>
+                    <p className="text-xs text-muted-foreground">Extraindo cores, logo, favicon, fontes e espaçamento do site</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Logo Upload */}
         <Card className="border-primary/20">

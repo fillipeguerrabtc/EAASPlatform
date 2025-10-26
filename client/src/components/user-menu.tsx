@@ -32,24 +32,35 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu">
-          <Avatar className="h-9 w-9">
+        <Button 
+          variant="outline" 
+          className="flex items-center gap-2 min-h-9 px-3" 
+          data-testid="button-user-menu"
+        >
+          <Avatar className="h-7 w-7">
             <AvatarImage src={user.avatar || undefined} alt={user.name} />
-            <AvatarFallback>{initials}</AvatarFallback>
+            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
+          <div className="hidden sm:flex flex-col items-start">
+            <span className="text-sm font-medium leading-none">{user.name}</span>
+            <span className="text-xs text-muted-foreground leading-none mt-0.5">{user.role}</span>
+          </div>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{user.name}</p>
-            <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
+            <p className="text-sm font-medium leading-none" data-testid="text-user-name">{user.name}</p>
+            <p className="text-xs leading-none text-muted-foreground" data-testid="text-user-email">{user.email}</p>
+            <p className="text-xs leading-none text-muted-foreground capitalize mt-1" data-testid="text-user-role">
+              {user.role.replace('_', ' ')}
+            </p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout} data-testid="button-logout">
+        <DropdownMenuItem onClick={handleLogout} data-testid="button-logout" className="text-destructive focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
-          {t('auth.logout')}
+          Sair
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
