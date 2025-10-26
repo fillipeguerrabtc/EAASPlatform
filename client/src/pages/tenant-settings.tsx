@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { SEO } from "@/components/seo";
+import { BrandScannerSection } from "@/components/brand-scanner-section";
 import { Upload, Building2, Image as ImageIcon, CheckCircle2, Palette, Sparkles, X, Check } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Tenant } from "@shared/schema";
@@ -830,6 +831,9 @@ export default function TenantSettings() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Brand Scanner 2.0 Section */}
+        <BrandScannerSection tenantId={currentTenant?.id} />
 
         {/* Save Button */}
         <div className="flex justify-end gap-3">

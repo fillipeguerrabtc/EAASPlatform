@@ -259,6 +259,267 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
+  // BRAND SCANNER 2.0 (Extract + Clone)
+  // ========================================
+
+  // Create Brand Scanner Job (Extract or Clone)
+  app.post("/api/brand/jobs", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { url, mode, tenantId } = req.body;
+      
+      if (!url || !mode || !tenantId) {
+        return res.status(400).json({ error: "url, mode, and tenantId are required" });
+      }
+
+      if (!['extract', 'clone'].includes(mode)) {
+        return res.status(400).json({ error: "mode must be 'extract' or 'clone'" });
+      }
+
+      // Create job in database
+      const job = await storage.createBrandJob({
+        tenantId,
+        url,
+        mode: mode as 'extract' | 'clone',
+        status: 'queued',
+        createdBy: (req as any).user?.id,
+      });
+
+      // Execute job asynchronously (in production this would be a queue)
+      executeJob(job.id, url, mode).catch(err => {
+        console.error(`Job ${job.id} failed:`, err);
+      });
+
+      res.status(201).json({ jobId: job.id, status: 'queued' });
+    } catch (error: any) {
+      console.error("Failed to create brand job:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Brand Job Status
+  app.get("/api/brand/jobs/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const job = await storage.getBrandJob(req.params.id);
+      if (!job) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      res.json(job);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List Brand Jobs for Tenant
+  app.get("/api/brand/jobs", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== 'string') {
+        return res.status(400).json({ error: "tenantId query parameter is required" });
+      }
+      
+      const jobs = await storage.listBrandJobs(tenantId);
+      res.json(jobs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List Theme Bundles
+  app.get("/api/brand/themes", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== 'string') {
+        return res.status(400).json({ error: "tenantId query parameter is required" });
+      }
+      
+      const themes = await storage.listThemeBundles(tenantId);
+      res.json(themes);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Active Theme Bundle
+  app.get("/api/brand/themes/active", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== 'string') {
+        return res.status(400).json({ error: "tenantId query parameter is required" });
+      }
+      
+      const activeTheme = await storage.getActiveThemeBundle(tenantId);
+      res.json(activeTheme || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Specific Theme Bundle
+  app.get("/api/brand/themes/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const theme = await storage.getThemeBundle(req.params.id);
+      if (!theme) {
+        return res.status(404).json({ error: "Theme not found" });
+      }
+      res.json(theme);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Activate Theme Bundle
+  app.post("/api/brand/themes/:id/activate", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.body;
+      if (!tenantId) {
+        return res.status(400).json({ error: "tenantId is required" });
+      }
+
+      const activated = await storage.activateThemeBundle(req.params.id, tenantId);
+      if (!activated) {
+        return res.status(404).json({ error: "Theme not found" });
+      }
+
+      res.json({ success: true, theme: activated });
+    } catch (error: any) {
+      console.error("Failed to activate theme:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List Clone Artifacts
+  app.get("/api/brand/clones", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== 'string') {
+        return res.status(400).json({ error: "tenantId query parameter is required" });
+      }
+      
+      const clones = await storage.listCloneArtifacts(tenantId);
+      res.json(clones);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Active Clone Artifact
+  app.get("/api/brand/clones/active", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== 'string') {
+        return res.status(400).json({ error: "tenantId query parameter is required" });
+      }
+      
+      const activeClone = await storage.getActiveCloneArtifact(tenantId);
+      res.json(activeClone || null);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Activate Clone Artifact
+  app.post("/api/brand/clones/:id/activate", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = req.body;
+      if (!tenantId) {
+        return res.status(400).json({ error: "tenantId is required" });
+      }
+
+      const activated = await storage.activateCloneArtifact(req.params.id, tenantId);
+      if (!activated) {
+        return res.status(404).json({ error: "Clone artifact not found" });
+      }
+
+      res.json({ success: true, clone: activated });
+    } catch (error: any) {
+      console.error("Failed to activate clone:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Helper function to execute jobs asynchronously with timeout
+  async function executeJob(jobId: string, url: string, mode: string) {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 45000; // 45s max per job
+    
+    try {
+      // Update status to running
+      await storage.updateBrandJobStatus(jobId, 'running');
+
+      // Wrap execution in timeout promise
+      const executionPromise = (async () => {
+        if (mode === 'extract') {
+          const { scanWebsiteBrand } = await import("./brandScanner");
+          const brandAnalysis = await scanWebsiteBrand(url);
+          return { type: 'extract', data: brandAnalysis };
+        } else if (mode === 'clone') {
+          const { buildStaticSnapshot } = await import("./cloneBuilder");
+          const cloneBundle = await buildStaticSnapshot(url);
+          return { type: 'clone', data: cloneBundle };
+        }
+        throw new Error('Invalid mode');
+      })();
+
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Job timeout after 45s')), TIMEOUT_MS)
+      );
+
+      const result = await Promise.race([executionPromise, timeoutPromise]) as any;
+
+      // Get job to find tenant
+      const job = await storage.getBrandJob(jobId);
+      if (!job) throw new Error("Job not found");
+
+      if (result.type === 'extract') {
+        const brandAnalysis = result.data;
+
+        // Create theme bundle with extracted data
+        const nextVersion = await storage.getNextThemeVersion(job.tenantId);
+        await storage.createThemeBundle({
+          tenantId: job.tenantId,
+          version: nextVersion,
+          tokens: brandAnalysis.tokens, // Full ThemeTokens from Phase 2
+          assets: brandAnalysis.assets,
+          jobId,
+          sourceUrl: url,
+          createdBy: job.createdBy,
+          isActive: false,
+        });
+
+        // Update job as done
+        const duration = Date.now() - startTime;
+        await storage.updateBrandJobStatus(jobId, 'done', brandAnalysis, undefined, duration);
+
+      } else if (result.type === 'clone') {
+        const cloneBundle = result.data;
+
+        // Create clone artifact
+        const nextVersion = await storage.getNextCloneVersion(job.tenantId);
+        await storage.createCloneArtifact({
+          tenantId: job.tenantId,
+          version: nextVersion,
+          mode: 'snapshot',
+          htmlBundle: cloneBundle.html,
+          manifest: cloneBundle.manifest,
+          jobId,
+          sourceUrl: url,
+          createdBy: job.createdBy,
+          isActive: false,
+        });
+
+        // Update job as done
+        const duration = Date.now() - startTime;
+        await storage.updateBrandJobStatus(jobId, 'done', cloneBundle.manifest, undefined, duration);
+      }
+
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      await storage.updateBrandJobStatus(jobId, 'failed', undefined, error.message, duration);
+      throw error;
+    }
+  }
+
+  // ========================================
   // RBAC (Roles & Permissions)
   // ========================================
 

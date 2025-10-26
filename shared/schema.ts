@@ -862,3 +862,161 @@ export type EthicalPolicy = typeof ethicalPolicies.$inferSelect;
 export const insertExecutionTraceSchema = createInsertSchema(executionTraces).omit({ id: true, createdAt: true });
 export type InsertExecutionTrace = z.infer<typeof insertExecutionTraceSchema>;
 export type ExecutionTrace = typeof executionTraces.$inferSelect;
+
+// ========================================
+// BRAND SCANNER 2.0 (Extract + Clone)
+// ========================================
+
+// Brand Scanner Job Status Enum
+export const brandJobStatusEnum = pgEnum("brand_job_status", ["queued", "running", "done", "failed"]);
+export const brandJobModeEnum = pgEnum("brand_job_mode", ["extract", "clone"]);
+export const cloneModeEnum = pgEnum("clone_mode", ["snapshot", "proxy"]);
+
+// Brand Jobs: Track scanning jobs (Extract or Clone)
+export const brandJobs = pgTable("brand_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  
+  // Job Configuration
+  url: text("url").notNull(),
+  mode: brandJobModeEnum("mode").notNull(), // 'extract' | 'clone'
+  
+  // Job Status & Results
+  status: brandJobStatusEnum("status").default("queued").notNull(),
+  result: jsonb("result"), // BrandAnalysis or CloneManifest
+  error: text("error"),
+  
+  // Performance Metrics
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  durationMs: integer("duration_ms"),
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Theme Bundles: Versioned design tokens extracted from websites
+export const themeBundles = pgTable("theme_bundles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  
+  // Version Control
+  version: integer("version").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
+  
+  // Theme Data (ThemeTokens structure)
+  tokens: jsonb("tokens").notNull(), // { color, font, radius, spacing, shadow, border }
+  assets: jsonb("assets"), // { logo, favicon }
+  
+  // Provenance
+  jobId: varchar("job_id").references(() => brandJobs.id, { onDelete: "set null" }),
+  sourceUrl: text("source_url"),
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  appliedAt: timestamp("applied_at"),
+});
+
+// Clone Artifacts: Static snapshots or proxy configs for cloned websites
+export const cloneArtifacts = pgTable("clone_artifacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  
+  // Version Control
+  version: integer("version").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
+  
+  // Clone Configuration
+  mode: cloneModeEnum("mode").notNull(), // 'snapshot' | 'proxy'
+  
+  // Snapshot Data (for 'snapshot' mode)
+  htmlBundle: text("html_bundle"), // Complete rewritten HTML
+  manifest: jsonb("manifest").notNull(), // { routes, assets, rewrites, originalUrl }
+  
+  // Proxy Configuration (for 'proxy' mode - future)
+  proxyConfig: jsonb("proxy_config"), // { targetUrl, headers, rewrites }
+  
+  // Provenance
+  jobId: varchar("job_id").references(() => brandJobs.id, { onDelete: "set null" }),
+  sourceUrl: text("source_url"),
+  
+  // Metadata
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  appliedAt: timestamp("applied_at"),
+});
+
+// Brand Jobs Schema
+export const insertBrandJobSchema = createInsertSchema(brandJobs).omit({ id: true, createdAt: true });
+export type InsertBrandJob = z.infer<typeof insertBrandJobSchema>;
+export type BrandJob = typeof brandJobs.$inferSelect;
+
+// Theme Bundles Schema
+export const insertThemeBundleSchema = createInsertSchema(themeBundles).omit({ id: true, createdAt: true });
+export type InsertThemeBundle = z.infer<typeof insertThemeBundleSchema>;
+export type ThemeBundle = typeof themeBundles.$inferSelect;
+
+// Clone Artifacts Schema
+export const insertCloneArtifactSchema = createInsertSchema(cloneArtifacts).omit({ id: true, createdAt: true });
+export type InsertCloneArtifact = z.infer<typeof insertCloneArtifactSchema>;
+export type CloneArtifact = typeof cloneArtifacts.$inferSelect;
+
+// ========================================
+// THEME TOKENS INTERFACE (Design System)
+// ========================================
+
+export interface TypographyConfig {
+  family: string;
+  fallbacks: string[];
+  weight?: number;
+  style?: 'normal' | 'italic';
+}
+
+export interface ThemeTokens {
+  color: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    neutral?: string;
+    bg: string;
+    fg: string;
+    link?: string;
+    success?: string;
+    warning?: string;
+    danger?: string;
+    surface?: string;
+    subtle?: string;
+  };
+  font: {
+    body: TypographyConfig;
+    heading: TypographyConfig;
+    mono?: TypographyConfig;
+    cta?: TypographyConfig;
+    scale?: {
+      basePx: number;
+      ratio: 1.125 | 1.2 | 1.25 | 1.333;
+    };
+  };
+  radius: {
+    sm: number;
+    md: number;
+    lg: number;
+    xl?: number;
+  };
+  spacing: {
+    base: number;
+    steps: number[];
+  };
+  shadow?: {
+    sm: string;
+    md: string;
+    lg: string;
+  };
+  border?: {
+    width: number;
+    style: 'solid' | 'dashed' | 'dotted';
+    color?: string;
+  };
+}

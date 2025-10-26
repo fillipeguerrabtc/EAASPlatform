@@ -59,6 +59,12 @@ import {
   type InsertPlanSession,
   type PlanNode,
   type InsertPlanNode,
+  type BrandJob,
+  type InsertBrandJob,
+  type ThemeBundle,
+  type InsertThemeBundle,
+  type CloneArtifact,
+  type InsertCloneArtifact,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -92,6 +98,9 @@ import {
   attendanceRecords,
   planSessions,
   planNodes,
+  brandJobs,
+  themeBundles,
+  cloneArtifacts,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -303,6 +312,28 @@ export interface IStorage {
   getChildNodes(parentId: string): Promise<PlanNode[]>;
   createPlanNode(node: InsertPlanNode): Promise<PlanNode>;
   updatePlanNode(id: string, data: Partial<InsertPlanNode>): Promise<PlanNode | undefined>;
+  
+  // Brand Scanner - Brand Jobs
+  getBrandJob(id: string): Promise<BrandJob | undefined>;
+  listBrandJobs(tenantId: string): Promise<BrandJob[]>;
+  createBrandJob(job: InsertBrandJob): Promise<BrandJob>;
+  updateBrandJobStatus(id: string, status: string, result?: any, error?: string, durationMs?: number): Promise<BrandJob | undefined>;
+  
+  // Brand Scanner - Theme Bundles
+  getThemeBundle(id: string): Promise<ThemeBundle | undefined>;
+  listThemeBundles(tenantId: string): Promise<ThemeBundle[]>;
+  getActiveThemeBundle(tenantId: string): Promise<ThemeBundle | undefined>;
+  getNextThemeVersion(tenantId: string): Promise<number>;
+  createThemeBundle(bundle: InsertThemeBundle): Promise<ThemeBundle>;
+  activateThemeBundle(id: string, tenantId: string): Promise<ThemeBundle | undefined>;
+  
+  // Brand Scanner - Clone Artifacts
+  getCloneArtifact(id: string): Promise<CloneArtifact | undefined>;
+  listCloneArtifacts(tenantId: string): Promise<CloneArtifact[]>;
+  getActiveCloneArtifact(tenantId: string): Promise<CloneArtifact | undefined>;
+  getNextCloneVersion(tenantId: string): Promise<number>;
+  createCloneArtifact(artifact: InsertCloneArtifact): Promise<CloneArtifact>;
+  activateCloneArtifact(id: string, tenantId: string): Promise<CloneArtifact | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -1387,6 +1418,160 @@ export class DbStorage implements IStorage {
       .where(eq(planNodes.id, id))
       .returning();
     return updated;
+  }
+  
+  // ========================================
+  // BRAND SCANNER - BRAND JOBS
+  // ========================================
+  
+  async getBrandJob(id: string): Promise<BrandJob | undefined> {
+    const [job] = await db.select().from(brandJobs)
+      .where(eq(brandJobs.id, id))
+      .limit(1);
+    return job;
+  }
+  
+  async listBrandJobs(tenantId: string): Promise<BrandJob[]> {
+    return await db.select().from(brandJobs)
+      .where(eq(brandJobs.tenantId, tenantId))
+      .orderBy(desc(brandJobs.createdAt));
+  }
+  
+  async createBrandJob(job: InsertBrandJob): Promise<BrandJob> {
+    const [newJob] = await db.insert(brandJobs).values(job).returning();
+    return newJob;
+  }
+  
+  async updateBrandJobStatus(id: string, status: string, result?: any, error?: string, durationMs?: number): Promise<BrandJob | undefined> {
+    const updateData: any = { status };
+    
+    if (status === 'running') {
+      updateData.startedAt = new Date();
+    } else if (status === 'done' || status === 'failed') {
+      updateData.completedAt = new Date();
+      if (durationMs) updateData.durationMs = durationMs;
+    }
+    
+    if (result) updateData.result = result;
+    if (error) updateData.error = error;
+    
+    const [updated] = await db.update(brandJobs)
+      .set(updateData)
+      .where(eq(brandJobs.id, id))
+      .returning();
+    return updated;
+  }
+  
+  // ========================================
+  // BRAND SCANNER - THEME BUNDLES
+  // ========================================
+  
+  async getThemeBundle(id: string): Promise<ThemeBundle | undefined> {
+    const [bundle] = await db.select().from(themeBundles)
+      .where(eq(themeBundles.id, id))
+      .limit(1);
+    return bundle;
+  }
+  
+  async listThemeBundles(tenantId: string): Promise<ThemeBundle[]> {
+    return await db.select().from(themeBundles)
+      .where(eq(themeBundles.tenantId, tenantId))
+      .orderBy(desc(themeBundles.version));
+  }
+  
+  async getActiveThemeBundle(tenantId: string): Promise<ThemeBundle | undefined> {
+    const [bundle] = await db.select().from(themeBundles)
+      .where(and(
+        eq(themeBundles.tenantId, tenantId),
+        eq(themeBundles.isActive, true)
+      ))
+      .limit(1);
+    return bundle;
+  }
+  
+  async getNextThemeVersion(tenantId: string): Promise<number> {
+    const bundles = await db.select().from(themeBundles)
+      .where(eq(themeBundles.tenantId, tenantId))
+      .orderBy(desc(themeBundles.version))
+      .limit(1);
+    
+    return bundles.length > 0 ? bundles[0].version + 1 : 1;
+  }
+  
+  async createThemeBundle(bundle: InsertThemeBundle): Promise<ThemeBundle> {
+    const [newBundle] = await db.insert(themeBundles).values(bundle).returning();
+    return newBundle;
+  }
+  
+  async activateThemeBundle(id: string, tenantId: string): Promise<ThemeBundle | undefined> {
+    // Deactivate all existing bundles for this tenant
+    await db.update(themeBundles)
+      .set({ isActive: false })
+      .where(eq(themeBundles.tenantId, tenantId));
+    
+    // Activate the selected bundle
+    const [activated] = await db.update(themeBundles)
+      .set({ isActive: true, appliedAt: new Date() })
+      .where(eq(themeBundles.id, id))
+      .returning();
+    
+    return activated;
+  }
+  
+  // ========================================
+  // BRAND SCANNER - CLONE ARTIFACTS
+  // ========================================
+  
+  async getCloneArtifact(id: string): Promise<CloneArtifact | undefined> {
+    const [artifact] = await db.select().from(cloneArtifacts)
+      .where(eq(cloneArtifacts.id, id))
+      .limit(1);
+    return artifact;
+  }
+  
+  async listCloneArtifacts(tenantId: string): Promise<CloneArtifact[]> {
+    return await db.select().from(cloneArtifacts)
+      .where(eq(cloneArtifacts.tenantId, tenantId))
+      .orderBy(desc(cloneArtifacts.version));
+  }
+  
+  async getActiveCloneArtifact(tenantId: string): Promise<CloneArtifact | undefined> {
+    const [artifact] = await db.select().from(cloneArtifacts)
+      .where(and(
+        eq(cloneArtifacts.tenantId, tenantId),
+        eq(cloneArtifacts.isActive, true)
+      ))
+      .limit(1);
+    return artifact;
+  }
+  
+  async getNextCloneVersion(tenantId: string): Promise<number> {
+    const artifacts = await db.select().from(cloneArtifacts)
+      .where(eq(cloneArtifacts.tenantId, tenantId))
+      .orderBy(desc(cloneArtifacts.version))
+      .limit(1);
+    
+    return artifacts.length > 0 ? artifacts[0].version + 1 : 1;
+  }
+  
+  async createCloneArtifact(artifact: InsertCloneArtifact): Promise<CloneArtifact> {
+    const [newArtifact] = await db.insert(cloneArtifacts).values(artifact).returning();
+    return newArtifact;
+  }
+  
+  async activateCloneArtifact(id: string, tenantId: string): Promise<CloneArtifact | undefined> {
+    // Deactivate all existing artifacts for this tenant
+    await db.update(cloneArtifacts)
+      .set({ isActive: false })
+      .where(eq(cloneArtifacts.tenantId, tenantId));
+    
+    // Activate the selected artifact
+    const [activated] = await db.update(cloneArtifacts)
+      .set({ isActive: true, appliedAt: new Date() })
+      .where(eq(cloneArtifacts.id, id))
+      .returning();
+    
+    return activated;
   }
 }
 
