@@ -99,12 +99,9 @@ export const users = pgTable("users", {
   customRoleId: varchar("custom_role_id").references(() => roles.id, { onDelete: "set null" }),
   
   // Authentication
-  password: text("password"), // bcrypt hash
+  password: text("password"), // Legacy bcrypt hash (deprecated, use passwordHash)
   passwordHash: text("password_hash"), // New field for local auth
-  replitAuthId: text("replit_auth_id").unique(),
-  googleId: text("google_id").unique(),
-  appleId: text("apple_id").unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
+  replitAuthId: text("replit_auth_id").unique(), // OAuth via Replit Auth
   
   // User Type & Approval System
   userType: text("user_type").default("customer").notNull(), // 'employee' | 'customer'

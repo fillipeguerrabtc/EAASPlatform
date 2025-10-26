@@ -49,7 +49,6 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
     // Launch Puppeteer with Chromium
     browser = await puppeteer.launch({
       args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath('/opt/nix/store'),
       headless: true,
     });

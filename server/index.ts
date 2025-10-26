@@ -53,14 +53,14 @@ app.use((req, res, next) => {
 
   // Seed default super admin user if not exists
   try {
-    const { storage } = await import("./storage");
+    log("🔍 Checking for super admin user...");
     const { db } = await import("./db");
     const { users } = await import("../shared/schema");
     const bcrypt = await import("bcrypt");
-    const { sql } = await import("drizzle-orm");
+    const { eq } = await import("drizzle-orm");
     
     // Check if any super_admin exists
-    const existingAdmins = await db.select().from(users).where(sql`${users.role} = 'super_admin'`).limit(1);
+    const existingAdmins = await db.select().from(users).where(eq(users.role, 'super_admin')).limit(1);
     
     if (existingAdmins.length === 0) {
       log("🔧 Creating default super admin user...");
@@ -80,12 +80,15 @@ app.use((req, res, next) => {
       });
       
       log("✅ Default super admin created:");
-      log("   Email: admin@eaas.com");
-      log("   Password: admin123");
+      log("   📧 Email: admin@eaas.com");
+      log("   🔑 Password: admin123");
       log("   ⚠️  CHANGE PASSWORD AFTER FIRST LOGIN");
+    } else {
+      log("✓ Super admin already exists, skipping seed");
     }
-  } catch (error) {
-    console.error("Error seeding super admin:", error);
+  } catch (error: any) {
+    log(`❌ Error seeding super admin: ${error.message}`);
+    console.error(error);
   }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
