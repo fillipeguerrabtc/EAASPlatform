@@ -2761,6 +2761,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get DRE Report (Financial Statement)
+  app.get("/api/finance/dre", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { startDate, endDate } = req.query;
+      
+      const filters: any = {};
+      
+      // Validate date parameters
+      if (startDate) {
+        const parsedStart = new Date(startDate as string);
+        if (isNaN(parsedStart.getTime())) {
+          return res.status(400).json({ error: "Invalid startDate format" });
+        }
+        filters.startDate = parsedStart;
+      }
+      if (endDate) {
+        const parsedEnd = new Date(endDate as string);
+        if (isNaN(parsedEnd.getTime())) {
+          return res.status(400).json({ error: "Invalid endDate format" });
+        }
+        filters.endDate = parsedEnd;
+      }
+      
+      const dre = await storage.generateDREReport(filters);
+      res.json(dre);
+    } catch (error: any) {
+      console.error("Error generating DRE report:", error);
+      res.status(500).json({ message: "Failed to generate DRE report" });
+    }
+  });
+
   // ========================================
   // FINANCIAL ACCOUNTS
   // ========================================
@@ -3441,6 +3472,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting warehouse:", error);
       res.status(500).json({ message: "Erro ao deletar depósito" });
+    }
+  });
+
+  // Get low stock alerts
+  app.get("/api/inventory/alerts", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const alerts = await storage.getLowStockAlerts();
+      res.json(alerts);
+    } catch (error: any) {
+      console.error("Error getting low stock alerts:", error);
+      res.status(500).json({ message: "Erro ao buscar alertas de estoque baixo" });
     }
   });
 

@@ -231,6 +231,13 @@ export interface IStorage {
   createFinancialTransaction(transaction: InsertFinancialTransaction): Promise<FinancialTransaction>;
   updateFinancialTransaction(id: string, data: Partial<InsertFinancialTransaction>): Promise<FinancialTransaction | undefined>;
   deleteFinancialTransaction(id: string): Promise<void>;
+  generateDREReport(filters?: { startDate?: Date; endDate?: Date }): Promise<{
+    totalRevenue: number;
+    totalExpenses: number;
+    netIncome: number;
+    revenueByCategory: Record<string, number>;
+    expensesByCategory: Record<string, number>;
+  }>;
   
   // RBAC
   createRole(role: InsertRole): Promise<Role>;
@@ -290,6 +297,7 @@ export interface IStorage {
   getProductStock(productId: string, warehouseId: string): Promise<ProductStock | undefined>;
   createProductStock(stock: InsertProductStock): Promise<ProductStock>;
   updateProductStock(id: string, data: Partial<InsertProductStock>): Promise<ProductStock | undefined>;
+  getLowStockAlerts(): Promise<ProductStock[]>;
   
   // Inventory - Stock Movements
   listStockMovements(filters?: { productId?: string; warehouseId?: string }): Promise<StockMovement[]>;
@@ -1026,6 +1034,53 @@ export class DbStorage implements IStorage {
       .where(eq(financialTransactions.id, id));
   }
 
+  async generateDREReport(filters?: { startDate?: Date; endDate?: Date }): Promise<{
+    totalRevenue: number;
+    totalExpenses: number;
+    netIncome: number;
+    revenueByCategory: Record<string, number>;
+    expensesByCategory: Record<string, number>;
+  }> {
+    let conditions: any[] = [];
+    
+    if (filters?.startDate) {
+      conditions.push(gte(financialTransactions.date, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(financialTransactions.date, filters.endDate));
+    }
+
+    const transactions = conditions.length > 0
+      ? await db.select().from(financialTransactions).where(and(...conditions))
+      : await db.select().from(financialTransactions);
+
+    let totalRevenue = 0;
+    let totalExpenses = 0;
+    const revenueByCategory: Record<string, number> = {};
+    const expensesByCategory: Record<string, number> = {};
+
+    for (const transaction of transactions) {
+      const amount = parseFloat(transaction.amount);
+      const category = transaction.category || 'Sem Categoria';
+
+      if (transaction.type === 'revenue') {
+        totalRevenue += amount;
+        revenueByCategory[category] = (revenueByCategory[category] || 0) + amount;
+      } else if (transaction.type === 'expense') {
+        totalExpenses += amount;
+        expensesByCategory[category] = (expensesByCategory[category] || 0) + amount;
+      }
+    }
+
+    return {
+      totalRevenue,
+      totalExpenses,
+      netIncome: totalRevenue - totalExpenses,
+      revenueByCategory,
+      expensesByCategory,
+    };
+  }
+
   // ========================================
   // RBAC METHODS
   // ========================================
@@ -1321,6 +1376,13 @@ export class DbStorage implements IStorage {
       .where(eq(productStock.id, id))
       .returning();
     return updated;
+  }
+
+  async getLowStockAlerts(): Promise<ProductStock[]> {
+    // Return all stock where quantity is below minQuantity
+    return await db.select().from(productStock)
+      .where(sql`${productStock.quantity} < ${productStock.minQuantity}`)
+      .orderBy(desc(productStock.updatedAt));
   }
   
   // ========================================
