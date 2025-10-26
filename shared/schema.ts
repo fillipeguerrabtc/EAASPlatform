@@ -66,12 +66,12 @@ export const tenants = pgTable("tenants", {
   customTheme: jsonb("custom_theme"),
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
   status: text("status").default("active"),
-  settings: jsonb("settings").default({}),
+  settings: jsonb("settings"),
   
   // AI Governance (EAAS Whitepaper 02 - Chapter 9)
   aiPersona: text("ai_persona").default("professional"), // Tone: professional, friendly, casual, technical
   maxPersuasionLevel: decimal("max_persuasion_level", { precision: 3, scale: 2 }).default("0.70"), // P̄ (max persuasion limit)
-  aiEthicalPolicies: jsonb("ai_ethical_policies").default({}), // LTL+D policies as JSON
+  aiEthicalPolicies: jsonb("ai_ethical_policies"), // LTL+D policies as JSON
   enabledAITools: jsonb("enabled_ai_tools").default(['crm', 'marketplace', 'knowledge_base']), // Allowed tools
   riskThreshold: decimal("risk_threshold", { precision: 3, scale: 2 }).default("0.70"), // τ (risk threshold for human escalation)
   
@@ -134,7 +134,7 @@ export const products = pgTable("products", {
   category: text("category"),
   tags: text("tags").array(),
   inventory: integer("inventory"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -161,7 +161,7 @@ export const carts = pgTable("carts", {
   sessionId: text("session_id"), // For anonymous users (session-based)
   items: jsonb("items").default([]).notNull(),
   total: decimal("total", { precision: 10, scale: 2 }).default("0").notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -175,7 +175,7 @@ export const orders = pgTable("orders", {
   total: decimal("total", { precision: 10, scale: 2 }).notNull(),
   status: orderStatusEnum("status").default("pending").notNull(),
   paymentId: varchar("payment_id"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -197,7 +197,7 @@ export const customers = pgTable("customers", {
   segment: text("segment"),
   lifecycleStage: text("lifecycle_stage").default("lead").notNull(),
   lifetimeValue: decimal("lifetime_value", { precision: 10, scale: 2 }).default("0").notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -210,7 +210,7 @@ export const interactions = pgTable("interactions", {
   type: text("type").notNull(),
   channel: conversationChannelEnum("channel"),
   content: text("content"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -286,7 +286,7 @@ export const conversations = pgTable("conversations", {
   status: conversationStatusEnum("status").default("open").notNull(),
   assignedTo: varchar("assigned_to").references(() => users.id),
   isAiHandled: boolean("is_ai_handled").default(true).notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -299,7 +299,7 @@ export const messages = pgTable("messages", {
   senderType: text("sender_type").notNull(),
   content: text("content").notNull(),
   attachments: text("attachments").array(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -317,7 +317,7 @@ export const knowledgeBase = pgTable("knowledge_base", {
   tags: text("tags").array(),
   vectorId: text("vector_id"),
   isActive: boolean("is_active").default(true).notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -332,7 +332,7 @@ export const aiLearningLog = pgTable("ai_learning_log", {
   source: text("source"),
   wasSuccessful: boolean("was_successful").default(true),
   feedback: text("feedback"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -350,7 +350,7 @@ export const payments = pgTable("payments", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   currency: text("currency").default("usd").notNull(),
   status: paymentStatusEnum("status").default("pending").notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -370,7 +370,7 @@ export const calendarEvents = pgTable("calendar_events", {
   resourceId: varchar("resource_id"),
   customerId: varchar("customer_id").references(() => customers.id).notNull(),
   orderId: varchar("order_id").references(() => orders.id),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -389,7 +389,7 @@ export const financialAccounts = pgTable("financial_accounts", {
   currency: text("currency").default("BRL").notNull(),
   bankName: text("bank_name"),
   accountNumber: text("account_number"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -407,7 +407,7 @@ export const financialTransactions = pgTable("financial_transactions", {
   paymentMethod: text("payment_method"), // cash, credit_card, pix, etc
   reference: text("reference"),
   notes: text("notes"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -618,7 +618,7 @@ export const warehouses = pgTable("warehouses", {
   location: text("location"),
   address: text("address"),
   isActive: boolean("is_active").default(true).notNull(),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -652,7 +652,7 @@ export const stockMovements = pgTable("stock_movements", {
   notes: text("notes"),
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }), // Quem fez a movimentação
   referenceId: varchar("reference_id"), // ID da ordem/venda relacionada
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -697,8 +697,8 @@ export const employees = pgTable("employees", {
   payrollFrequency: payrollFrequencyEnum("payroll_frequency").default("monthly").notNull(),
   address: text("address"),
   emergencyContact: jsonb("emergency_contact"),
-  documents: jsonb("documents").default({}), // IDs, contracts, etc
-  metadata: jsonb("metadata").default({}),
+  documents: jsonb("documents"), // IDs, contracts, etc
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -720,7 +720,7 @@ export const payrollRecords = pgTable("payroll_records", {
   paymentDate: timestamp("payment_date"),
   paymentMethod: text("payment_method"), // bank_transfer, cash, check
   notes: text("notes"),
-  metadata: jsonb("metadata").default({}),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -813,7 +813,7 @@ export const planNodes = pgTable("plan_nodes", {
   // Node Content
   depth: integer("depth").default(0).notNull(),
   actionType: text("action_type").notNull(), // answer_question, add_to_cart, checkout, etc
-  actionParams: jsonb("action_params").default({}).notNull(),
+  actionParams: jsonb("action_params").notNull(),
   description: text("description").notNull(),
   
   // POMDP Scoring (score(a|s) = λ₁Q̂ - λ₂risk + λ₃explain)
@@ -842,3 +842,58 @@ export type PlanSession = typeof planSessions.$inferSelect;
 export const insertPlanNodeSchema = createInsertSchema(planNodes).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertPlanNode = z.infer<typeof insertPlanNodeSchema>;
 export type PlanNode = typeof planNodes.$inferSelect;
+
+// ========================================
+// LTL+D ETHICAL POLICIES (EAAS Whitepaper 02 - Chapter 12)
+// ========================================
+
+// Ethical Policies: LTL+D formulas for formal verification
+export const ethicalPolicies = pgTable("ethical_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  
+  // Policy Identity
+  policyId: text("policy_id").notNull().unique(), // e.g. "risk-escalation", "kb-citation"
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  
+  // LTL+D Formula (stored as JSON AST)
+  formula: jsonb("formula").notNull(), // LTLFormula AST
+  
+  // Configuration
+  enabled: boolean("enabled").default(true).notNull(),
+  severity: text("severity").default("warning").notNull(), // info, warning, critical
+  
+  // Metadata
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Execution Traces: Store AI execution traces for audit/verification
+export const executionTraces = pgTable("execution_traces", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+  
+  // Trace Data (π = ⟨s₀,a₀,s₁,a₁,...⟩)
+  states: jsonb("states").notNull(), // Array of State objects
+  actions: jsonb("actions").notNull(), // Array of Action objects
+  
+  // Verification Results
+  policiesChecked: jsonb("policies_checked").default([]), // Array of policy IDs
+  violations: jsonb("violations").default([]), // Array of VerificationResult objects
+  isSafe: boolean("is_safe").default(true).notNull(), // No critical violations
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Ethical Policies Schema
+export const insertEthicalPolicySchema = createInsertSchema(ethicalPolicies).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEthicalPolicy = z.infer<typeof insertEthicalPolicySchema>;
+export type EthicalPolicy = typeof ethicalPolicies.$inferSelect;
+
+// Execution Traces Schema
+export const insertExecutionTraceSchema = createInsertSchema(executionTraces).omit({ id: true, createdAt: true });
+export type InsertExecutionTrace = z.infer<typeof insertExecutionTraceSchema>;
+export type ExecutionTrace = typeof executionTraces.$inferSelect;

@@ -1,0 +1,43 @@
+Voce ja terminou de implementar TODAS as melhorias que voce leu em TODOS os chuncks do pdf whitepaper que mandei? Verificou TUDO durante a implementaçao pra ver se nao ta esquecendo de nada? Implementou TUDO? Era uma lista gigante de gaps e melhorias a serem implementadas. Seguem algumas pra verificar se ja implementamos:
+
+1. Critics System Completo (Cap 10 + 14)
+ Factual Critic (KB grounding + citações)
+ Numeric Critic (parseCurrency BRL/USD + aritmética + double-entry)
+ Ethical Critic (persuasion limits Pt = min{P̄, ψ(It)})
+ Risk Critic (fraud detection + escalation τ=0.7)
+2. Hybrid RAG Scoring (Cap 11 + Apêndice B)
+ Fórmula completa: S(x,q) = α·Svetor + β·Sbm25 + γ·Sgrafo + δ·Sfresco + ζ·Sautoridade
+ Pesos normalizados: 35%, 25%, 15%, 15%, 10%
+3. AI Governance Fields (Cap 10)
+ aiPersona, maxPersuasionLevel, aiEthicalPolicies, enabledAITools, riskThreshold
+4. Lyapunov Stability (Apêndice A + Cap 14)
+ Conceito documentado no replit.md
+implementar como código funcional
+
+5. Planner/Decomposer com ToT/GoT (Cap 10)
+ Árvores de Thought/Graph of Thought
+ score(a|s) = λ₁Q̂(s,a) - λ₂risk(s,a) + λ₃explain(s,a)
+6. LTL+D Model Checking Formal (Cap 12 + Apêndice C)
+ Verificação de políticas temporais: □(risk(a)>τ → O handoff(a))
+ Checagem de trilhas de execução π=⟨s₀,a₀,s₁,a₁,...⟩
+7. Self-Reflection & Dream Loops (Cap 16 + Apêndice D)
+ Coerência Onírica: Coherence = 1 - E[rt]²/Var(rt)
+ Simulações de "mundos" W={w₁,...,wₙ} para robustecer política
+8. Raciocínio Causal SHAP (Cap 13)
+ Valores de Shapley: ϕᵢ = Σ [v(S∪{i}) - v(S)]
+ DAG causal com intervenções do(X=x)
+9. Modelagem Afetiva Completa (Cap 17 + Apêndice E)
+ PARCIALMENTE implementado (maxPersuasionLevel existe)
+ FALTA: Ht+1 = ρHt + (1-ρ)σ(w⊤zt) (humor temporal)
+ FALTA: Pt = min{P̄, ψ(It)} (intensidade persuasiva completa)
+10. Aprendizado Federado com DP (Cap 15 + Apêndice F)
+ DP-SGD: wₖᵗ⁺¹ = wₖᵗ - η(1/|B| Σ clip(∇ℓ(x),C) + N(0,σ²))
+ Agregação segura: θ(global) ← Σ(nₖ/N)θ(k) + N(0,σ²)
+
+Resumindo em Macro Temas:
+
+Macro Tema 1: Dream Loops (Coherence) - Auto-reflexão com validação estatística
+Macro Tema 2: LTL+D Formal - Políticas éticas verificáveis
+Macro Tema 3: Planner ToT/GoT - Decomposição inteligente de tarefas
+Macro Tema 4: SHAP/Causal - Explicabilidade causal completa
+Macro Tema 5: Modelagem Afetiva - Ht (humor) + Pt (persuasão) temporal
