@@ -17,6 +17,7 @@ EAAS is an all-in-one Platform-as-a-Service (PaaS) designed to centralize critic
 - Prioritize TypeScript strict mode and Zod for form validation.
 - All API calls should use TanStack Query.
 - Do not add mock data in production.
+- **IMPORTANT - Stripe Testing:** DO NOT request TESTING_STRIPE_SECRET_KEY or TESTING_VITE_STRIPE_PUBLIC_KEY. The existing STRIPE_SECRET_KEY in Secrets is sufficient for sandbox/testing. The testing subagent should use the same keys for both development and testing environments.
 
 ### System Architecture
 
@@ -83,6 +84,12 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Customer Area (`/my-account`):** Complete authenticated customer dashboard with tabs for order history, tracking, shopping cart, and 24/7 AI support. Includes order status badges, detailed item breakdowns, and integrated Omnichat access.
 - **Brand Scanner with Puppeteer (PRODUCTION):** Intelligent Brand Scanner using Puppeteer to automatically extract comprehensive branding elements from websites: colors (primary, secondary, accent, background, foreground), logos, favicons, typography (fonts), and spacing (border-radius, padding). Available at POST `/api/tenants/:id/scan-brand` with `websiteUrl` parameter. Also includes legacy OpenAI Vision API endpoint for logo-only color extraction at `/api/tenants/:id/scan-brand-colors`.
 - **Multi-Provider OAuth:** Replit Auth integration supporting Google, Apple, GitHub, and X (Twitter) authentication providers with automatic user creation and session management.
+- **Dual-Track Authentication System (October 2025):** Complete authentication system with two distinct user flows:
+  - **Employee Registration:** Users register via /register/employee (or OAuth with ?type=employee). Status set to pending_approval, requires admin approval via /admin/user-approvals dashboard. Admins can approve or reject with reason. Role defaults to 'agent'.
+  - **Customer Registration:** Users register via /register/customer (or OAuth with ?type=customer). Status auto-approved, automatically creates CRM customer record, redirects to /shop. Role defaults to 'customer'.
+  - **Backend:** Local auth (email/password with bcrypt) + OAuth flows differentiated by userType parameter stored in session. Storage methods: registerUser(), loginUser(), approveUser(), rejectUser(). Zod validation on all auth routes.
+  - **Frontend:** /login page with email/password + OAuth buttons, /register choice page (employee vs customer), separate registration forms with data-testid attributes, admin approvals dashboard with approve/reject actions.
+  - **Security:** Bcrypt password hashing, RBAC on approval endpoints (super_admin, tenant_admin, manager only), approvalStatus validation on login prevents pending users from accessing system.
 
 ### External Dependencies
 - **Stripe:** For payment processing (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`).
