@@ -44,6 +44,11 @@ export default function Shop() {
   const { t } = useTranslation();
   const { user } = useAuth();
 
+  // Check for active clone (Brand Scanner 2.0 Clone Mode)
+  const { data: activeClone, isLoading: isLoadingClone } = useQuery<{ htmlBundle: string } | null>({
+    queryKey: ['/api/brand/clones/active'],
+  });
+
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
@@ -194,6 +199,40 @@ export default function Shop() {
 
   const [, navigate] = useLocation();
 
+  // CLONE MODE: If active clone exists, render it instead of native shop
+  if (isLoadingClone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto" />
+          <p className="text-muted-foreground">Loading marketplace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeClone?.htmlBundle) {
+    return (
+      <>
+        <SEO
+          title="Marketplace - EAAS | Browse Products & Services"
+          description="Explore our universal marketplace with products, services, tours, experiences, real estate, and vehicles. Powered by AI-driven recommendations and secure checkout."
+          keywords="marketplace, online store, products, services, e-commerce, buy online, shop, ai marketplace"
+          canonical="https://eaas.com/shop"
+          ogTitle="EAAS Marketplace - Everything You Need"
+          ogDescription="Universal marketplace platform with AI-powered shopping experience"
+        />
+        <div 
+          className="min-h-screen"
+          dangerouslySetInnerHTML={{ __html: activeClone.htmlBundle }}
+          data-testid="clone-rendered-html"
+        />
+        <WhatsAppWidget />
+      </>
+    );
+  }
+
+  // NATIVE SHOP MODE: Render default EAAS marketplace
   return (
     <>
       <SEO

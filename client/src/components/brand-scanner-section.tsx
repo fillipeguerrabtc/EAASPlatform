@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Sparkles, Scan, Copy, Clock, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Scan, Copy, Clock, CheckCircle2, XCircle, Loader2, Eye } from 'lucide-react';
 import type { ThemeTokens } from '@shared/schema';
 import { useBrandTheme } from './brand-theme-provider';
 
@@ -33,6 +34,16 @@ interface ThemeBundle {
   createdAt: string;
 }
 
+interface CloneArtifact {
+  id: string;
+  tenantId: string;
+  version: number;
+  htmlBundle: string;
+  sourceUrl: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 interface BrandScannerSectionProps {
   tenantId?: string;
 }
@@ -41,7 +52,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   const { toast } = useToast();
   const { applyTheme } = useBrandTheme();
   const [websiteUrl, setWebsiteUrl] = useState('');
-  const [selectedMode, setSelectedMode] = useState<'extract' | 'clone'>('extract');
+  const [previewClone, setPreviewClone] = useState<CloneArtifact | null>(null);
 
   // Query: List jobs
   const { data: jobs = [], refetch: refetchJobs } = useQuery<BrandJob[]>({
@@ -52,6 +63,12 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   // Query: List theme bundles
   const { data: themes = [], refetch: refetchThemes } = useQuery<ThemeBundle[]>({
     queryKey: ['/api/brand/themes', tenantId],
+    enabled: !!tenantId,
+  });
+
+  // Query: List clone artifacts
+  const { data: clones = [], refetch: refetchClones } = useQuery<CloneArtifact[]>({
+    queryKey: ['/api/brand/clones', tenantId],
     enabled: !!tenantId,
   });
 
@@ -71,6 +88,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
       const interval = setInterval(() => {
         refetchJobs();
         refetchThemes();
+        refetchClones();
       }, 2000);
       setTimeout(() => clearInterval(interval), 60000); // Stop after 60s
     },
@@ -104,7 +122,29 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
     },
   });
 
-  const handleCreateJob = () => {
+  // Mutation: Activate clone
+  const activateCloneMutation = useMutation({
+    mutationFn: async (cloneId: string) => {
+      return apiRequest('POST', `/api/brand/clones/${cloneId}/activate`, { tenantId });
+    },
+    onSuccess: () => {
+      toast({
+        title: '✅ Clone Ativado',
+        description: 'O clone foi ativado e será exibido no /shop!',
+      });
+      refetchClones();
+      setPreviewClone(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: '❌ Erro',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleCreateJob = (mode: 'extract' | 'clone') => {
     if (!websiteUrl || !tenantId) {
       toast({
         title: '⚠️ URL Obrigatória',
@@ -116,7 +156,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
 
     createJobMutation.mutate({
       url: websiteUrl,
-      mode: selectedMode,
+      mode,
       tenantId,
     });
   };
@@ -172,30 +212,24 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
 
           <div className="flex gap-3 flex-wrap">
             <Button
-              onClick={() => {
-                setSelectedMode('extract');
-                handleCreateJob();
-              }}
+              onClick={() => handleCreateJob('extract')}
               disabled={createJobMutation.isPending || !tenantId}
               className="gap-2"
               data-testid="button-extract-brand"
             >
               <Scan className="h-4 w-4" />
-              {createJobMutation.isPending && selectedMode === 'extract' ? 'Extraindo...' : 'Extrair Identidade'}
+              {createJobMutation.isPending ? 'Criando...' : 'Extrair Identidade'}
             </Button>
 
             <Button
-              onClick={() => {
-                setSelectedMode('clone');
-                handleCreateJob();
-              }}
+              onClick={() => handleCreateJob('clone')}
               disabled={createJobMutation.isPending || !tenantId}
               variant="outline"
               className="gap-2"
               data-testid="button-clone-website"
             >
               <Copy className="h-4 w-4" />
-              {createJobMutation.isPending && selectedMode === 'clone' ? 'Clonando...' : 'Clonar Website'}
+              {createJobMutation.isPending ? 'Criando...' : 'Clonar Website'}
             </Button>
           </div>
 
@@ -305,7 +339,95 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
             </div>
           </div>
         )}
+
+        {/* Clone Artifacts */}
+        {clones.length > 0 && (
+          <div className="space-y-3">
+            <Label className="text-sm font-semibold">Clones de Website</Label>
+            <div className="space-y-2">
+              {clones.map((clone) => (
+                <div
+                  key={clone.id}
+                  className="flex items-center justify-between p-3 rounded-lg border bg-card hover-elevate"
+                  data-testid={`clone-${clone.id}`}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline">v{clone.version}</Badge>
+                      {clone.isActive && (
+                        <Badge className="bg-green-500 text-white">Ativo no /shop</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm truncate text-muted-foreground">{clone.sourceUrl}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      HTML Size: {(clone.htmlBundle.length / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPreviewClone(clone)}
+                      data-testid={`button-preview-clone-${clone.id}`}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      Preview
+                    </Button>
+                    {!clone.isActive && (
+                      <Button
+                        size="sm"
+                        onClick={() => activateCloneMutation.mutate(clone.id)}
+                        disabled={activateCloneMutation.isPending}
+                        data-testid={`button-activate-clone-${clone.id}`}
+                      >
+                        Ativar
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
+
+      {/* Clone Preview Dialog with Secure Iframe */}
+      <Dialog open={!!previewClone} onOpenChange={() => setPreviewClone(null)}>
+        <DialogContent className="max-w-7xl h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Preview: Clone v{previewClone?.version}</DialogTitle>
+            <DialogDescription>
+              Este é o clone do website {previewClone?.sourceUrl}. 
+              Use "Ativar" para exibir no /shop ou "Fechar" para cancelar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden rounded-lg border bg-muted">
+            {previewClone && (
+              <iframe
+                srcDoc={previewClone.htmlBundle}
+                className="w-full h-full"
+                sandbox="allow-same-origin allow-scripts"
+                title="Clone Preview"
+                data-testid="iframe-clone-preview"
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewClone(null)}>
+              Fechar
+            </Button>
+            {previewClone && !previewClone.isActive && (
+              <Button 
+                onClick={() => activateCloneMutation.mutate(previewClone.id)}
+                disabled={activateCloneMutation.isPending}
+                data-testid="button-activate-clone-from-preview"
+              >
+                {activateCloneMutation.isPending ? 'Ativando...' : 'Ativar Clone'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

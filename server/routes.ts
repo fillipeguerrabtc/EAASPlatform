@@ -402,12 +402,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get Active Clone Artifact
-  app.get("/api/brand/clones/active", isAuthenticated, async (req: Request, res: Response) => {
+  // Get Active Clone Artifact (PUBLIC - used by /shop)
+  app.get("/api/brand/clones/active", async (req: Request, res: Response) => {
     try {
-      const { tenantId } = req.query;
-      if (!tenantId || typeof tenantId !== 'string') {
-        return res.status(400).json({ error: "tenantId query parameter is required" });
+      // Auto-detect tenant (support multi-tenant in future)
+      let tenantId = req.query.tenantId as string | undefined;
+      
+      if (!tenantId) {
+        // Fallback to first tenant for single-tenant architecture
+        const tenants = await storage.listTenants();
+        tenantId = tenants[0]?.id;
+      }
+
+      if (!tenantId) {
+        return res.json(null);
       }
       
       const activeClone = await storage.getActiveCloneArtifact(tenantId);

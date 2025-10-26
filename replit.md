@@ -45,8 +45,14 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **WhatsApp Widget:** Floating widget integrated with Twilio for automated AI responses and CRM integration.
 - **Anonymous Shopping System:** Supports sessionId-based cart management without authentication.
 - **Customer Area (`/my-account`):** Authenticated customer dashboard with order history, tracking, shopping cart, and 24/7 AI support.
-- **Brand Scanner with Puppeteer (PRODUCTION):** Automatically extracts branding elements (colors, logos, typography, spacing) from websites with a preview system for user confirmation.
-- **Brand Theming System:** Dynamically applies tenant brand identity across the admin dashboard and customer marketplace using a `BrandThemeProvider` and CSS variables, with auto-cleanup for theme resets.
+- **Brand Scanner 2.0 (PRODUCTION):** Advanced brand identity system with two modes:
+  - **Extract Mode:** Intelligent extraction using K-Means clustering for color palettes (5 clusters), typography analysis, spacing, radius, shadows, and border styles. Generates versioned ThemeTokens bundles with preview/activation system.
+  - **Clone Mode:** Creates static HTML snapshots with security-hardened script sanitization (allowlist-based, removes inline scripts and event handlers). Supports serving cloned websites as /shop marketplace with secure iframe previews.
+  - **Technical Stack:** Puppeteer + Chromium for web scraping, client-side K-Means for color clustering, HEX→HSL conversion for Tailwind compatibility, 45s timeout with Promise.race for job execution.
+  - **Security:** Default-deny script policy, removes ALL inline scripts and event handlers, only allows explicitly verified CDN domains.
+  - **Database:** brandJobs (job tracking), themeBundles (versioned themes with JSONB tokens), cloneArtifacts (HTML snapshots with manifests).
+  - **API Routes:** 10 REST endpoints (/api/brand/jobs, /api/brand/themes, /api/brand/clones) with public /api/brand/clones/active for /shop serving.
+- **Brand Theming System:** Dynamically applies ThemeTokens as CSS variables via BrandThemeProvider context. Auto-loads active themes on mount with /api/brand/themes/active query. Supports preview, activate, clear, and rollback operations.
 - **Multi-Provider OAuth:** Integration with Google, Apple, GitHub, and X for authentication.
 - **Dual-Track Authentication System:** Distinct flows for Employee Registration (requires admin approval) and Customer Registration (auto-approved, creates CRM record). Security features include Bcrypt hashing and RBAC.
 
