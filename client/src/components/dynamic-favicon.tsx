@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { Tenant } from "@shared/schema";
 
 export function DynamicFavicon() {
-  const { data: tenants = [] } = useQuery<Tenant[]>({
+  const { data: tenants } = useQuery<Tenant[]>({
     queryKey: ["/api/tenants"],
   });
 
-  const currentTenant = tenants[0]; // For MVP, using first tenant
+  // Single-tenant: use first tenant if available
+  const currentTenant = tenants && tenants.length > 0 ? tenants[0] : null;
 
   useEffect(() => {
     if (!currentTenant?.faviconUrl) return;

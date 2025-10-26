@@ -1,12 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { subdomainMiddleware } from "./subdomainMiddleware";
 
 const app = express();
 
-// IMPORTANT: Subdomain detection MUST run before routes
-app.use(subdomainMiddleware);
+// Subdomain middleware removed for single-tenant architecture
 
 declare module 'http' {
   interface IncomingMessage {
