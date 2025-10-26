@@ -20,7 +20,6 @@ export interface CriticContext {
   message: string;
   response: string;
   source: "knowledge_base" | "openai" | "autonomous_sales";
-  tenantId: number;
   customerId: number;
   cartValue?: number;
   knowledgeBaseMatch?: any;

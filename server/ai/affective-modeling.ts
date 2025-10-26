@@ -73,7 +73,6 @@ export interface AffectiveState {
   
   // Metadata
   timestep: number;
-  tenantId: string;
   conversationId?: string;
   createdAt: Date;
 }
@@ -387,7 +386,6 @@ export function updateAffectiveState(
     situationalUrgency: St,
     contextSignals: Ct,
     timestep: previousState.timestep + 1,
-    tenantId: previousState.tenantId,
     conversationId: previousState.conversationId,
     createdAt: new Date(),
   };
@@ -415,7 +413,6 @@ export function updateAffectiveState(
  * Create initial affective state
  */
 export function createInitialAffectiveState(
-  tenantId: string,
   conversationId?: string
 ): AffectiveState {
   return {
@@ -427,7 +424,6 @@ export function createInitialAffectiveState(
     situationalUrgency: 0,
     contextSignals: 0,
     timestep: 0,
-    tenantId,
     conversationId,
     createdAt: new Date(),
   };

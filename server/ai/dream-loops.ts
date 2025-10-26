@@ -73,7 +73,6 @@ export interface World {
  */
 export interface DreamSession {
   id: string;
-  tenantId: string;
   planSessionId?: string;
   
   // Real-world baseline
@@ -465,7 +464,6 @@ export function calculateCoherence(worlds: World[]): {
  * Main entry point for self-reflection
  */
 export async function runDreamLoop(
-  tenantId: string,
   realTrace: {
     states: any[];
     actions: any[];
@@ -549,7 +547,6 @@ export async function runDreamLoop(
   
   return {
     id: `dream-${Date.now()}`,
-    tenantId,
     planSessionId: options.planSessionId,
     realTrace,
     worlds,

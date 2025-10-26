@@ -50,7 +50,6 @@
  */
 export interface ModelWeights {
   id: string;
-  tenantId: string;
   
   // Weights as vector
   weights: number[];
@@ -75,7 +74,6 @@ export interface TrainingBatch {
   }>;
   
   // Metadata
-  tenantId: string;
   timestamp: Date;
 }
 
@@ -121,7 +119,6 @@ export interface FederatedConfig {
  * Training Result
  */
 export interface TrainingResult {
-  tenantId: string;
   initialWeights: number[];
   finalWeights: number[];
   
@@ -144,10 +141,10 @@ export interface AggregationResult {
   globalWeights: number[];
   
   // Participants
-  numTenants: number;
+  numModels: number;
   totalSamples: number;
-  tenantContributions: Array<{
-    tenantId: string;
+  modelContributions: Array<{
+    modelId: string;
     weight: number;  // nₖ/N
   }>;
   
@@ -430,7 +427,6 @@ export function trainWithDPSGD(
   );
   
   return {
-    tenantId: batches[0]?.tenantId || "unknown",
     initialWeights,
     finalWeights: weights,
     iterations: batches.length,
@@ -510,13 +506,13 @@ export function checkPrivacyBudget(epsilon: number): {
 // ========================================
 
 /**
- * Aggregate models from multiple tenants
+ * Aggregate models from multiple sources (e.g., different time periods)
  * 
  * θ_global ← ∑ₖ (nₖ/N) × θₖ + N(0,σ²_agg)
  */
 export function aggregateModels(
-  tenantModels: Array<{
-    tenantId: string;
+  models: Array<{
+    modelId: string;
     weights: number[];
     numSamples: number;
   }>,
@@ -525,21 +521,21 @@ export function aggregateModels(
   const startTime = Date.now();
   
   // Check minimum participants
-  if (tenantModels.length < config.minTenants) {
+  if (models.length < config.minTenants) {
     throw new Error(
-      `Insufficient participants: ${tenantModels.length} < ${config.minTenants}`
+      `Insufficient models: ${models.length} < ${config.minTenants}`
     );
   }
   
   // Calculate total samples
-  const totalSamples = tenantModels.reduce((sum, m) => sum + m.numSamples, 0);
+  const totalSamples = models.reduce((sum, m) => sum + m.numSamples, 0);
   
   // Weighted average: ∑ₖ (nₖ/N) × θₖ
   let globalWeights = new Array(config.modelDimension).fill(0);
   
-  const contributions: AggregationResult["tenantContributions"] = [];
+  const contributions: AggregationResult["modelContributions"] = [];
   
-  for (const model of tenantModels) {
+  for (const model of models) {
     const weight = model.numSamples / totalSamples; // nₖ/N
     
     // Add weighted contribution
@@ -547,12 +543,12 @@ export function aggregateModels(
     globalWeights = vectorAdd(globalWeights, weightedModel);
     
     contributions.push({
-      tenantId: model.tenantId,
+      modelId: model.modelId,
       weight,
     });
     
     console.info(
-      `[Federated] ${model.tenantId}: weight=${weight.toFixed(3)} ` +
+      `[Federated] ${model.modelId}: weight=${weight.toFixed(3)} ` +
       `(${model.numSamples}/${totalSamples} samples)`
     );
   }
@@ -561,15 +557,15 @@ export function aggregateModels(
   globalWeights = addGaussianNoise(globalWeights, config.aggregationNoiseStd);
   
   console.info(
-    `[Federated] Aggregation complete: ${tenantModels.length} tenants, ` +
+    `[Federated] Aggregation complete: ${models.length} models, ` +
     `${totalSamples} samples, σ_agg=${config.aggregationNoiseStd}`
   );
   
   return {
     globalWeights,
-    numTenants: tenantModels.length,
+    numModels: models.length,
     totalSamples,
-    tenantContributions: contributions,
+    modelContributions: contributions,
     aggregationNoise: config.aggregationNoiseStd,
     aggregationTime: Date.now() - startTime,
     timestamp: new Date(),
@@ -593,7 +589,6 @@ export function initializeWeights(dimension: number): number[] {
  * Create synthetic training batch (for testing)
  */
 export function createSyntheticBatch(
-  tenantId: string,
   batchSize: number,
   inputDim: number
 ): TrainingBatch {
@@ -613,7 +608,6 @@ export function createSyntheticBatch(
   
   return {
     samples,
-    tenantId,
     timestamp: new Date(),
   };
 }
@@ -623,7 +617,6 @@ export function createSyntheticBatch(
  */
 export function exportTrainingResults(result: TrainingResult): string {
   return JSON.stringify({
-    tenantId: result.tenantId,
     loss: result.loss,
     privacySpent: result.privacySpent,
     iterations: result.iterations,

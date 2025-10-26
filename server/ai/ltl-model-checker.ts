@@ -48,7 +48,6 @@ export interface ExecutionTrace {
   states: State[];
   actions: Action[];
   timestamp: Date;
-  tenantId: string;
   conversationId?: string;
 }
 
@@ -548,7 +547,6 @@ export const DEFAULT_POLICIES: EthicalPolicy[] = [
  */
 export function buildTraceFromConversation(
   messages: any[],
-  tenantId: string,
   conversationId?: string
 ): ExecutionTrace {
   const states: State[] = [];
@@ -601,7 +599,6 @@ export function buildTraceFromConversation(
     states,
     actions,
     timestamp: new Date(),
-    tenantId,
     conversationId,
   };
 }

@@ -50,7 +50,6 @@ import type { PlanSession, PlanNode, Tenant } from "@shared/schema";
 export interface WorldState {
   // Customer Context
   customerId: string;
-  tenantId: string;
   conversationId?: string;
   
   // Observable State
@@ -715,8 +714,7 @@ export async function getOrCreatePlanSession(
   // Try to resume existing session
   if (context.state.conversationId) {
     const existing = await storage.getActivePlanSession(
-      context.state.conversationId,
-      context.state.tenantId
+      context.state.conversationId
     );
     
     if (existing) {
@@ -729,7 +727,6 @@ export async function getOrCreatePlanSession(
   expiresAt.setMinutes(expiresAt.getMinutes() + context.config.sessionTimeoutMinutes);
   
   const session = await storage.createPlanSession({
-    tenantId: context.state.tenantId,
     conversationId: context.state.conversationId,
     customerId: context.state.customerId,
     beliefState: context.belief,
@@ -757,7 +754,7 @@ export async function getOrCreatePlanSession(
   const rootNode = await createTreeNode(session.id, null, 0, rootAction);
   
   // Update session with root
-  await storage.updatePlanSession(session.id, context.state.tenantId, {
+  await storage.updatePlanSession(session.id, {
     rootNodeId: rootNode.id,
     currentNodeId: rootNode.id,
   });
@@ -879,7 +876,6 @@ export async function planActionWithPOMDP(
  */
 export interface PlannerState {
   customerId: string;
-  tenantId: string;
   message: string;
   conversationHistory?: any[];
   currentCart?: any;
@@ -895,7 +891,6 @@ export async function planAction(
   // Convert legacy state to WorldState
   const state: WorldState = {
     customerId: legacyState.customerId,
-    tenantId: legacyState.tenantId,
     message: legacyState.message,
     conversationHistory: legacyState.conversationHistory || [],
     currentCart: legacyState.currentCart,
@@ -906,10 +901,11 @@ export async function planAction(
     channel: "web",
   };
   
-  // Get tenant
-  const tenant = await storage.getTenant(legacyState.tenantId);
+  // Get single tenant (single-tenant mode)
+  const tenants = await storage.listTenants();
+  const tenant = tenants[0];
   if (!tenant) {
-    throw new Error(`Tenant not found: ${legacyState.tenantId}`);
+    throw new Error(`No tenant found in single-tenant system`);
   }
   
   return await planActionWithPOMDP(state, tenant, config);
