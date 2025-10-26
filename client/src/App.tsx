@@ -51,6 +51,7 @@ import InventoryPage from "@/pages/inventory";
 import HRPage from "@/pages/hr";
 import UserApprovals from "@/pages/admin/user-approvals";
 import AiGovernance from "@/pages/admin/ai-governance";
+import CrmWorkflowsPage from "@/pages/admin/crm-workflows";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -128,6 +129,7 @@ function Router() {
             <Route path="/admin/crm/pipeline" component={CRMPipeline} />
             <Route path="/admin/crm/activities" component={CRMActivities} />
             <Route path="/admin/crm/segments" component={CRMSegments} />
+            <Route path="/admin/crm/workflows" component={CrmWorkflowsPage} />
             <Route path="/admin/omnichat" component={Omnichat} />
             <Route path="/admin/omnichat-admin" component={OmnichatAdmin} />
             <Route path="/admin/knowledge-base" component={KnowledgeBasePage} />
@@ -184,6 +186,7 @@ function Router() {
           <Route path="/crm/pipeline" component={CRMPipeline} />
           <Route path="/crm/activities" component={CRMActivities} />
           <Route path="/crm/segments" component={CRMSegments} />
+          <Route path="/crm/workflows" component={CrmWorkflowsPage} />
           <Route path="/omnichat" component={Omnichat} />
           <Route path="/omnichat-admin" component={OmnichatAdmin} />
           <Route path="/knowledge-base" component={KnowledgeBasePage} />
