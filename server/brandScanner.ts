@@ -82,66 +82,135 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         spacing: {},
       };
 
-      // 1. EXTRACT COLORS from computed styles
-      const elementsToAnalyze = [
-        document.body,
-        document.querySelector('header'),
-        document.querySelector('nav'),
-        document.querySelector('.hero, [class*="hero"]'),
-        document.querySelector('button, [class*="button"], [class*="btn"]'),
-        document.querySelector('a[href]'),
-      ].filter(Boolean) as Element[];
+      // Helper: Convert RGB/RGBA to HEX
+      const rgbToHex = (rgb: string): string => {
+        if (rgb.startsWith('#')) return rgb;
+        const match = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)$/);
+        if (!match) return rgb;
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+      };
 
-      const colorCounts: Record<string, number> = {};
-      const bgColorCounts: Record<string, number> = {};
+      // Helper: Calculate color saturation to find vibrant colors
+      const getSaturation = (hex: string): number => {
+        const rgb = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+        if (!rgb) return 0;
+        const r = parseInt(rgb[1], 16) / 255;
+        const g = parseInt(rgb[2], 16) / 255;
+        const b = parseInt(rgb[3], 16) / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        return max === 0 ? 0 : (max - min) / max;
+      };
 
-      elementsToAnalyze.forEach(el => {
-        const computed = window.getComputedStyle(el);
-        const color = computed.color;
-        const bgColor = computed.backgroundColor;
+      // Helper: Check if color is too light or too dark (ignore pure white/black)
+      const isUsableColor = (hex: string): boolean => {
+        const rgb = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+        if (!rgb) return false;
+        const r = parseInt(rgb[1], 16);
+        const g = parseInt(rgb[2], 16);
+        const b = parseInt(rgb[3], 16);
         
-        if (color && color !== 'rgba(0, 0, 0, 0)') {
-          colorCounts[color] = (colorCounts[color] || 0) + 1;
+        // Ignore pure white/off-white
+        if (r > 250 && g > 250 && b > 250) return false;
+        // Ignore pure black/off-black
+        if (r < 10 && g < 10 && b < 10) return false;
+        
+        return true;
+      };
+
+      // 1. EXTRACT COLORS from ALL elements on page
+      const allElements = Array.from(document.querySelectorAll('*'));
+      const colorMap = new Map<string, { count: number; saturation: number }>();
+      const bgColorMap = new Map<string, { count: number; saturation: number }>();
+
+      allElements.forEach(el => {
+        const computed = window.getComputedStyle(el);
+        const color = rgbToHex(computed.color);
+        const bgColor = rgbToHex(computed.backgroundColor);
+        
+        if (isUsableColor(color)) {
+          const existing = colorMap.get(color) || { count: 0, saturation: getSaturation(color) };
+          colorMap.set(color, { ...existing, count: existing.count + 1 });
         }
-        if (bgColor && bgColor !== 'rgba(0, 0, 0, 0)' && bgColor !== 'transparent') {
-          bgColorCounts[bgColor] = (bgColorCounts[bgColor] || 0) + 1;
+        
+        if (isUsableColor(bgColor)) {
+          const existing = bgColorMap.get(bgColor) || { count: 0, saturation: getSaturation(bgColor) };
+          bgColorMap.set(bgColor, { ...existing, count: existing.count + 1 });
         }
       });
 
-      // Get most common colors
-      const sortedColors = Object.entries(colorCounts).sort((a, b) => b[1] - a[1]);
-      const sortedBgColors = Object.entries(bgColorCounts).sort((a, b) => b[1] - a[1]);
+      // Sort by saturation * count to favor vibrant, common colors
+      const sortedColors = Array.from(colorMap.entries())
+        .sort((a, b) => (b[1].saturation * b[1].count) - (a[1].saturation * a[1].count))
+        .map(([color]) => color);
 
-      result.colors.foreground = sortedColors[0]?.[0] || '#000000';
-      result.colors.primary = sortedColors[1]?.[0] || sortedBgColors[0]?.[0] || '#3B82F6';
-      result.colors.secondary = sortedBgColors[1]?.[0] || '#6366F1';
-      result.colors.background = sortedBgColors[0]?.[0] || '#FFFFFF';
-      result.colors.accent = sortedColors[2]?.[0] || '#8B5CF6';
-      result.colors.muted = sortedBgColors[2]?.[0] || '#F3F4F6';
+      const sortedBgColors = Array.from(bgColorMap.entries())
+        .sort((a, b) => (b[1].saturation * b[1].count) - (a[1].saturation * a[1].count))
+        .map(([color]) => color);
 
-      // 2. EXTRACT LOGO
+      // Assign colors intelligently
+      result.colors.primary = sortedBgColors[0] || sortedColors[0] || '#10A37F';
+      result.colors.secondary = sortedBgColors[1] || sortedColors[1] || '#8B5CF6';
+      result.colors.accent = sortedBgColors[2] || sortedColors[2] || '#3B82F6';
+      result.colors.foreground = sortedColors[0] || '#1C1C1E';
+      result.colors.background = '#FFFFFF';
+      result.colors.muted = sortedBgColors[3] || '#F3F4F6';
+
+      // 2. EXTRACT LOGO - Try multiple strategies
       const logoSelectors = [
         'img[alt*="logo" i]',
         'img[class*="logo" i]',
         'img[id*="logo" i]',
+        'img[src*="logo" i]',
         '.logo img',
+        '#logo img',
         'header img:first-of-type',
         'nav img:first-of-type',
         '[class*="brand"] img',
+        'a[class*="logo"] img',
+        'a[class*="brand"] img',
+        // SVG logos
+        'svg[class*="logo" i]',
+        'svg[id*="logo" i]',
       ];
 
       for (const selector of logoSelectors) {
-        const logo = document.querySelector(selector) as HTMLImageElement;
-        if (logo && logo.src) {
-          result.assets.logo = logo.src;
-          break;
+        const logo = document.querySelector(selector);
+        if (logo) {
+          if (logo instanceof HTMLImageElement && logo.src) {
+            result.assets.logo = logo.src;
+            break;
+          } else if (logo instanceof SVGElement) {
+            // For SVG, try to get parent link or convert to data URI
+            const svgString = new XMLSerializer().serializeToString(logo);
+            result.assets.logo = 'data:image/svg+xml;base64,' + btoa(svgString);
+            break;
+          }
         }
       }
 
       // 3. EXTRACT FAVICON
-      const faviconLink = document.querySelector('link[rel*="icon"]') as HTMLLinkElement;
-      if (faviconLink) {
-        result.assets.favicon = faviconLink.href;
+      const faviconSelectors = [
+        'link[rel="icon"]',
+        'link[rel="shortcut icon"]',
+        'link[rel="apple-touch-icon"]',
+        'link[rel*="icon"]',
+      ];
+      
+      for (const selector of faviconSelectors) {
+        const faviconLink = document.querySelector(selector) as HTMLLinkElement;
+        if (faviconLink && faviconLink.href) {
+          result.assets.favicon = faviconLink.href;
+          break;
+        }
+      }
+      
+      // Fallback to default favicon location
+      if (!result.assets.favicon) {
+        result.assets.favicon = new URL('/favicon.ico', window.location.origin).href;
       }
 
       // 4. EXTRACT TYPOGRAPHY
@@ -179,6 +248,14 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
       },
     };
 
+    // Debug logging
+    console.log('✅ Brand Scanner - Extraction Complete:', {
+      colorsFound: Object.keys(brandData.colors).length,
+      logoFound: !!brandData.assets.logo,
+      faviconFound: !!brandData.assets.favicon,
+      colors: brandData.colors,
+    });
+
     return analysis;
   } catch (error: any) {
     console.error('Brand scanner error:', error);
@@ -194,6 +271,9 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
  * Convert RGB/RGBA color to HEX
  */
 function rgbToHex(rgb: string): string {
+  // If already hex, return as-is
+  if (rgb.startsWith('#')) return rgb;
+  
   const match = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)$/);
   if (!match) return rgb;
   
@@ -202,4 +282,18 @@ function rgbToHex(rgb: string): string {
   const b = parseInt(match[3]);
   
   return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+}
+
+/**
+ * Calculate luminance to distinguish bright vs dark colors
+ */
+function getLuminance(hex: string): number {
+  const rgb = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  if (!rgb) return 0;
+  
+  const r = parseInt(rgb[1], 16) / 255;
+  const g = parseInt(rgb[2], 16) / 255;
+  const b = parseInt(rgb[3], 16) / 255;
+  
+  return 0.299 * r + 0.587 * g + 0.114 * b;
 }
