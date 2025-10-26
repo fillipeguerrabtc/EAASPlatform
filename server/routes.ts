@@ -1210,10 +1210,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Plan best action using ToT scoring
-      const plannedAction = planAction(plannerState);
+      const plannedAction = await planAction(plannerState);
       
       console.info(`[AI Planner] Executing action: ${plannedAction.type}`);
-      console.info(`[AI Planner] Score breakdown: Q=${plannedAction.breakdown.qValue.toFixed(2)}, Risk=${plannedAction.breakdown.risk.toFixed(2)}, Explain=${plannedAction.breakdown.explainability.toFixed(2)}`);
+      console.info(`[AI Planner] Score breakdown: Q=${plannedAction.qValue.toFixed(2)}, Risk=${plannedAction.risk.toFixed(2)}, Explain=${plannedAction.explainability.toFixed(2)}`);
       
       // Execute planned action based on Planner decision
       let response: string = "";

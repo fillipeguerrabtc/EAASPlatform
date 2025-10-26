@@ -57,6 +57,10 @@ import {
   type InsertPayrollRecord,
   type AttendanceRecord,
   type InsertAttendanceRecord,
+  type PlanSession,
+  type InsertPlanSession,
+  type PlanNode,
+  type InsertPlanNode,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -89,6 +93,8 @@ import {
   employees,
   payrollRecords,
   attendanceRecords,
+  planSessions,
+  planNodes,
 } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -278,6 +284,20 @@ export interface IStorage {
   createAttendanceRecord(record: InsertAttendanceRecord): Promise<AttendanceRecord>;
   updateAttendanceRecord(id: string, tenantId: string, data: Partial<InsertAttendanceRecord>): Promise<AttendanceRecord | undefined>;
   deleteAttendanceRecord(id: string, tenantId: string): Promise<void>;
+  
+  // AI Planning - Plan Sessions
+  getPlanSession(id: string, tenantId: string): Promise<PlanSession | undefined>;
+  getActivePlanSession(conversationId: string, tenantId: string): Promise<PlanSession | undefined>;
+  createPlanSession(session: InsertPlanSession): Promise<PlanSession>;
+  updatePlanSession(id: string, tenantId: string, data: Partial<InsertPlanSession>): Promise<PlanSession | undefined>;
+  deletePlanSession(id: string, tenantId: string): Promise<void>;
+  
+  // AI Planning - Plan Nodes
+  getPlanNode(id: string): Promise<PlanNode | undefined>;
+  getNodesBySession(sessionId: string): Promise<PlanNode[]>;
+  getChildNodes(parentId: string): Promise<PlanNode[]>;
+  createPlanNode(node: InsertPlanNode): Promise<PlanNode>;
+  updatePlanNode(id: string, data: Partial<InsertPlanNode>): Promise<PlanNode | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -789,7 +809,7 @@ export class DbStorage implements IStorage {
 
   async deleteRole(id: string, tenantId: string): Promise<boolean> {
     const result = await db.delete(roles).where(and(eq(roles.id, id), eq(roles.tenantId, tenantId)));
-    return result.rowCount !== undefined && result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async listRoles(tenantId: string): Promise<Role[]> {
@@ -817,7 +837,7 @@ export class DbStorage implements IStorage {
   async deleteRolePermission(roleId: string, feature: string): Promise<boolean> {
     const result = await db.delete(rolePermissions)
       .where(and(eq(rolePermissions.roleId, roleId), eq(rolePermissions.feature, feature as any)));
-    return result.rowCount !== undefined && result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getRolePermissions(roleId: string): Promise<RolePermission[]> {
@@ -1272,6 +1292,85 @@ export class DbStorage implements IStorage {
   async deleteAttendanceRecord(id: string, tenantId: string): Promise<void> {
     await db.delete(attendanceRecords)
       .where(and(eq(attendanceRecords.id, id), eq(attendanceRecords.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // AI PLANNING - PLAN SESSIONS
+  // ========================================
+  
+  async getPlanSession(id: string, tenantId: string): Promise<PlanSession | undefined> {
+    const [session] = await db.select().from(planSessions)
+      .where(and(eq(planSessions.id, id), eq(planSessions.tenantId, tenantId)))
+      .limit(1);
+    return session;
+  }
+  
+  async getActivePlanSession(conversationId: string, tenantId: string): Promise<PlanSession | undefined> {
+    const now = new Date();
+    const [session] = await db.select().from(planSessions)
+      .where(and(
+        eq(planSessions.conversationId, conversationId),
+        eq(planSessions.tenantId, tenantId)
+      ))
+      .orderBy(desc(planSessions.updatedAt))
+      .limit(1);
+    
+    return (session && new Date(session.expiresAt) > now) ? session : undefined;
+  }
+  
+  async createPlanSession(session: InsertPlanSession): Promise<PlanSession> {
+    const [newSession] = await db.insert(planSessions).values(session).returning();
+    return newSession;
+  }
+  
+  async updatePlanSession(id: string, tenantId: string, data: Partial<InsertPlanSession>): Promise<PlanSession | undefined> {
+    const { tenantId: _, ...updateData } = data;
+    const [updated] = await db.update(planSessions)
+      .set({ ...updateData, updatedAt: new Date() })
+      .where(and(eq(planSessions.id, id), eq(planSessions.tenantId, tenantId)))
+      .returning();
+    return updated;
+  }
+  
+  async deletePlanSession(id: string, tenantId: string): Promise<void> {
+    await db.delete(planSessions)
+      .where(and(eq(planSessions.id, id), eq(planSessions.tenantId, tenantId)));
+  }
+  
+  // ========================================
+  // AI PLANNING - PLAN NODES
+  // ========================================
+  
+  async getPlanNode(id: string): Promise<PlanNode | undefined> {
+    const [node] = await db.select().from(planNodes)
+      .where(eq(planNodes.id, id))
+      .limit(1);
+    return node;
+  }
+  
+  async getNodesBySession(sessionId: string): Promise<PlanNode[]> {
+    return await db.select().from(planNodes)
+      .where(eq(planNodes.sessionId, sessionId))
+      .orderBy(planNodes.depth, planNodes.createdAt);
+  }
+  
+  async getChildNodes(parentId: string): Promise<PlanNode[]> {
+    return await db.select().from(planNodes)
+      .where(eq(planNodes.parentId, parentId))
+      .orderBy(desc(planNodes.totalScore));
+  }
+  
+  async createPlanNode(node: InsertPlanNode): Promise<PlanNode> {
+    const [newNode] = await db.insert(planNodes).values(node).returning();
+    return newNode;
+  }
+  
+  async updatePlanNode(id: string, data: Partial<InsertPlanNode>): Promise<PlanNode | undefined> {
+    const [updated] = await db.update(planNodes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(planNodes.id, id))
+      .returning();
+    return updated;
   }
 }
 

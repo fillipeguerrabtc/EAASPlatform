@@ -773,3 +773,72 @@ export type PayrollRecord = typeof payrollRecords.$inferSelect;
 export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true });
 export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
 export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
+
+// ========================================
+// AI PLANNING SESSIONS (EAAS Whitepaper 02 - POMDP + ToT)
+// ========================================
+
+// Plan Sessions: Persistent planning state for multi-turn POMDP
+export const planSessions = pgTable("plan_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
+  customerId: varchar("customer_id").references(() => customers.id, { onDelete: "cascade" }),
+  
+  // POMDP State
+  beliefState: jsonb("belief_state").notNull(), // b(s) - probability distribution over states
+  currentState: jsonb("current_state").notNull(), // Current world state representation
+  
+  // ToT Tree Structure
+  rootNodeId: varchar("root_node_id"), // Reference to root PlanNode
+  currentNodeId: varchar("current_node_id"), // Currently executing node
+  
+  // Planning Metadata
+  maxDepth: integer("max_depth").default(3).notNull(),
+  exploredPaths: integer("explored_paths").default(0).notNull(),
+  completedActions: integer("completed_actions").default(0).notNull(),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(), // Auto-cleanup old sessions
+});
+
+// Plan Nodes: Tree-of-Thought nodes (ToT/GoT structure)
+export const planNodes = pgTable("plan_nodes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => planSessions.id, { onDelete: "cascade" }).notNull(),
+  parentId: varchar("parent_id"), // Self-reference for tree structure
+  
+  // Node Content
+  depth: integer("depth").default(0).notNull(),
+  actionType: text("action_type").notNull(), // answer_question, add_to_cart, checkout, etc
+  actionParams: jsonb("action_params").default({}).notNull(),
+  description: text("description").notNull(),
+  
+  // POMDP Scoring (score(a|s) = λ₁Q̂ - λ₂risk + λ₃explain)
+  qValue: decimal("q_value", { precision: 5, scale: 3 }).notNull(), // Q̂(s,a) - expected utility
+  riskScore: decimal("risk_score", { precision: 5, scale: 3 }).notNull(), // risk(s,a)
+  explainScore: decimal("explain_score", { precision: 5, scale: 3 }).notNull(), // explain(s,a)
+  totalScore: decimal("total_score", { precision: 6, scale: 3 }).notNull(), // Final score
+  
+  // GoT Dependencies (for multi_step_plan)
+  dependencies: text("dependencies").array().default([]), // Node IDs that must execute first
+  
+  // Execution State
+  status: text("status").default("pending").notNull(), // pending, executing, completed, failed, pruned
+  executionResult: jsonb("execution_result"), // Result after execution
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Plan Sessions Schema
+export const insertPlanSessionSchema = createInsertSchema(planSessions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlanSession = z.infer<typeof insertPlanSessionSchema>;
+export type PlanSession = typeof planSessions.$inferSelect;
+
+// Plan Nodes Schema
+export const insertPlanNodeSchema = createInsertSchema(planNodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlanNode = z.infer<typeof insertPlanNodeSchema>;
+export type PlanNode = typeof planNodes.$inferSelect;
