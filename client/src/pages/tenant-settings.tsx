@@ -144,19 +144,47 @@ export default function TenantSettings() {
       return apiRequest("POST", `/api/tenants/${currentTenant.id}/scan-brand`, { websiteUrl: url });
     },
     onSuccess: (data: any) => {
-      if (data.colors) {
-        setThemeColors(data.colors);
+      const brand = data.brand;
+      if (!brand) {
+        toast({
+          title: "⚠️ Atenção",
+          description: "Nenhuma informação de marca foi encontrada no site.",
+        });
+        return;
       }
-      if (data.assets?.logo) {
-        setLogoPreview(data.assets.logo);
+
+      // Update theme colors if available
+      if (brand.colors) {
+        setThemeColors({
+          primary: brand.colors.primary || themeColors.primary,
+          secondary: brand.colors.secondary || themeColors.secondary,
+          accent: brand.colors.accent || themeColors.accent,
+          background: brand.colors.background || themeColors.background,
+          foreground: brand.colors.foreground || themeColors.foreground,
+        });
       }
-      if (data.assets?.favicon) {
-        setFaviconPreview(data.assets.favicon);
+
+      // Update logo and favicon previews
+      if (brand.assets?.logo) {
+        setLogoPreview(brand.assets.logo);
       }
+      if (brand.assets?.favicon) {
+        setFaviconPreview(brand.assets.favicon);
+      }
+
+      // Build success message
+      const extracted = [];
+      if (brand.colors) extracted.push('6 cores');
+      if (brand.assets?.logo) extracted.push('logo');
+      if (brand.assets?.favicon) extracted.push('favicon');
+      if (brand.typography) extracted.push('fontes');
+      if (brand.spacing) extracted.push('espaçamento');
+
       toast({
         title: "✨ Identidade Visual Capturada!",
-        description: `Extraídos: ${data.colors ? 'cores' : ''} ${data.assets?.logo ? ', logo' : ''} ${data.assets?.favicon ? ', favicon' : ''} ${data.typography ? ', fontes' : ''}`,
+        description: `Extraídos com sucesso: ${extracted.join(', ')}`,
       });
+      
       queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
     },
     onError: (error: Error) => {
