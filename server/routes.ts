@@ -1969,6 +1969,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Migrate anonymous cart to authenticated user cart
+  app.post("/api/carts/migrate", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = getUserIdFromSession(req);
+      const { sessionId, items } = req.body;
+      
+      if (!sessionId || !items) {
+        return res.status(400).json({ error: "sessionId and items are required" });
+      }
+      
+      // Get or create user cart
+      let userCart = await storage.getCartByCustomer(userId);
+      
+      if (!userCart) {
+        // Create new cart for user with migrated items
+        userCart = await storage.createCart({
+          customerId: userId,
+          sessionId: null,
+          items,
+          total: "0",
+          metadata: {},
+        });
+      } else {
+        // Merge session cart items into user cart
+        const existingItems = (userCart.items as any[]) || [];
+        const newItems = [...existingItems];
+        
+        // Add session items (merge quantities if same product+variant)
+        for (const sessionItem of items) {
+          const existingIndex = newItems.findIndex(
+            (i: any) => i.productId === sessionItem.productId && i.variantId === sessionItem.variantId
+          );
+          
+          if (existingIndex >= 0) {
+            newItems[existingIndex].quantity += sessionItem.quantity;
+          } else {
+            newItems.push(sessionItem);
+          }
+        }
+        
+        // Update user cart
+        userCart = await storage.updateCart(userCart.id, {
+          items: newItems,
+        }) || userCart;
+      }
+      
+      // Delete old session cart if exists
+      const sessionCart = await storage.getCartBySessionId(sessionId);
+      if (sessionCart) {
+        await storage.deleteCart(sessionCart.id);
+      }
+      
+      res.json({ success: true, cart: userCart });
+    } catch (error: any) {
+      console.error("Cart migration error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ========================================
   // AI CHAT (Knowledge Base + OpenAI Fallback)
   // ========================================
@@ -3729,6 +3788,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/deals/:id/move", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { stageId, position } = req.body;
+      
+      if (!stageId || typeof position !== 'number') {
+        return res.status(400).json({ 
+          message: "stageId e position são obrigatórios" 
+        });
+      }
+      
+      await storage.moveDeal(req.params.id, stageId, position);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error moving deal:", error);
+      res.status(500).json({ message: "Erro ao mover negócio" });
+    }
+  });
+
   // ========================================
   // CUSTOMER SEGMENTS
   // ========================================
@@ -3852,6 +3929,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error deleting activity:", error);
       res.status(500).json({ message: "Erro ao deletar atividade" });
+    }
+  });
+
+  // Run SLA Worker manually (for testing/debugging)
+  app.post("/api/sla/run", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { runSLAWorker } = await import("./workers/sla-worker");
+      const result = await runSLAWorker();
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error running SLA worker:", error);
+      res.status(500).json({ message: "Erro ao executar SLA worker" });
     }
   });
 

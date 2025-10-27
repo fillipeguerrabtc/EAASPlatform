@@ -326,6 +326,7 @@ export const deals = pgTable("deals", {
   title: text("title").notNull(),
   value: decimal("value", { precision: 10, scale: 2 }).notNull(),
   stageId: varchar("stage_id").references(() => pipelineStages.id).notNull(),
+  position: integer("position").default(0).notNull(),
   probability: integer("probability").default(50).notNull(),
   expectedCloseDate: timestamp("expected_close_date"),
   actualCloseDate: timestamp("actual_close_date"),
@@ -356,6 +357,7 @@ export const activities = pgTable("activities", {
   dueDate: timestamp("due_date"),
   completedAt: timestamp("completed_at"),
   createdBy: varchar("created_by").references(() => users.id).notNull(),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -269,6 +269,7 @@ export interface IStorage {
   getCartBySessionId(sessionId: string): Promise<Cart | undefined>;
   createCart(cart: InsertCart): Promise<Cart>;
   updateCart(id: string, data: Partial<InsertCart>): Promise<Cart | undefined>;
+  deleteCart(id: string): Promise<void>;
   
   // Calendar Events
   listCalendarEvents(): Promise<CalendarEvent[]>;
@@ -342,6 +343,7 @@ export interface IStorage {
   createDeal(deal: InsertDeal): Promise<Deal>;
   updateDeal(id: string, data: Partial<InsertDeal>): Promise<Deal | undefined>;
   deleteDeal(id: string): Promise<void>;
+  moveDeal(dealId: string, toStageId: string, toPosition: number): Promise<void>;
   
   // Customer Segments
   listCustomerSegments(): Promise<CustomerSegment[]>;
@@ -1154,6 +1156,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async deleteCart(id: string): Promise<void> {
+    await db.delete(carts).where(eq(carts.id, id));
+  }
+
   // ========================================
   // CALENDAR EVENTS
   // ========================================
@@ -1531,6 +1537,74 @@ export class DbStorage implements IStorage {
   async deleteDeal(id: string): Promise<void> {
     await db.delete(deals)
       .where(eq(deals.id, id));
+  }
+
+  async moveDeal(dealId: string, toStageId: string, toPosition: number): Promise<void> {
+    await db.transaction(async (tx) => {
+      // Get the deal being moved to determine source stage
+      const [deal] = await tx.select().from(deals).where(eq(deals.id, dealId)).limit(1);
+      if (!deal) throw new Error("Deal not found");
+      
+      const fromStageId = deal.stageId;
+      
+      // Step 1: Make room in target stage by shifting positions >= toPosition
+      if (fromStageId !== toStageId) {
+        // Moving to different stage: shift positions in target stage
+        await tx.execute(sql`
+          UPDATE deals 
+          SET position = position + 1 
+          WHERE stage_id = ${toStageId} 
+            AND position >= ${toPosition}
+        `);
+      } else {
+        // Moving within same stage: more complex logic
+        const fromPosition = deal.position;
+        
+        if (toPosition > fromPosition) {
+          // Moving down: shift [fromPosition+1, toPosition] up by 1
+          await tx.execute(sql`
+            UPDATE deals 
+            SET position = position - 1 
+            WHERE stage_id = ${toStageId} 
+              AND position > ${fromPosition} 
+              AND position <= ${toPosition}
+          `);
+        } else if (toPosition < fromPosition) {
+          // Moving up: shift [toPosition, fromPosition-1] down by 1
+          await tx.execute(sql`
+            UPDATE deals 
+            SET position = position + 1 
+            WHERE stage_id = ${toStageId} 
+              AND position >= ${toPosition} 
+              AND position < ${fromPosition}
+          `);
+        }
+        // If toPosition === fromPosition, no shift needed
+      }
+      
+      // Step 2: Move the deal to new position
+      await tx.update(deals)
+        .set({ 
+          stageId: toStageId, 
+          position: toPosition, 
+          updatedAt: new Date() 
+        })
+        .where(eq(deals.id, dealId));
+      
+      // Step 3: Re-index source stage to fix gaps (if moved to different stage)
+      if (fromStageId !== toStageId) {
+        await tx.execute(sql`
+          WITH ordered AS (
+            SELECT id, row_number() OVER (ORDER BY position, updated_at) - 1 AS rn
+            FROM deals WHERE stage_id = ${fromStageId}
+          )
+          UPDATE deals d 
+          SET position = o.rn 
+          FROM ordered o 
+          WHERE d.id = o.id
+        `);
+      }
+    });
   }
   
   // ========================================
