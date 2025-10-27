@@ -261,6 +261,12 @@ export interface IStorage {
   getOrder(id: string): Promise<Order | undefined>;
   createOrder(order: InsertOrder): Promise<Order>;
   updateOrder(id: string, data: Partial<InsertOrder>): Promise<Order | undefined>;
+  createOrderWithPaymentAndStock(params: {
+    order: InsertOrder;
+    payment: InsertPayment;
+    stockUpdates: Array<{ variantId: string; quantityChange: number; warehouseId: string }>;
+    cartId?: string;
+  }): Promise<{ order: Order; payment: Payment }>;
   
   // Carts
   getCart(id: string): Promise<Cart | undefined>;
@@ -1111,6 +1117,78 @@ export class DbStorage implements IStorage {
       .where(eq(orders.id, id))
       .returning();
     return result[0];
+  }
+
+  /**
+   * ATOMIC ORDER COMPLETION - Creates order, payment, and updates stock in a single transaction
+   * This ensures all-or-nothing: if any step fails, everything rolls back
+   */
+  async createOrderWithPaymentAndStock(params: {
+    order: InsertOrder;
+    payment: InsertPayment;
+    stockUpdates: Array<{ variantId: string; quantityChange: number; warehouseId: string }>;
+    cartId?: string;
+  }): Promise<{ order: Order; payment: Payment }> {
+    return await db.transaction(async (tx) => {
+      // 1. Create order
+      const [createdOrder] = await tx.insert(orders).values(params.order).returning();
+
+      // 2. Process stock updates atomically
+      for (const stockUpdate of params.stockUpdates) {
+        const [currentStock] = await tx
+          .select()
+          .from(productStock)
+          .where(
+            and(
+              eq(productStock.productVariantId, stockUpdate.variantId),
+              eq(productStock.warehouseId, stockUpdate.warehouseId)
+            )
+          )
+          .limit(1);
+
+        if (!currentStock) {
+          throw new Error(`Stock not found for variant ${stockUpdate.variantId} in warehouse ${stockUpdate.warehouseId}`);
+        }
+
+        const newQuantity = currentStock.quantity + stockUpdate.quantityChange;
+
+        if (newQuantity < 0) {
+          throw new Error(`Insufficient stock for variant ${stockUpdate.variantId}. Available: ${currentStock.quantity}, Required: ${Math.abs(stockUpdate.quantityChange)}`);
+        }
+
+        // Update stock
+        await tx
+          .update(productStock)
+          .set({ 
+            quantity: newQuantity,
+            updatedAt: new Date()
+          })
+          .where(eq(productStock.id, currentStock.id));
+
+        // Create stock movement record
+        await tx.insert(stockMovements).values({
+          productId: currentStock.productId,
+          warehouseId: stockUpdate.warehouseId,
+          type: stockUpdate.quantityChange < 0 ? "out" : "in",
+          quantity: Math.abs(stockUpdate.quantityChange),
+          reason: stockUpdate.quantityChange < 0 ? "sale" : "return",
+          referenceId: createdOrder.id,
+        });
+      }
+
+      // 3. Create payment
+      const [createdPayment] = await tx.insert(payments).values(params.payment).returning();
+
+      // 4. Delete cart if provided
+      if (params.cartId) {
+        await tx.delete(carts).where(eq(carts.id, params.cartId));
+      }
+
+      return {
+        order: createdOrder,
+        payment: createdPayment,
+      };
+    });
   }
 
   // ========================================

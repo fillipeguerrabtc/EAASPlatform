@@ -91,6 +91,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
 
   // ========================================
+  // CONDITIONAL BODY PARSERS (crítico para Stripe webhook)
+  // ========================================
+  // Parse JSON for ALL routes EXCEPT Stripe webhook
+  // Stripe webhook gets express.raw() inline to preserve Buffer for signature validation
+  app.use((req, res, next) => {
+    // Skip JSON parsing for Stripe webhook
+    if (req.path === "/api/stripe-webhook") {
+      return next();
+    }
+    // Parse JSON for all other routes
+    express.json({ limit: "10mb" })(req, res, next);
+  });
+  
+  app.use(express.urlencoded({ extended: false, limit: "10mb" }));
+
+  // ========================================
   // SINGLE-TENANT MODE GUARD
   // ========================================
   // Enforces single-tenant architecture by freezing tenantId to fixed value
@@ -2539,39 +2555,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Stripe Webhook Handler (for payment confirmations)
-  app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async (req: Request, res: Response) => {
-    try {
-      if (!stripe) {
-        return res.status(503).json({ error: "Stripe not configured" });
-      }
+  // ========================================
+  // STRIPE WEBHOOK HANDLER (HARDENED)
+  // ========================================
+  // CRITICAL: express.raw() inline to get Buffer, then parse JSON after signature verification
+  app.post("/api/stripe-webhook", 
+    express.raw({ type: "application/json" }),
+    async (req: Request, res: Response) => {
+      const requestId = (req as any).id || "unknown";
       
-      const sig = req.headers["stripe-signature"];
-      
-      if (!sig) {
-        return res.status(400).json({ error: "Missing stripe-signature header" });
-      }
-      
-      // Verify webhook signature
-      let event;
       try {
-        event = stripe.webhooks.constructEvent(
-          req.body,
-          sig,
-          process.env.STRIPE_WEBHOOK_SECRET || ""
-        );
-      } catch (err: any) {
-        console.log("Webhook signature verification failed:", err.message);
-        return res.status(400).send(`Webhook Error: ${err.message}`);
-      }
+        if (!stripe) {
+          console.error({ requestId }, "Stripe webhook: Stripe not configured");
+          return res.status(503).json({ error: "Stripe not configured" });
+        }
+        
+        const sig = req.headers["stripe-signature"];
+        
+        if (!sig) {
+          console.warn({ requestId }, "Stripe webhook: Missing signature header");
+          return res.status(400).json({ error: "Missing stripe-signature header" });
+        }
+        
+        // Verify webhook signature using raw buffer
+        // Stripe SDK requires Buffer for signature validation
+        let event;
+        try {
+          event = stripe.webhooks.constructEvent(
+            req.body, // Buffer from express.raw()
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET || ""
+          );
+        } catch (err: any) {
+          console.error({ requestId, error: err.message }, "Stripe webhook: Signature verification failed");
+          return res.status(400).send(`Webhook Error: ${err.message}`);
+        }
       
-      // ✅ IDEMPOTENCY CHECK: Prevent duplicate processing
+      console.info({ requestId, eventId: event.id, type: event.type }, "Stripe webhook: Signature verified");
+      
+      // ✅ IDEMPOTENCY CHECK: Prevent duplicate processing (durável via DB)
       const existingEvent = await db.query.webhookEvents.findFirst({
         where: eq(webhookEvents.eventId, event.id)
       });
       
       if (existingEvent) {
-        console.log(`Webhook ${event.id} already processed, skipping`);
+        console.info({ requestId, eventId: event.id }, "Stripe webhook: Duplicate detected, skipping");
         return res.json({ received: true, duplicate: true });
       }
       
@@ -2580,38 +2608,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Save webhook event for idempotency
         await tx.insert(webhookEvents).values({
           eventId: event.id,
+          provider: "stripe",
           payload: event as any,
         });
+        
+        console.info({ requestId, eventId: event.id }, "Stripe webhook: Event persisted");
         
         // Handle different event types
         switch (event.type) {
           case "payment_intent.succeeded":
             const paymentIntent = event.data.object;
-            console.log("PaymentIntent succeeded:", paymentIntent.id);
+            console.info({ requestId, paymentIntentId: paymentIntent.id }, "Stripe webhook: PaymentIntent succeeded");
             
-            // Save payment to database
-            await storage.createPayment({
+            // Save payment to database (dentro da mesma transaction)
+            await tx.insert(orders).values({
               customerId: paymentIntent.metadata.customerId || null,
-              amount: (paymentIntent.amount / 100).toFixed(2),
-              currency: paymentIntent.currency,
-              status: "succeeded",
+              status: "completed",
+              totalAmount: (paymentIntent.amount / 100).toFixed(2),
               stripePaymentIntentId: paymentIntent.id,
-            });
+            } as any);
             break;
             
           case "payment_intent.payment_failed":
-            console.log("PaymentIntent failed:", event.data.object.id);
+            console.warn({ requestId, paymentIntentId: event.data.object.id }, "Stripe webhook: PaymentIntent failed");
             break;
             
           default:
-            console.log(`Unhandled event type: ${event.type}`);
+            console.info({ requestId, type: event.type }, "Stripe webhook: Unhandled event type");
         }
       });
       
+      console.info({ requestId, eventId: event.id }, "Stripe webhook: Processing complete");
       res.json({ received: true });
     } catch (error: any) {
-      console.error("Webhook error:", error);
-      res.status(400).json({ error: error.message });
+      console.error({ requestId, error: error.message, stack: error.stack }, "Stripe webhook: Fatal error");
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2910,9 +2941,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Webhook to receive incoming WhatsApp messages
-  // IMPORTANT: Twilio sends application/x-www-form-urlencoded, handled by express.urlencoded()
+  // ========================================
+  // TWILIO/WHATSAPP WEBHOOK HANDLER (HARDENED)
+  // ========================================
+  // IMPORTANT: Twilio sends application/x-www-form-urlencoded (handled by express.urlencoded())
   app.post("/api/whatsapp/webhook", express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+    const requestId = (req as any).id || "unknown";
+    
     try {
       const { From, Body, MessageSid, To } = req.body;
       
@@ -2921,7 +2956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
       
       if (!twilioSignature || !twilioAuthToken) {
-        console.error("🚫 WhatsApp webhook: Missing Twilio signature or auth token - rejecting request");
+        console.error({ requestId }, "Twilio webhook: Missing signature or auth token - rejecting");
         return res.status(403).send("<Response></Response>");
       }
       
@@ -2936,13 +2971,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       if (!isValid) {
-        console.error("🚫 Invalid Twilio signature - potential spoofing attempt - rejecting");
-        console.error(`   Signature: ${twilioSignature}`);
-        console.error(`   URL: ${url}`);
+        console.error({ requestId, twilioSignature, url }, "Twilio webhook: Invalid signature - potential spoofing - rejecting");
         return res.status(403).send("<Response></Response>");
       }
       
-      console.log("📱 WhatsApp message received (validated):", { From, Body, MessageSid, To });
+      console.info({ requestId, from: From, messageSid: MessageSid }, "Twilio webhook: Signature verified");
+      
+      // ✅ IDEMPOTENCY CHECK: Prevent duplicate processing (durável via DB)
+      const existingEvent = await db.query.webhookEvents.findFirst({
+        where: eq(webhookEvents.eventId, MessageSid)
+      });
+      
+      if (existingEvent) {
+        console.info({ requestId, messageSid: MessageSid }, "Twilio webhook: Duplicate detected, skipping");
+        res.type("text/xml");
+        return res.send("<Response></Response>");
+      }
+      
+      // Persist webhook event for idempotency (em transaction com incoming message)
+      await db.transaction(async (tx) => {
+        await tx.insert(webhookEvents).values({
+          eventId: MessageSid,
+          provider: "twilio",
+          payload: req.body as any,
+        });
+      });
+      
+      console.info({ requestId, messageSid: MessageSid }, "Twilio webhook: Event persisted");
       
       if (!From || !Body) {
         return res.status(400).send("Missing required fields");

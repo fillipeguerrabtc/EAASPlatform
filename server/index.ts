@@ -73,7 +73,12 @@ app.use(helmet({
 // CORS restrito (ajuste conforme necessário)
 const allowedOrigins = env.NODE_ENV === "production" 
   ? [process.env.PUBLIC_URL || "https://your-domain.com"].filter(Boolean)
-  : ["http://localhost:5000", "http://localhost:5173"]; // Dev + Vite
+  : [
+      "http://localhost:5000",
+      "http://127.0.0.1:5000",    // Localhost IP variant
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",    // Vite dev server IP variant
+    ];
 
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -124,11 +129,12 @@ app.use((req, res, next) => {
 });
 
 // ========================================
-// 5) PARSERS (IMPORTANTE: Stripe webhook terá express.raw isolado em routes.ts)
+// 5) PARSERS (IMPORTANTE: express.raw isolado para Stripe webhook em routes.ts)
 // ========================================
-// NÃO use rawBody aqui - isso quebra assinatura do Stripe
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+// NÃO aplicamos express.json() globalmente aqui!
+// routes.ts aplicará parsers condicionalmente:
+//   - express.raw() APENAS para /api/stripe-webhook
+//   - express.json() para todas as outras rotas
 
 // ========================================
 // 6) COOKIES
@@ -237,6 +243,63 @@ app.get("/healthz", async (_req, res) => {
     logger.info("✓ Single-tenant constraint verified");
   } catch (error: any) {
     logger.error({ error: error.message }, "Error creating single-tenant constraint");
+  }
+
+  // ========================================
+  // 9) PRODUCTION SECURITY HEADERS
+  // ========================================
+  // CRITICAL: Must be BEFORE routes to apply to ALL responses (API + static assets)
+  if (env.NODE_ENV === "production") {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      // CSP: Content Security Policy (strict by default, adjust if needed)
+      res.setHeader(
+        "Content-Security-Policy",
+        [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // unsafe-eval for Vite in dev
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: https:",
+          "font-src 'self' data:",
+          "connect-src 'self' https:",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join("; ")
+      );
+
+      // X-Frame-Options: Prevent clickjacking
+      res.setHeader("X-Frame-Options", "DENY");
+
+      // X-Content-Type-Options: Prevent MIME sniffing
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      // X-XSS-Protection: Legacy XSS protection
+      res.setHeader("X-XSS-Protection", "1; mode=block");
+
+      // Referrer-Policy: Control referrer information
+      res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+
+      // Permissions-Policy: Disable unnecessary browser features
+      res.setHeader(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=(), payment=()"
+      );
+
+      // Cache control based on resource type
+      if (/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp|ico)$/i.test(req.path)) {
+        // Aggressive cache for hashed assets
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else if (req.path.endsWith("index.html") || req.path === "/") {
+        // Never cache HTML (SPA entry point)
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+
+      next();
+    });
+
+    logger.info("✅ Production security headers enabled");
   }
 
   // ========================================

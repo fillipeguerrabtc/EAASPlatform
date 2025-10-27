@@ -7,6 +7,20 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
+// ========================================
+// PRODUCTION SAFETY GUARD (CRITICAL)
+// ========================================
+// Replit Auth ONLY works in Replit environment (dev/staging)
+// NEVER use Replit Auth in production deployments outside Replit
+// This guard prevents accidental misconfiguration
+
+if (process.env.NODE_ENV === "production" && !process.env.REPLIT_DOMAINS) {
+  throw new Error(
+    "FATAL: Replit Auth cannot be used in production without REPLIT_DOMAINS. " +
+    "Either deploy on Replit OR implement proper OAuth provider (Google/GitHub/etc)"
+  );
+}
+
 if (!process.env.REPLIT_DOMAINS) {
   throw new Error("Environment variable REPLIT_DOMAINS not provided");
 }
