@@ -48,14 +48,38 @@ import {
   isStrongPassword,
 } from "./auth";
 import { z } from "zod";
-import { setupAuth, isAuthenticated, getUserIdFromSession } from "./replitAuth";
 // AI Modules (EAAS Whitepaper 02 implementation)
-import { runAllCritics } from "./ai/critics.js";
-import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag.js";
-import { planAction, type PlannerState } from "./ai/planner.js";
+import { runAllCritics } from "./ai/critics";
+import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag";
+import { planAction, type PlannerState } from "./ai/planner";
+
+// ========================================
+// CONDITIONAL REPLIT AUTH (works in dev/prod)
+// ========================================
+let setupAuth: (app: Express) => Promise<void> = async () => {};
+let isAuthenticated: any = (_req: Request, _res: Response, next: any) => next();
+let getUserIdFromSession: any = (_req: Request) => null;
+let authInitialized = false;
+
+async function initializeAuth() {
+  if (authInitialized) return;
+  authInitialized = true;
+  
+  // Only load Replit auth if REPLIT_DOMAINS is set
+  if (process.env.REPLIT_DOMAINS) {
+    const replitAuth = await import("./replitAuth");
+    setupAuth = replitAuth.setupAuth;
+    isAuthenticated = replitAuth.isAuthenticated;
+    getUserIdFromSession = replitAuth.getUserIdFromSession;
+    console.log("✅ Replit Auth enabled (REPLIT_DOMAINS detected)");
+  } else {
+    console.log("⚠️  Replit Auth disabled (no REPLIT_DOMAINS) - running in dev/local mode");
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup Replit Auth middleware
+  // Initialize and setup auth (no-op if not in Replit)
+  await initializeAuth();
   await setupAuth(app);
 
   // ========================================

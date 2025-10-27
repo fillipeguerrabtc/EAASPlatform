@@ -370,10 +370,15 @@ export async function scanWebsiteBrandPro(
   let browser: Browser | undefined;
 
   try {
-    const chromiumPath = '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium-browser';
+    // Dynamic Chromium path resolution (works in Replit, Docker, Ubuntu, etc.)
+    const resolvedExecutable =
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
+      (typeof (puppeteer as any).executablePath === 'function'
+        ? (puppeteer as any).executablePath()
+        : undefined);
     
     browser = await puppeteer.launch({
-      executablePath: chromiumPath,
+      executablePath: resolvedExecutable,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -384,7 +389,7 @@ export async function scanWebsiteBrandPro(
         '--single-process',
         '--disable-gpu'
       ],
-      headless: true,
+      headless: 'new' as any, // More stable on recent hosts
     });
 
     const options: CrawlOptions = {

@@ -1,0 +1,233 @@
+Principais causas (e correções)
+1) Puppeteer fixo em caminho do Nix (quebra fora do Replit)
+
+Problema: server/brandScanner.ts e server/brandScannerPro.ts (e também server/cloneBuilder.ts) usam um executablePath hardcoded para Chromium do Nix (/nix/store/.../chromium-browser). Fora desse ambiente, o Puppeteer não inicia. Isso é um problema clássico — o binário varia por SO/hosting e precisa ser descoberto dinamicamente. 
+GitHub
+
+Sintoma típico: “Failed to launch the browser process!”.
+
+Correção: usar puppeteer.executablePath() (quando disponível) ou process.env.PUPPETEER_EXECUTABLE_PATH. Remover o caminho fixo e manter os args sem sandbox.
+
+Patch (aplique nos três arquivos)
+
+server/brandScanner.ts, server/brandScannerPro.ts e server/cloneBuilder.ts – substitua o trecho de launch:
+
+// antes
+const chromiumPath = '/nix/store/....../chromium-browser';
+
+browser = await puppeteer.launch({
+  executablePath: chromiumPath,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu'
+  ],
+  headless: true,
+});
+
+// depois
+const resolvedExecutable =
+  process.env.PUPPETEER_EXECUTABLE_PATH ||
+  (typeof (puppeteer as any).executablePath === 'function'
+    ? (puppeteer as any).executablePath()
+    : undefined);
+
+browser = await puppeteer.launch({
+  executablePath: resolvedExecutable,
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu'
+  ],
+  headless: 'new', // mais estável em hosts recentes
+});
+
+
+Se rodar em Docker/Ubuntu, garanta libs do Chrome (fonts, libnss3, etc.) — mas na maioria dos hosts modernos com puppeteer padrão, isso já vem via download do Chromium.
+
+2) Gate de autenticação obriga variável do Replit e derruba o servidor
+
+Problema: server/replitAuth.ts dá throw se REPLIT_DOMAINS não está setado. O registerRoutes() chama setupAuth(app) sempre, então no import já quebra a app fora do Replit.
+
+Correção: tornar a autenticação via Replit opcional. No dev/local, cair em no-op middleware.
+
+Patch (não mexa em replitAuth.ts; ajuste apenas server/routes.ts)
+
+Troque o topo do arquivo para carregar a auth condicionalmente:
+
+// antes
+// import { setupAuth, isAuthenticated, getUserIdFromSession } from "./replitAuth";
+
+// depois
+import type { Express, Request, Response } from "express";
+import express from "express";
+import { createServer, type Server } from "http";
+
+// Auth condicional
+let setupAuth: (app: Express) => Promise<void>;
+let isAuthenticated: any = (_req: Request, _res: Response, next: any) => next();
+let getUserIdFromSession: any = (_req: Request) => null;
+
+try {
+  if (process.env.REPLIT_DOMAINS) {
+    const replitAuth = await import("./replitAuth");
+    setupAuth = replitAuth.setupAuth;
+    isAuthenticated = replitAuth.isAuthenticated;
+    getUserIdFromSession = replitAuth.getUserIdFromSession;
+  } else {
+    setupAuth = async () => {}; // no-op em dev
+  }
+} catch {
+  setupAuth = async () => {}; // no-op se módulo não carregar
+}
+
+
+Isso deixa tudo rodar local/produção “genérico”. Se você quiser exigir login em produção, mantenha as variáveis do Replit configuradas.
+
+3) Import de módulos de IA com sufixo .js (quebra no tsx/TS em dev)
+
+Problema: em server/routes.ts há imports como ./ai/critics.js. No dev com tsx/TS, esses .ts não estão construídos como .js, e isso pode dar “Cannot find module”.
+
+Correção: importe sem extensão (TS resolve).
+
+Patch (trechos de server/routes.ts)
+// antes
+import { runAllCritics } from "./ai/critics.js";
+import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag.js";
+import { planAction, type PlannerState } from "./ai/planner.js";
+
+// depois
+import { runAllCritics } from "./ai/critics";
+import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag";
+import { planAction, type PlannerState } from "./ai/planner";
+
+4) import.meta.dirname em ESM (não existe no Node ESM)
+
+Problema: server/vite.ts usa import.meta.dirname, que não é padrão. Em ESM, deve-se usar fileURLToPath(import.meta.url).
+
+Correção: compute __dirname manualmente.
+
+Patch (server/vite.ts)
+// topo do arquivo
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ... então use __dirname:
+const distPath = path.resolve(__dirname, "public");
+
+5) Banco de dados obrigatório sem fallback (derruba tudo sem .env)
+
+Problema: server/db.ts exige DATABASE_URL (Neon Postgres). Sem isso, a app cai.
+
+Correção mínima: documentar .env e garantir que antes de iniciar, você já tenha uma Neon (ou Postgres) e rode o drizzle-kit push. (Um fallback SQLite exigiria trocar o driver Drizzle e é refatoração maior.)
+
+.env mínimo (exemplo)
+
+Crie .env na raiz do projeto:
+
+# Postgres/Neon
+DATABASE_URL=postgres://user:pass@host/dbname
+
+# JWT (para rotas que usam auth.ts)
+JWT_SECRET=troque-isto
+
+# OpenAI - usado só em /scan-brand-colors (não é requerido pro scan com Puppeteer)
+AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
+AI_INTEGRATIONS_OPENAI_API_KEY=sk-...
+
+# Em hosts específicos, você pode apontar manualmente:
+# PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
+
+
+Comandos:
+
+npm i
+npx drizzle-kit push         # cria as tabelas (usa schema em shared/)
+npm run dev                  # inicia com tsx
+# ou
+npm run build && npm start   # builda client + server e roda ESM
+
+6) Rotas do Brand Scanner vs. UI (coerência e estados)
+
+A UI usa as rotas novas de jobs e themes:
+
+POST /api/brand/jobs (mode: extract ou clone)
+
+GET /api/brand/jobs?tenantId=...
+
+GET /api/brand/themes?tenantId=..., POST /api/brand/themes/:id/activate, etc.
+
+Elas estão implementadas em server/routes.ts e usam executeJob() que chama brandScannerPro (bom!).
+
+Pontos de atenção:
+
+Armazenamento dos jobs: storage.* precisa de DB ok. Sem DATABASE_URL + drizzle push, essas rotas falham.
+
+Timeouts: executeJob usa timeout: 30000 no scan — em sites lentos pode estourar. Se você notar erro frequente, suba para 45000-60000.
+
+Erros encadeados: se o Puppeteer falhar, o job deve marcar failed — o código já trata (updateBrandJobStatus(jobId, 'failed', ...)). Com os patches de Puppeteer, isso normaliza.
+
+Outras arestas que te fariam tropeçar
+
+Rota legada /api/tenants/:id/scan-brand
+
+Ela chama o brandScanner “simples” (não Pro). Tudo bem manter, mas a UI principal já usa o fluxo de jobs. Garanta que você testa o novo fluxo (/api/brand/jobs) e não o legado. 
+GitHub
+
+Rota /api/tenants/:id/scan-brand-colors
+
+Essa usa OpenAI Vision e exige AI_INTEGRATIONS_OPENAI_*. Se a chave não estiver setada, quebra. O Brand Scanner principal (Puppeteer) não depende disso; só essa rota “cores por logo”.
+
+Tipos/paths TS
+
+Você já tem paths no tsconfig.json (@shared/*). Isso está ok para tsx/dev. Em npm run build (esbuild + ESM), fique atento para não quebrar imports “path-aliased” no server; como você bundleia só o server/index.ts com --packages=external, os imports @shared/* ficam resolvidos por tsconfig no tsx/dev e pela resolução do bundler em build. Se der erro, a alternativa é usar import relativo para @shared/schema no server (../shared/...). (No zip que analisei, isso parece já funcionar.)
+
+Teste rápido do Brand Scanner (após patches)
+
+Suba o banco: npx drizzle-kit push.
+
+Suba o server: npm run dev.
+
+Crie/pegue um tenantId válido (via rotas de tenant ou diretamente no banco).
+
+Criar job (extract):
+
+POST /api/brand/jobs
+{
+  "url": "https://www.yesyoudeserve.tours",
+  "mode": "extract",
+  "tenantId": "<seu-tenant-id>"
+}
+
+
+Consultar job:
+
+GET /api/brand/jobs?tenantId=<seu-tenant-id>
+GET /api/brand/jobs/<jobId>
+
+
+Aplicar tema: use as rotas /api/brand/themes... conforme a UI já faz.
+
+O repositório mostra as rotas de jobs/themes e a UI em client/src/components/brand-scanner-section.tsx consumindo essas rotas. 
+GitHub
+
+Bônus: Melhorias “diamante” rápidas
+
+Aumentar robustez do crawler (já tem maxDepth=2/maxPages=10). Se quiser varrer “o site inteiro”, exponha esses limites via query/body e ponha um limite superior server-side (p.ex. 100 páginas) para não travar.
+
+Detectar fonte real renderizada: no brandScannerPro, quando capturar font-family, tente renderizar um glifo off-screen e comparar métricas com fallbacks para decidir se a webfont realmente carregou (se o networkidle2 pegou “shell” sem baixar tudo).
+
+WCAG: o Pro já fala em AA/AAA; inclua relatório de pares foreground/background coletados com taxa de contraste (e grife quais violam).
+
+Export determinístico: além do JSON, gere tailwind.config.ts com os tokens e um :root { --color-... } para strappar tema no client.
