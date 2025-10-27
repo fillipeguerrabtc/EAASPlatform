@@ -1,0 +1,351 @@
+CRM — pente-fino
+Erros/risco
+
+Clientes duplicados (email/telefone) e falta de normalização → suja KPIs.
+
+Listas sem paginação/ordenadores → degrade quando crescer.
+
+Atividades sem SLA/escalação → “morre no funil”.
+
+Pipeline sem drag-and-drop transacional → risco de perda de estado em race conditions.
+
+Omnichat cria histórico, mas faltam links 1-clique: “Criar Negócio”, “Criar Tarefa”, “Converter Lead”.
+
+Correções rápidas (patches)
+
+Upsert/Dedupe (email lower, telefone normalizado):
+
+// server/crm/customers.service.ts
+export async function upsertCustomer(input:{name?:string;email?:string;phone?:string;...}) {
+  const email = input.email?.trim().toLowerCase() ?? null;
+  const phone = input.phone?.replace(/\D/g,'') ?? null;
+  const existing = await repo.findCustomerByEmailOrPhone(email, phone);
+  return existing
+    ? repo.updateCustomer(existing.id, {...input, updatedAt:new Date()})
+    : repo.createCustomer({...input});
+}
+
+
+Paginação/ordenadores/busca (padrão único para todas as listas):
+
+// server/lib/pagination.ts
+export function parseListQuery(q:any){const p=Math.max(1, +q.page||1);const s=Math.min(100, Math.max(10,+q.pageSize||20));return {page:p,pageSize:s,offset:(p-1)*s,search:String(q.q||'').toLowerCase(),sort:String(q.sort||'createdAt:desc')};}
+
+
+Pipeline DnD transacional (evita “teleporte” de cards):
+
+// server/crm/deals.service.ts
+export async function moveDeal(dealId:string, toStageId:string, toIndex:number){
+  await db.transaction(async (tx)=>{
+    const deal = await tx.query.deals.findFirst({ where: eq(deals.id,dealId)});
+    if(!deal) throw new Error("not found");
+    await tx.update(deals).set({ stageId: toStageId, position: toIndex, updatedAt:new Date()}).where(eq(deals.id,dealId));
+    // reordena irmãos do estágio destino
+    await tx.execute(sql`
+      with ordered as (
+        select id, row_number() over(order by position, updated_at) - 1 as rn
+        from deals where stage_id=${toStageId}
+      )
+      update deals d set position=o.rn from ordered o where d.id=o.id;
+    `);
+  });
+}
+
+
+SLA/escalação (cron/worker simples, marca atrasos):
+
+// server/crm/sla.worker.ts
+export async function runSLA(){ 
+  const late = await repo.findActivitiesLate();
+  for(const a of late) await repo.flagActivityLate(a.id); // status 'late', cria notificação
+}
+
+
+Omnichat hooks 1-clique (no card da conversa):
+
+Botões: “Criar Negócio”, “Criar Tarefa”, “Registrar Pagamento” (linka CRM/ERP).
+
+Backend: rotas POST curtas que chamam upsertCustomer → createDeal/createActivity.
+
+Checklist CRM
+
+ Upsert dedupe
+
+ Página/busca/ordenadores padrão
+
+ Pipeline DnD transacional
+
+ SLA job + badges “late”
+
+ Atalhos Omnichat (lead→deal/tarefa)
+
+ERP — pente-fino
+Erros/risco
+
+Negativo de estoque possível em concorrência.
+
+Webhooks Stripe: precisa ser durável e assinado (raw body).
+
+Transações insuficientes no checkout/fulfillment/refund.
+
+Correções (patches)
+
+Checkout atômico (sem reservas complexas agora):
+
+// server/erp/checkout.service.ts
+export async function createOrder(input:OrderDraft){
+  return db.transaction(async tx=>{
+    const [order]=await tx.insert(orders).values(input.header).returning();
+    for(const it of input.items){
+      await tx.insert(orderItems).values({...it,orderId:order.id});
+      const ok = await tx.execute(sql`
+        update products set stock = stock - ${it.qty}
+        where sku=${it.sku} and stock >= ${it.qty}
+      `);
+      if(ok.rowCount===0) throw new Error(`Sem estoque para ${it.sku}`);
+    }
+    return order;
+  });
+}
+
+
+Stripe webhook durável + idempotência:
+
+// server/payments/stripe.webhook.ts
+app.post("/webhooks/stripe", express.raw({type:"application/json"}), async (req,res)=>{
+  let event:Stripe.Event;
+  try{
+    const sig=req.headers["stripe-signature"] as string;
+    event=stripe.webhooks.constructEvent(req.body,sig,process.env.STRIPE_WEBHOOK_SECRET!);
+  }catch(e){ return res.status(400).send("Invalid signature"); }
+
+  const saved = await repo.saveWebhookEventOnce(event.id, event); // UNIQUE(event_id)
+  if(!saved) return res.json({received:true, duplicate:true});
+
+  switch(event.type){
+    case "checkout.session.completed":{
+      const s=event.data.object as Stripe.Checkout.Session;
+      const orderId=s.metadata?.orderId!;
+      await db.transaction(async tx=>{
+        await tx.update(orders).set({status:"paid"}).where(eq(orders.id,orderId));
+        await tx.insert(payments).values({orderId, provider:"stripe", amount:s.amount_total!, currency:s.currency!, raw:event as any});
+      });
+      break;
+    }
+    // ...refunds, etc.
+  }
+  res.json({received:true});
+});
+
+
+Checklist ERP
+
+ Decremento atômico (sem negativo)
+
+ Stripe webhook assinado + idempotência durável
+
+ Transações no ciclo pedido→pagamento→fulfillment
+
+IA (Atendimento & Vendas) — pente-fino
+Erros/risco
+
+Críticas e RAG ok, mas faltam telemetria e custo por resposta.
+
+Fallback humano deve abrir Activity automaticamente.
+
+Conteúdo: sanitizar PII em logs.
+
+Correções
+
+Telemetry:
+
+// server/ai/metrics.ts
+export function recordAITrace({model,tokensIn,tokensOut,ms,cost,toolCalls}:{...}){ 
+  return db.insert(aiTraces).values({...});
+}
+
+
+Fallback humano (confiança < limiar):
+
+if(answer.confidence < 0.55){
+  await crm.createActivity({ title:"Handoff humano", note:msg.text, status:"open" });
+  return reply("Encaminhei para um atendente humano. Posso ajudar em algo mais?");
+}
+
+
+Redaction leve de logs:
+
+const safeText = text.replace(/\b\d{11}\b/g,"[CPF]").replace(/\b\d{16}\b/g,"[CARD]");
+logger.info({safeText});
+
+
+Checklist IA
+
+ Métricas/custo por resposta
+
+ Handoff automático no CRM
+
+ Redação de PII em logs
+
+Marketplace — pente-fino
+Situação nas telas
+
+Loja pública ok; item “Tour” listado; CTA “Adicionar ao Carrinho” aparece.
+
+Falta micro-detalhe de UX e guardas para carrinho.
+
+Correções rápidas
+
+Persistência do carrinho (localStorage + server session):
+
+// client/lib/cart.ts
+export const cart = {
+  load(){ return JSON.parse(localStorage.getItem("cart")||"[]"); },
+  save(items){ localStorage.setItem("cart", JSON.stringify(items)); },
+};
+
+
+Slugs/SEO básicos (sem entrar no “SEO avançado” agora):
+
+// server/marketplace/products.service.ts
+export function ensureSlug(title:string){ return slugify(title,{lower:true,strict:true}); }
+
+
+Controle de estoque no checkout (já coberto pelo ERP atômico).
+
+Checklist Marketplace
+
+ Carrinho persistente
+
+ Slug/URL limpo
+
+ Estoque validado no backend (sem confiança no front)
+
+Visual & Layout — “Apple-like” (elegante, leve)
+Design tokens (Tailwind/variables)
+
+Crie tokens neutros + 1 acento (verde/teal):
+
+/* client/src/styles/theme.css */
+:root{
+  --bg: #0b0c0e;           /* dark elegant */
+  --panel: #121417;
+  --card: #15181c;
+  --muted: #8b93a1;
+  --text: #e7e9ee;
+  --accent: #34d399;       /* emerald */
+  --accent-600: #059669;
+  --border: #1f242b;
+  --ring: 0 0% 100%;
+}
+
+
+Tailwind config (oversimplificado):
+
+// client/tailwind.config.ts
+theme:{
+  extend:{
+    colors:{ bg:"var(--bg)", panel:"var(--panel)", card:"var(--card)", muted:"var(--muted)", text:"var(--text)", accent:"var(--accent)", border:"var(--border)" },
+    boxShadow:{ soft:"0 6px 24px rgba(0,0,0,.25)" },
+    borderRadius:{ xl:"16px", "2xl":"24px" }
+  }
+}
+
+Layout guidelines
+
+Cards com canto 2xl, shadow soft, borda sutil border-border/40.
+
+Tipografia: font-sans: Inter/SF Pro; h1 sm:4xl md:5xl; body: [15–16px].
+
+Espaçamento generoso: seções com py-8 md:py-12.
+
+Ícones lucide-react; animações framer-motion 100–150ms (sutil).
+
+Tabelas com “condensed mode” + skeleton loading.
+
+Componentes prontos (colagem direta)
+
+Card métrica (dashboard):
+
+// client/src/components/kpi-card.tsx
+export function KpiCard({icon:Icon,title,value,delta}:{icon:any;title:string;value:string;delta?:string;}){
+  return (
+    <div className="rounded-2xl border border-border/40 bg-card p-5 shadow-soft">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted">{title}</span>
+        <div className="rounded-xl bg-panel/60 p-2"><Icon className="h-4 w-4 text-accent" /></div>
+      </div>
+      <div className="mt-3 text-3xl font-semibold tracking-tight text-white">{value}</div>
+      {delta && <div className="mt-2 text-xs text-muted">{delta}</div>}
+    </div>
+  );
+}
+
+
+Tabela elegante com toolbar:
+
+// client/src/components/table/shell.tsx
+export function TableShell({title,children,toolbar}:{title:string;children:React.ReactNode;toolbar?:React.ReactNode;}){
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card shadow-soft">
+      <div className="flex items-center justify-between p-4">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {toolbar}
+      </div>
+      <div className="border-t border-border/40">{children}</div>
+    </section>
+  );
+}
+
+
+Empty state (CRM-Clientes):
+
+// client/src/pages/crm/customers-empty.tsx
+export function CustomersEmpty(){
+  return (
+    <div className="mx-auto max-w-xl rounded-2xl border border-dashed border-border/50 bg-panel p-8 text-center">
+      <div className="mx-auto mb-3 h-10 w-10 rounded-xl bg-card/80" />
+      <h3 className="text-xl font-semibold">Nenhum cliente ainda</h3>
+      <p className="mt-1 text-sm text-muted">Importe um CSV ou crie o primeiro contato.</p>
+      <div className="mt-4 flex items-center justify-center gap-2">
+        <button className="rounded-xl bg-accent px-4 py-2 text-black">Novo cliente</button>
+        <button className="rounded-xl border border-border/50 px-4 py-2">Importar CSV</button>
+      </div>
+    </div>
+  );
+}
+
+
+Micro-interações
+
+Hover em botões: transition-[colors,transform] duration-150 will-change-[transform] hover:-translate-y-[1px].
+
+Feedback: toasts para ações CRUD; skeletons em listas.
+
+Hardening rápido do servidor
+
+helmet + CORS restrito:
+
+app.use(helmet({ crossOriginResourcePolicy:false }));
+app.use(cors({ origin:[process.env.PUBLIC_URL], credentials:true }));
+
+
+zod em todos os DTOs de rotas críticas.
+
+pino com requestId.
+
+/healthz: verifica DB + fila + Stripe.
+
+Rate-limit em /webhooks/* (token-bucket 30 req/min por IP).
+
+Testes de fumaça (E2E curtos)
+
+Criar cliente (email duplicado) → não duplica.
+
+Pipeline: mover deal rápido (DnD) repetidamente → ordem estável.
+
+Marketplace: carrinho multi-abas → persiste.
+
+Checkout Stripe (sandbox) → paid + pagamento salvo, sem duplicar no replay do webhook.
+
+IA: pergunta fora de base → cria Activity de handoff.
