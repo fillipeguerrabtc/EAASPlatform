@@ -1465,6 +1465,56 @@ export interface ThemeTokens {
 
 
 // ========================================
+// JOB QUEUE SYSTEM (PostgreSQL-based, replaces Redis/BullMQ)
+// ========================================
+
+export const jobStatusEnum = pgEnum("job_status", ["pending", "processing", "completed", "failed", "cancelled"]);
+export const jobTypeEnum = pgEnum("job_type", ["crm_csv_import", "marketing_campaign", "email_send", "other"]);
+
+export const jobQueue = pgTable("job_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
+  
+  // Job Details
+  type: jobTypeEnum("type").notNull(),
+  payload: jsonb("payload").notNull(),
+  status: jobStatusEnum("status").default("pending").notNull(),
+  
+  // Priority & Scheduling
+  priority: integer("priority").default(0).notNull(), // Higher = more priority
+  scheduledFor: timestamp("scheduled_for"), // null = run immediately
+  
+  // Retry Logic
+  attempts: integer("attempts").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(3).notNull(),
+  
+  // Error Tracking
+  error: text("error"),
+  errorStack: text("error_stack"),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  
+  // Result
+  result: jsonb("result"),
+}, (table) => [
+  index("idx_job_queue_status").on(table.status),
+  index("idx_job_queue_scheduled").on(table.scheduledFor),
+  index("idx_job_queue_tenant").on(table.tenantId),
+]);
+
+export const insertJobSchema = createInsertSchema(jobQueue).omit({ 
+  id: true, 
+  createdAt: true, 
+  startedAt: true, 
+  completedAt: true 
+});
+export type InsertJob = z.infer<typeof insertJobSchema>;
+export type Job = typeof jobQueue.$inferSelect;
+
+// ========================================
 // MARKETING MODULE
 // ========================================
 export * from "./schema.marketing";
