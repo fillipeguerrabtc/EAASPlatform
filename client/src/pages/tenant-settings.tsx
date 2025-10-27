@@ -125,93 +125,6 @@ export default function TenantSettings() {
     },
   });
 
-  // Mutation to scan brand colors from logo using AI
-  const scanBrandColorsMutation = useMutation({
-    mutationFn: async (logoUrl: string) => {
-      if (!currentTenant?.id) throw new Error("No tenant selected");
-      return apiRequest("POST", `/api/tenants/${currentTenant.id}/scan-brand-colors`, { logoUrl });
-    },
-    onSuccess: (data: any) => {
-      if (data.colors) {
-        setThemeColors(data.colors);
-        toast({
-          title: "🎨 Cores Extraídas!",
-          description: "As cores da marca foram extraídas automaticamente do logo pela IA.",
-        });
-      }
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "❌ Erro ao Escanear",
-        description: error.message || "Não foi possível extrair cores do logo.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Mutation to scan complete brand identity from website URL
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const scanWebsiteBrandMutation = useMutation({
-    mutationFn: async (url: string) => {
-      // Get tenant ID from query data
-      const tenant = tenants?.[0];
-      if (!tenant?.id) {
-        throw new Error("Nenhuma empresa configurada. Por favor, aguarde o carregamento.");
-      }
-      return apiRequest("POST", `/api/tenants/${tenant.id}/scan-brand`, { websiteUrl: url });
-    },
-    onSuccess: (data: any) => {
-      const brand = data.brand;
-      if (!brand) {
-        toast({
-          title: "⚠️ Atenção",
-          description: "Nenhuma informação de marca foi encontrada no site.",
-        });
-        return;
-      }
-
-      // Store brand data in preview state instead of applying immediately
-      const previewColors: CustomTheme["colors"] = {
-        primary: brand.colors.primary || themeColors.primary,
-        secondary: brand.colors.secondary || themeColors.secondary,
-        accent: brand.colors.accent || themeColors.accent,
-        background: brand.colors.background || themeColors.background,
-        foreground: brand.colors.foreground || themeColors.foreground,
-      };
-
-      setBrandPreview({
-        colors: previewColors,
-        logo: brand.assets?.logo,
-        favicon: brand.assets?.favicon,
-        screenshot: brand.screenshots?.full,
-        typography: brand.typography,
-        spacing: brand.spacing,
-      });
-
-      // Show preview dialog
-      setShowPreviewDialog(true);
-
-      // Build success message
-      const extracted = [];
-      if (brand.colors) extracted.push('6 cores');
-      if (brand.assets?.logo) extracted.push('logo');
-      if (brand.assets?.favicon) extracted.push('favicon');
-      if (brand.typography) extracted.push('fontes');
-      if (brand.spacing) extracted.push('espaçamento');
-
-      toast({
-        title: "✨ Identidade Visual Capturada!",
-        description: `Extraídos com sucesso: ${extracted.join(', ')}. Revise a proposta!`,
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "❌ Erro ao Escanear Site",
-        description: error.message || "Não foi possível escanear o site. Verifique a URL.",
-        variant: "destructive",
-      });
-    },
-  });
 
   const handleFileChange = (
     file: File | undefined,
@@ -267,20 +180,6 @@ export default function TenantSettings() {
     themeMutation.mutate(customTheme);
   };
 
-  const handleScanBrandColors = () => {
-    // Use the current logo URL or preview
-    const logoUrlToScan = logoPreview || currentTenant?.logoUrl;
-    
-    if (!logoUrlToScan) {
-      toast({
-        title: "⚠️ Atenção",
-        description: "Faça upload de um logo primeiro para escanear as cores.",
-      });
-      return;
-    }
-
-    scanBrandColorsMutation.mutate(logoUrlToScan);
-  };
 
   const handleRestoreDefaults = async () => {
     if (!currentTenant?.id) return;
@@ -398,77 +297,6 @@ export default function TenantSettings() {
             </CardContent>
           </Card>
         )}
-
-        {/* Brand Scanner Inteligente */}
-        <Card className="border-purple-200 dark:border-purple-800 bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-purple-950/20 dark:via-background dark:to-blue-950/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-6 w-6 text-purple-500" />
-              🤖 Brand Scanner Inteligente
-            </CardTitle>
-            <CardDescription>
-              Copie automaticamente a identidade visual completa do seu site: cores, logo, favicon, fontes e espaçamento - tudo 100% igual!
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <Label htmlFor="website-url" className="text-sm font-medium mb-2 block">
-                  URL do Site da Empresa
-                </Label>
-                <Input
-                  id="website-url"
-                  type="url"
-                  placeholder="https://suaempresa.com.br"
-                  value={websiteUrl}
-                  onChange={(e) => setWebsiteUrl(e.target.value)}
-                  className="flex-1"
-                  data-testid="input-website-url"
-                  disabled={scanWebsiteBrandMutation.isPending}
-                />
-              </div>
-              <div className="flex items-end">
-                <Button
-                  onClick={() => websiteUrl && scanWebsiteBrandMutation.mutate(websiteUrl)}
-                  disabled={!websiteUrl || scanWebsiteBrandMutation.isPending}
-                  className="gap-2 min-w-[140px]"
-                  size="default"
-                  data-testid="button-scan-website"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  {scanWebsiteBrandMutation.isPending ? "Escaneando..." : "Escanear Site"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Palette className="h-4 w-4 text-purple-500" />
-                <span>6 cores automáticas</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <ImageIcon className="h-4 w-4 text-purple-500" />
-                <span>Logo + Favicon</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Sparkles className="h-4 w-4 text-purple-500" />
-                <span>Fontes e espaçamento</span>
-              </div>
-            </div>
-
-            {scanWebsiteBrandMutation.isPending && (
-              <div className="p-4 bg-white/80 dark:bg-background/80 rounded-lg border border-purple-200 dark:border-purple-800">
-                <div className="flex items-center gap-3">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-purple-500 border-t-transparent"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Analisando identidade visual...</p>
-                    <p className="text-xs text-muted-foreground">Extraindo cores, logo, favicon, fontes e espaçamento do site</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Logo Upload */}
         <Card className="border-primary/20">
@@ -588,33 +416,6 @@ export default function TenantSettings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* AI Brand Scanner */}
-            {(currentTenant?.logoUrl || logoPreview) && (
-              <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles className="h-5 w-5 text-purple-500" />
-                      <h4 className="font-semibold text-sm">Extração Automática de Cores por IA</h4>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Use inteligência artificial para extrair automaticamente as cores da sua marca do logo enviado.
-                    </p>
-                    <Button
-                      onClick={handleScanBrandColors}
-                      disabled={scanBrandColorsMutation.isPending}
-                      size="sm"
-                      variant="default"
-                      className="gap-2"
-                      data-testid="button-scan-brand-colors"
-                    >
-                      <Sparkles className="h-4 w-4" />
-                      {scanBrandColorsMutation.isPending ? "Analisando Logo..." : "Escanear Cores do Logo"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
             {/* Color Pickers Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* Primary Color */}
