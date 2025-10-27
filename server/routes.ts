@@ -5,6 +5,9 @@ import { storage } from "./storage";
 import {
   insertTenantSchema,
   insertProductSchema,
+  insertProductVariantOptionSchema,
+  insertProductVariantValueSchema,
+  insertProductVariantSchema,
   insertProductReviewSchema,
   insertCustomerSchema,
   insertConversationSchema,
@@ -892,6 +895,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/products/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       await storage.deleteProduct(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // PRODUCT VARIANTS
+  // ========================================
+
+  // Product Variant Options
+  app.get("/api/products/:productId/variant-options", async (req: Request, res: Response) => {
+    try {
+      const options = await storage.listProductVariantOptions(req.params.productId);
+      res.json(options);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/products/:productId/variant-options", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantOptionSchema.parse({
+        ...req.body,
+        productId: req.params.productId,
+      });
+      const option = await storage.createProductVariantOption(data);
+      res.status(201).json(option);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/variant-options/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantOptionSchema.partial().parse(req.body);
+      const option = await storage.updateProductVariantOption(req.params.id, data);
+      if (!option) {
+        return res.status(404).json({ error: "Variant option not found" });
+      }
+      res.json(option);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/variant-options/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProductVariantOption(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Product Variant Values
+  app.get("/api/variant-options/:optionId/values", async (req: Request, res: Response) => {
+    try {
+      const values = await storage.listProductVariantValues(req.params.optionId);
+      res.json(values);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/variant-options/:optionId/values", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantValueSchema.parse({
+        ...req.body,
+        optionId: req.params.optionId,
+      });
+      const value = await storage.createProductVariantValue(data);
+      res.status(201).json(value);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/variant-values/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantValueSchema.partial().parse(req.body);
+      const value = await storage.updateProductVariantValue(req.params.id, data);
+      if (!value) {
+        return res.status(404).json({ error: "Variant value not found" });
+      }
+      res.json(value);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/variant-values/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProductVariantValue(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Product Variants (SKUs)
+  app.get("/api/products/:productId/variants", async (req: Request, res: Response) => {
+    try {
+      const variants = await storage.listProductVariants(req.params.productId);
+      res.json(variants);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/variants/:id", async (req: Request, res: Response) => {
+    try {
+      const variant = await storage.getProductVariant(req.params.id);
+      if (!variant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      res.json(variant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/variants/sku/:sku", async (req: Request, res: Response) => {
+    try {
+      const variant = await storage.getProductVariantBySku(req.params.sku);
+      if (!variant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      res.json(variant);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/products/:productId/variants", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantSchema.parse({
+        ...req.body,
+        productId: req.params.productId,
+      });
+      const variant = await storage.createProductVariant(data);
+      res.status(201).json(variant);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/variants/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const data = insertProductVariantSchema.partial().parse(req.body);
+      const variant = await storage.updateProductVariant(req.params.id, data);
+      if (!variant) {
+        return res.status(404).json({ error: "Variant not found" });
+      }
+      res.json(variant);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/variants/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProductVariant(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message });
