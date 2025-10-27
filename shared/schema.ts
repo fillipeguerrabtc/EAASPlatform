@@ -472,6 +472,7 @@ export const payments = pgTable("payments", {
 export const webhookEvents = pgTable("webhook_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   eventId: text("event_id").notNull().unique(), // Stripe event ID for idempotency
+  provider: text("provider").notNull().default("stripe"), // "stripe" | "twilio" | etc
   payload: jsonb("payload").notNull(), // Full webhook payload
   processedAt: timestamp("processed_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1279,6 +1280,14 @@ export const aiTraces = pgTable("ai_traces", {
   // Context
   cartValue: decimal("cart_value", { precision: 10, scale: 2 }), // If applicable
   knowledgeBaseMatchId: varchar("knowledge_base_match_id"), // If KB was used
+  
+  // Telemetry (for cost tracking and observability)
+  model: text("model"), // "gpt-4", "gpt-3.5-turbo", etc
+  tokensIn: integer("tokens_in").default(0), // Input tokens
+  tokensOut: integer("tokens_out").default(0), // Output tokens
+  latencyMs: integer("latency_ms").default(0), // Response time in milliseconds
+  costUsd: decimal("cost_usd", { precision: 12, scale: 6 }).default("0"), // API cost in USD
+  tool: text("tool"), // Which tool was used (if applicable)
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
