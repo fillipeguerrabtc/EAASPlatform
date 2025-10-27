@@ -1633,16 +1633,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       try {
         customerId = getUserIdFromSession(req);
-        // Find cart by customerId for authenticated users
-        if (customerId) {
-          cart = await storage.getActiveCart(customerId);
-        }
       } catch {
-        // Anonymous user
-        sessionId = (req.session as any)?.id || req.headers['x-session-id'] as string;
+        // Not authenticated - will use sessionId below
+      }
+
+      // Find cart by customerId for authenticated users
+      if (customerId) {
+        cart = await storage.getActiveCart(customerId);
+      } else {
+        // Anonymous user - use sessionId from express-session middleware
+        sessionId = req.sessionID || req.headers['x-session-id'] as string;
         
-        // Find cart by sessionId for anonymous users (future enhancement)
-        // For now, create new cart for each anonymous session
+        // Find cart by sessionId for anonymous users
+        if (sessionId) {
+          cart = await storage.getCartBySessionId(sessionId);
+        }
       }
       
       // Create new cart if none exists
@@ -1683,8 +1688,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         customerId = getUserIdFromSession(req);
       } catch {
-        // Anonymous user
-        sessionId = (req.session as any)?.id || req.headers['x-session-id'] as string || Math.random().toString(36);
+        // Anonymous user - use express-session sessionID
+        sessionId = req.sessionID || req.headers['x-session-id'] as string || Math.random().toString(36);
       }
       
       const { items } = req.body;

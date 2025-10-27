@@ -266,6 +266,7 @@ export interface IStorage {
   getCart(id: string): Promise<Cart | undefined>;
   getCartByCustomer(customerId: string): Promise<Cart | undefined>;
   getActiveCart(customerId: string): Promise<Cart | undefined>;
+  getCartBySessionId(sessionId: string): Promise<Cart | undefined>;
   createCart(cart: InsertCart): Promise<Cart>;
   updateCart(id: string, data: Partial<InsertCart>): Promise<Cart | undefined>;
   
@@ -1130,6 +1131,14 @@ export class DbStorage implements IStorage {
 
   async getActiveCart(customerId: string): Promise<Cart | undefined> {
     return this.getCartByCustomer(customerId);
+  }
+
+  async getCartBySessionId(sessionId: string): Promise<Cart | undefined> {
+    const result = await db.select()
+      .from(carts)
+      .where(eq(carts.sessionId, sessionId))
+      .limit(1);
+    return result[0];
   }
 
   async createCart(insertCart: InsertCart): Promise<Cart> {
