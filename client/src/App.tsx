@@ -46,6 +46,7 @@ import FinanceExpenses from "@/pages/finance-expenses";
 import FinanceReports from "@/pages/finance-reports";
 import CategoriesPage from "@/pages/categories";
 import TenantSettings from "@/pages/tenant-settings";
+import CompanyProfile from "@/pages/admin/company-profile";
 import RBAC from "@/pages/rbac";
 import InventoryPage from "@/pages/inventory";
 import HRPage from "@/pages/hr";
@@ -198,7 +199,6 @@ function Router() {
         <>
           <Route path="/" component={Dashboard} />
           <Route path="/my-account" component={CustomerArea} />
-          <Route path="/tenants" component={Tenants} />
           <Route path="/marketplace" component={Marketplace} />
           <Route path="/customers" component={CRM} />
           <Route path="/crm" component={CRMDashboard} />
@@ -220,6 +220,8 @@ function Router() {
           <Route path="/finance/reports" component={FinanceReports} />
           <Route path="/categories" component={CategoriesPage} />
           <Route path="/tenant-settings" component={TenantSettings} />
+          <Route path="/company-profile" component={CompanyProfile} />
+          <Route path="/users" component={HRPage} />
           <Route path="/rbac" component={RBAC} />
           <Route path="/inventory" component={InventoryPage} />
           <Route path="/hr" component={HRPage} />

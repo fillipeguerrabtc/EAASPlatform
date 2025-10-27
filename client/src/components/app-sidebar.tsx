@@ -47,12 +47,6 @@ export function AppSidebar() {
       testId: "dashboard",
     },
     {
-      title: t('nav.tenants'),
-      url: "/tenants",
-      icon: Building2,
-      testId: "tenants",
-    },
-    {
       title: t('nav.marketplace'),
       url: "/marketplace",
       icon: ShoppingCart,
@@ -149,6 +143,12 @@ export function AppSidebar() {
       testId: "categories",
     },
     {
+      title: "Usuários & Times",
+      url: "/users",
+      icon: Users,
+      testId: "users",
+    },
+    {
       title: "Funções e Permissões",
       url: "/rbac",
       icon: Shield,
@@ -161,10 +161,10 @@ export function AppSidebar() {
       testId: "ai-governance",
     },
     {
-      title: "Configurações",
-      url: "/tenant-settings",
-      icon: Settings,
-      testId: "tenant-settings",
+      title: "Perfil da Empresa",
+      url: "/company-profile",
+      icon: Building2,
+      testId: "company-profile",
     },
   ];
 
