@@ -3,11 +3,12 @@ import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShoppingCart, Trash2, Package, ArrowLeft, CreditCard } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Cart, type Product } from "@shared/schema";
+import { type Cart, type Product, type ProductVariant } from "@shared/schema";
 import { Input } from "@/components/ui/input";
 import { useEffect } from "react";
 import { EaasLogo } from "@/components/eaas-logo";
@@ -16,6 +17,7 @@ import { SEO } from "@/components/seo";
 
 interface CartItem {
   productId: string;
+  variantId?: string;
   quantity: number;
   price?: string; // Server-provided, never sent from client
 }
@@ -35,7 +37,7 @@ export default function CartPage() {
 
   const updateCartMutation = useMutation({
     mutationFn: async (items: CartItem[]) => {
-      // SECURE: Server recalculates total from actual product prices
+      // SECURE: Server recalculates total from actual product/variant prices
       return apiRequest("PATCH", `/api/carts/${cart?.id}`, { items });
     },
     onSuccess: () => {
@@ -55,25 +57,51 @@ export default function CartPage() {
 
   const cartItems: CartItem[] = Array.isArray(cart?.items) ? cart.items as CartItem[] : [];
   
+  // Load variants for items that have variantId
+  const variantIds = cartItems.map(item => item.variantId).filter(Boolean) as string[];
+  const { data: variants } = useQuery<ProductVariant[]>({
+    queryKey: ["/api/product-variants", "bulk", variantIds],
+    queryFn: async () => {
+      if (variantIds.length === 0) return [];
+      const allVariants: ProductVariant[] = [];
+      for (const variantId of variantIds) {
+        try {
+          const variant = (await apiRequest("GET", `/api/product-variants/${variantId}`, undefined)) as unknown as ProductVariant;
+          allVariants.push(variant);
+        } catch (e) {
+          console.error(`Failed to load variant ${variantId}`, e);
+        }
+      }
+      return allVariants;
+    },
+    enabled: variantIds.length > 0,
+  });
+
   const cartWithProducts = cartItems.map(item => {
     const product = products?.find(p => p.id === item.productId);
-    return { ...item, product };
+    const variant = item.variantId ? variants?.find(v => v.id === item.variantId) : undefined;
+    return { ...item, product, variant };
   }).filter(item => item.product);
 
-  const handleRemoveItem = (productId: string) => {
-    // SECURE: Only send productId and quantity
+  const handleRemoveItem = (productId: string, variantId?: string) => {
+    // SECURE: Only send productId, variantId, and quantity
     const newItems = cartItems
-      .filter(item => item.productId !== productId)
-      .map(item => ({ productId: item.productId, quantity: item.quantity }));
+      .filter(item => !(item.productId === productId && item.variantId === variantId))
+      .map(item => ({ 
+        productId: item.productId, 
+        variantId: item.variantId,
+        quantity: item.quantity 
+      }));
     updateCartMutation.mutate(newItems);
   };
 
-  const handleUpdateQuantity = (productId: string, newQuantity: number) => {
+  const handleUpdateQuantity = (productId: string, variantId: string | undefined, newQuantity: number) => {
     if (newQuantity < 1) return;
-    // SECURE: Only send productId and quantity - no price
+    // SECURE: Only send productId, variantId, and quantity - no price
     const newItems = cartItems.map(item => ({
       productId: item.productId,
-      quantity: item.productId === productId ? newQuantity : item.quantity
+      variantId: item.variantId,
+      quantity: (item.productId === productId && item.variantId === variantId) ? newQuantity : item.quantity
     }));
     updateCartMutation.mutate(newItems);
   };
@@ -169,61 +197,78 @@ export default function CartPage() {
               </div>
             ) : cartWithProducts.length > 0 ? (
               <div className="space-y-4">
-                {cartWithProducts.map((item) => (
-                  <Card key={item.productId} data-testid={`card-cart-item-${item.productId}`}>
-                    <CardContent className="p-6">
-                      <div className="flex gap-6">
-                        <div className="flex-1">
-                          <h3 className="text-xl font-semibold mb-2">
-                            {item.product!.name}
-                          </h3>
-                          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                            {item.product!.description}
-                          </p>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm text-muted-foreground">
-                                {t('cart.quantity')}:
-                              </label>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(e) => {
-                                  const newQty = parseInt(e.target.value);
-                                  if (newQty > 0) {
-                                    handleUpdateQuantity(item.productId, newQty);
-                                  }
-                                }}
-                                className="w-20"
-                                data-testid={`input-quantity-${item.productId}`}
-                              />
+                {cartWithProducts.map((item) => {
+                  const itemKey = `${item.productId}-${item.variantId || 'no-variant'}`;
+                  const displayPrice = item.price || item.product!.price;
+                  const variantAttributes = item.variant?.variantValues && typeof item.variant.variantValues === 'object' 
+                    ? Object.entries(item.variant.variantValues as Record<string, any>)
+                    : [];
+                  
+                  return (
+                    <Card key={itemKey} data-testid={`card-cart-item-${itemKey}`}>
+                      <CardContent className="p-6">
+                        <div className="flex gap-6">
+                          <div className="flex-1">
+                            <h3 className="text-xl font-semibold mb-2">
+                              {item.product!.name}
+                            </h3>
+                            {variantAttributes.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {variantAttributes.map(([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {String(value)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                            <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                              {item.product!.description}
+                            </p>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <label className="text-sm text-muted-foreground">
+                                  {t('cart.quantity')}:
+                                </label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const newQty = parseInt(e.target.value);
+                                    if (newQty > 0) {
+                                      handleUpdateQuantity(item.productId, item.variantId, newQty);
+                                    }
+                                  }}
+                                  className="w-20"
+                                  data-testid={`input-quantity-${itemKey}`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end justify-between">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveItem(item.productId, item.variantId)}
+                              disabled={updateCartMutation.isPending}
+                              data-testid={`button-remove-${itemKey}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                            <div className="text-right">
+                              <div className="text-sm text-muted-foreground">
+                                R$ {displayPrice} x {item.quantity}
+                              </div>
+                              <div className="text-2xl font-bold" data-testid={`text-item-total-${itemKey}`}>
+                                R$ {(parseFloat(displayPrice) * item.quantity).toFixed(2)}
+                              </div>
                             </div>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end justify-between">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveItem(item.productId)}
-                            disabled={updateCartMutation.isPending}
-                            data-testid={`button-remove-${item.productId}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                          <div className="text-right">
-                            <div className="text-sm text-muted-foreground">
-                              R$ {item.product!.price} x {item.quantity}
-                            </div>
-                            <div className="text-2xl font-bold" data-testid={`text-item-total-${item.productId}`}>
-                              R$ {(parseFloat(item.product!.price) * item.quantity).toFixed(2)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             ) : (
               <Card className="p-12 text-center">
