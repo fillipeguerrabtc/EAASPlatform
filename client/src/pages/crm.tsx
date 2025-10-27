@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Customer } from "@shared/schema";
 import { SEO } from "@/components/seo";
+import { usePaginatedQuery } from "@/hooks/use-paginated-query";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 
 const formatCurrency = (value: number | null | undefined, locale: string): string => {
   if (!value) return new Intl.NumberFormat(locale, { style: 'currency', currency: locale === 'pt-BR' ? 'BRL' : 'USD' }).format(0);
@@ -27,44 +29,31 @@ export default function CRM() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   
-  const { data: customers, isLoading } = useQuery<Customer[]>({
-    queryKey: ["/api/customers"],
+  const {
+    data: customers,
+    pagination,
+    isLoading,
+    page,
+    pageSize,
+    search,
+    setPage,
+    setPageSize,
+    setSearch,
+    hasNextPage,
+    hasPrevPage,
+  } = usePaginatedQuery<Customer>(["/api/customers"], "/api/customers", {
+    initialPageSize: 20,
   });
 
   const recalculateScoreMutation = useMutation({
     mutationFn: async (customerId: string) => {
       return await apiRequest(`/api/leads/${customerId}/calculate-score`, "POST");
     },
-    onMutate: async (customerId: string) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/customers"] });
-      const previousCustomers = queryClient.getQueryData<Customer[]>(["/api/customers"]);
-      
-      queryClient.setQueryData<Customer[]>(["/api/customers"], (old) => {
-        if (!old) return old;
-        return old.map(customer => 
-          customer.id === customerId 
-            ? { ...customer, leadScore: null }
-            : customer
-        );
-      });
-      
-      return { previousCustomers };
-    },
-    onSuccess: (updatedLead) => {
-      queryClient.setQueryData<Customer[]>(["/api/customers"], (old) => {
-        if (!old) return old;
-        return old.map(customer => 
-          customer.id === updatedLead.id 
-            ? { ...customer, leadScore: updatedLead.leadScore }
-            : customer
-        );
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       toast({ title: "Lead score recalculado com sucesso" });
     },
-    onError: (error: any, customerId, context) => {
-      if (context?.previousCustomers) {
-        queryClient.setQueryData(["/api/customers"], context.previousCustomers);
-      }
+    onError: (error: any) => {
       toast({ title: "Erro ao recalcular score", description: error.message, variant: "destructive" });
     },
   });
@@ -96,10 +85,23 @@ export default function CRM() {
             {t('crm.customers')}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <PaginationControls
+            pagination={pagination}
+            page={page}
+            pageSize={pageSize}
+            search={search}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onSearchChange={setSearch}
+            hasNextPage={hasNextPage}
+            hasPrevPage={hasPrevPage}
+            searchPlaceholder={t('crm.searchCustomers') || "Buscar clientes por nome, email ou telefone..."}
+          />
+          
           {isLoading ? (
             <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
+              {[1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>

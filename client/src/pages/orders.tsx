@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,12 +11,26 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { SEO } from "@/components/seo";
+import { usePaginatedQuery } from "@/hooks/use-paginated-query";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 
 export default function OrdersPage() {
   const { t } = useTranslation();
 
-  const { data: orders, isLoading } = useQuery<any[]>({
-    queryKey: ["/api/orders"],
+  const {
+    data: orders,
+    pagination,
+    isLoading,
+    page,
+    pageSize,
+    search,
+    setPage,
+    setPageSize,
+    setSearch,
+    hasNextPage,
+    hasPrevPage,
+  } = usePaginatedQuery<any>(["/api/orders"], "/api/orders", {
+    initialPageSize: 10,
   });
 
   const getStatusColor = (status: string) => {
@@ -65,7 +78,7 @@ export default function OrdersPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="text-sm font-medium">
-                {Array.isArray(orders) ? orders.length : 0} {Array.isArray(orders) && orders.length === 1 ? 'pedido' : 'pedidos'}
+                {pagination ? `${pagination.totalCount} ${pagination.totalCount === 1 ? 'pedido' : 'pedidos'}` : '0 pedidos'}
               </Badge>
             </div>
           </div>
@@ -74,7 +87,24 @@ export default function OrdersPage() {
 
       {/* Content */}
       <div className="px-4 sm:px-6 lg:px-8 py-8">
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <Card>
+            <CardContent className="pt-6">
+              <PaginationControls
+                pagination={pagination}
+                page={page}
+                pageSize={pageSize}
+                search={search}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                onSearchChange={setSearch}
+                hasNextPage={hasNextPage}
+                hasPrevPage={hasPrevPage}
+                showSearch={false}
+              />
+            </CardContent>
+          </Card>
+          
           {isLoading ? (
             <div className="grid gap-4 sm:gap-6">
               {[1, 2, 3].map((i) => (
