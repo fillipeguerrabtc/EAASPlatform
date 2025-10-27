@@ -92,6 +92,24 @@ app.use((req, res, next) => {
     console.error(error);
   }
 
+  // SINGLE-TENANT ENFORCEMENT: Ensure partial unique index exists
+  try {
+    log("🔍 Ensuring single-tenant database constraint...");
+    const { db } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS tenants_single_primary 
+      ON tenants (is_primary) 
+      WHERE is_primary = true
+    `);
+    
+    log("✓ Single-tenant constraint verified");
+  } catch (error: any) {
+    log(`⚠️  Error creating single-tenant constraint: ${error.message}`);
+    console.error(error);
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

@@ -694,14 +694,18 @@ export class DbStorage implements IStorage {
   }
 
   async createTenant(insertTenant: InsertTenant): Promise<Tenant> {
-    // SINGLE-TENANT ENFORCEMENT: Atomic check to prevent race conditions
-    const existing = await db.select().from(tenants).limit(1);
-    if (existing.length > 0) {
-      throw new Error("Este sistema suporta apenas uma empresa (single-tenant). Uma empresa já existe.");
+    // SINGLE-TENANT ENFORCEMENT: Database constraint (partial unique index on isPrimary=true)
+    // PostgreSQL will reject duplicate tenants with isPrimary=true atomically
+    try {
+      const result = await db.insert(tenants).values(insertTenant).returning();
+      return result[0];
+    } catch (error: any) {
+      // PostgreSQL error code 23505 = unique_violation
+      if (error?.code === '23505' && error?.constraint === 'tenants_single_primary') {
+        throw new Error("Este sistema suporta apenas uma empresa (single-tenant). Uma empresa já existe.");
+      }
+      throw error;
     }
-    
-    const result = await db.insert(tenants).values(insertTenant).returning();
-    return result[0];
   }
 
   async updateTenant(id: string, data: Partial<InsertTenant>): Promise<Tenant | undefined> {

@@ -76,8 +76,9 @@ export const tenants = pgTable("tenants", {
   status: text("status").default("active"),
   settings: jsonb("settings"),
   
-  // SINGLE-TENANT ENFORCEMENT: Database-level guarantee
-  isPrimary: boolean("is_primary").default(true).notNull().unique(), // Only one tenant can have isPrimary = true
+  // SINGLE-TENANT ENFORCEMENT: Database-level guarantee via partial unique index
+  // Manual SQL: CREATE UNIQUE INDEX tenants_single_primary ON tenants (is_primary) WHERE is_primary = true
+  isPrimary: boolean("is_primary").default(true).notNull(), // Only one tenant allowed with isPrimary = true
   
   // AI Governance (EAAS Whitepaper 02 - Chapter 9)
   aiPersona: text("ai_persona").default("professional"), // Tone: professional, friendly, casual, technical
