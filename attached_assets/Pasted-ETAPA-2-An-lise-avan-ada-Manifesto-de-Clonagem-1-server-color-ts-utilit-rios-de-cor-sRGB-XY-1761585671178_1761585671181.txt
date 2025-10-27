@@ -1,0 +1,597 @@
+ETAPA 2 — Análise avançada + Manifesto de Clonagem
+1) server/color.ts — utilitários de cor (sRGB↔XYZ↔LAB) + K-Means (arquivo completo)
+// server/color.ts
+// Conversões sRGB <-> XYZ <-> LAB e KMeans simples para clusterização de cores dominantes.
+// Sem dependências externas: determinístico e rápido o bastante para snapshots.
+
+export type RGB = { r: number; g: number; b: number };          // 0..255
+export type LAB = { L: number; a: number; b: number };          // L in [0..100] approx
+
+function srgbToLinear(c: number) {
+  const cs = c / 255;
+  return cs <= 0.04045 ? cs / 12.92 : Math.pow((cs + 0.055) / 1.055, 2.4);
+}
+
+function linearToSrgb(x: number) {
+  const v = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1/2.4) - 0.055;
+  return Math.min(255, Math.max(0, Math.round(v * 255)));
+}
+
+// D65
+function rgbToXyz({ r, g, b }: RGB) {
+  const R = srgbToLinear(r);
+  const G = srgbToLinear(g);
+  const B = srgbToLinear(b);
+  const X = R*0.4124564 + G*0.3575761 + B*0.1804375;
+  const Y = R*0.2126729 + G*0.7151522 + B*0.0721750;
+  const Z = R*0.0193339 + G*0.1191920 + B*0.9503041;
+  return { X, Y, Z };
+}
+
+function xyzToRgb({ X, Y, Z }: { X: number; Y: number; Z: number }): RGB {
+  // inverse matrix
+  const R =  3.2404542*X + -1.5371385*Y + -0.4985314*Z;
+  const G = -0.9692660*X +  1.8760108*Y +  0.0415560*Z;
+  const B =  0.0556434*X + -0.2040259*Y +  1.0572252*Z;
+  return { r: linearToSrgb(R), g: linearToSrgb(G), b: linearToSrgb(B) };
+}
+
+// D65 white point
+const Xn = 0.95047, Yn = 1.00000, Zn = 1.08883;
+
+function fLab(t: number) {
+  return t > 216/24389 ? Math.cbrt(t) : (841/108)*t + 4/29;
+}
+function finvLab(t: number) {
+  const t3 = t*t*t;
+  return t3 > 216/24389 ? t3 : (108/841)*(t - 4/29);
+}
+
+export function rgbToLab(rgb: RGB): LAB {
+  const { X, Y, Z } = rgbToXyz(rgb);
+  const fx = fLab(X / Xn), fy = fLab(Y / Yn), fz = fLab(Z / Zn);
+  return { L: 116*fy - 16, a: 500*(fx - fy), b: 200*(fy - fz) };
+}
+
+export function labToRgb(lab: LAB): RGB {
+  const fy = (lab.L + 16) / 116;
+  const fx = fy + lab.a / 500;
+  const fz = fy - lab.b / 200;
+  const X = Xn * finvLab(fx);
+  const Y = Yn * finvLab(fy);
+  const Z = Zn * finvLab(fz);
+  return xyzToRgb({ X, Y, Z });
+}
+
+export function rgbToHex({ r, g, b }: RGB) {
+  const h = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`.toLowerCase();
+}
+
+// Distância ΔE (CIE76)
+export function deltaE(a: LAB, b: LAB) {
+  const dL = a.L - b.L, da = a.a - b.a, db = a.b - b.b;
+  return Math.sqrt(dL*dL + da*da + db*db);
+}
+
+// KMeans simples em espaço LAB
+export function kmeansLAB(points: LAB[], k: number, maxIter = 25): LAB[] {
+  if (points.length === 0) return [];
+  // init: amostragem uniforme
+  const step = Math.max(1, Math.floor(points.length / k));
+  const centers: LAB[] = Array.from({ length: k }, (_, i) => points[Math.min(i*step, points.length-1)]);
+  const assign = new Array(points.length).fill(0);
+
+  for (let it = 0; it < maxIter; it++) {
+    let changed = false;
+    // assignment
+    for (let i = 0; i < points.length; i++) {
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < centers.length; c++) {
+        const d = deltaE(points[i], centers[c]);
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      if (assign[i] !== best) { assign[i] = best; changed = true; }
+    }
+    // convergence early-exit
+    if (!changed && it > 0) break;
+    // update
+    const sums = Array.from({ length: k }, () => ({ L: 0, a: 0, b: 0, n: 0 }));
+    for (let i = 0; i < points.length; i++) {
+      const c = assign[i];
+      const p = points[i];
+      sums[c].L += p.L; sums[c].a += p.a; sums[c].b += p.b; sums[c].n++;
+    }
+    for (let c = 0; c < k; c++) {
+      if (sums[c].n > 0) {
+        centers[c] = { L: sums[c].L / sums[c].n, a: sums[c].a / sums[c].n, b: sums[c].b / sums[c].n };
+      }
+    }
+  }
+  return centers;
+}
+
+2) server/brandScannerTheme.ts — extração de tema (cores/tipografia/tokens) (arquivo completo)
+// server/brandScannerTheme.ts
+// Extrai paleta dominante via CIELAB+KMeans a partir de screenshots e HTML.
+// Também coleta tipografia (font-face, font-family) e gera tokens de design.
+
+import fs from "fs";
+import path from "path";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { rgbToHex, rgbToLab, kmeansLAB, labToRgb, type RGB } from "./color";
+
+export type TypographyInfo = {
+  fontFamilies: string[];
+  fontFaces: string[];  // URLs ou nomes detectados
+  baseSizePx?: number;
+};
+
+export type DesignTokens = {
+  colors: {
+    primary?: string; secondary?: string; accent?: string;
+    surface?: string; background?: string; text?: string;
+    palette: string[];
+  };
+  typography: TypographyInfo;
+  spacing: { base: number; scale: number[] };    // ex: base8 + escala de 0..7
+  radius: { sm: number; md: number; lg: number; pill: number };
+  elevation: { sm: string; md: string; lg: string }; // box-shadow tokens
+};
+
+export async function extractPaletteFromPng(pngPath: string, k = 6): Promise<string[]> {
+  if (!fs.existsSync(pngPath)) return [];
+  const img = await loadImage(pngPath);
+  // downsample agressivo para acelerar (sem perder dominância)
+  const W = Math.min(img.width, 480);
+  const H = Math.round((img.height * W) / img.width);
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, W, H);
+  const data = ctx.getImageData(0, 0, W, H).data;
+
+  const labs = [];
+  for (let i = 0; i < data.length; i += 4) {
+    const rgb: RGB = { r: data[i], g: data[i+1], b: data[i+2] };
+    // Ignorar pixels muito transparentes ou quase brancos pretos puros repetitivos? (mantemos tudo)
+    labs.push(rgbToLab(rgb));
+  }
+  const centers = kmeansLAB(labs, k, 18);
+  // ordena por L (clareza) para ter consistência
+  centers.sort((a, b) => a.L - b.L);
+  const hexes = centers.map(l => rgbToHex(labToRgb(l)));
+  // remove duplicatas simples
+  return [...new Set(hexes)];
+}
+
+export function extractTypographyFromHtml(html: string): TypographyInfo {
+  const families = new Set<string>();
+  const faces = new Set<string>();
+
+  // font-family:
+  const ff = html.match(/font-family:\s*([^;}{]+)[;}{]/gi) || [];
+  for (const line of ff) {
+    const m = line.split(":")[1];
+    if (!m) continue;
+    m.split(",").map(s => s.trim().replace(/['"]/g, "")).forEach(f => f && families.add(f));
+  }
+
+  // @font-face src urls
+  const src = html.match(/src:\s*url\(([^)]+)\)/gi) || [];
+  for (const s of src) {
+    const m = s.match(/url\(([^)]+)\)/i);
+    if (m?.[1]) faces.add(m[1].replace(/['"]/g,""));
+  }
+
+  // tamanho base simples: procura "html{font-size:...}" (fallback 16)
+  let base = 16;
+  const baseMatch = html.match(/html\s*{\s*font-size:\s*([\d.]+)px\s*;?\s*}/i);
+  if (baseMatch?.[1]) base = parseFloat(baseMatch[1]);
+
+  return { fontFamilies: [...families], fontFaces: [...faces], baseSizePx: base };
+}
+
+export function buildDesignTokens(palette: string[], typo: TypographyInfo): DesignTokens {
+  // Heurística:
+  // - text: cor mais escura
+  // - background: cor mais clara
+  // - primary/secondary/accent: intermediárias
+  const sorted = palette.slice(); // já recebemos do escuro->claro
+  const text = sorted[0];
+  const background = sorted[sorted.length - 1];
+  const primary = sorted[Math.floor(sorted.length * 0.6)] || sorted[1] || text;
+  const secondary = sorted[Math.floor(sorted.length * 0.4)] || sorted[2] || background;
+  const accent = sorted[Math.floor(sorted.length * 0.8)] || sorted[3] || primary;
+
+  // tokens padrões elegantes
+  const spacingBase = 8;
+  const scale = [0,1,2,3,4,5,6,7].map(n => n * spacingBase);
+  const radius = { sm: 4, md: 8, lg: 16, pill: 999 };
+  const elevation = {
+    sm: "0 1px 2px rgba(0,0,0,.08)",
+    md: "0 4px 12px rgba(0,0,0,.12)",
+    lg: "0 12px 28px rgba(0,0,0,.16)"
+  };
+
+  return {
+    colors: {
+      primary, secondary, accent, surface: background, background, text, palette: sorted
+    },
+    typography: typo,
+    spacing: { base: spacingBase, scale },
+    radius,
+    elevation
+  };
+}
+
+
+Nota: usamos @napi-rs/canvas para performance no Replit. Se preferir canvas padrão, posso ajustar, mas o @napi-rs costuma funcionar bem.
+
+3) server/brandCloneManifest.ts — Manifesto de clonagem para o Marketplace (arquivo completo)
+// server/brandCloneManifest.ts
+// Gera um manifesto JSON com tudo necessário para reproduzir o site no Marketplace:
+// - tokens de design
+// - assets (arquivos locais baixados)
+// - mapa de páginas (rotas internas descobertas)
+// - instruções básicas de layout (slots/sections) – heurística inicial
+
+import type { DesignTokens } from "./brandScannerTheme";
+
+export type CloneAsset = {
+  localPath: string;    // caminho em disco do asset baixado
+  originalUrl: string;
+  type: "image" | "video" | "svg" | "other";
+  hash: string;
+  bytes: number;
+};
+
+export type PageBlueprint = {
+  url: string;
+  route: string;        // rota relativa no Marketplace (heurística simples)
+  layout: Array<{
+    kind: "hero" | "section" | "gallery" | "footer" | "nav" | "content";
+    notes?: string;
+  }>;
+};
+
+export type CloneManifest = {
+  siteUrl: string;
+  tokens: DesignTokens;
+  assets: CloneAsset[];
+  pages: PageBlueprint[];
+  notes: string[];
+};
+
+export function buildCloneManifest(args: {
+  siteUrl: string;
+  tokens: DesignTokens;
+  media: Array<{ path: string; url: string; bytes: number; mime: string; hash: string }>;
+  pages: string[];
+}): CloneManifest {
+  const assets: CloneAsset[] = args.media.map(m => {
+    let type: CloneAsset["type"] = "other";
+    if (m.mime.startsWith("image/")) {
+      type = m.mime.includes("svg") ? "svg" : "image";
+    } else if (m.mime.startsWith("video/")) {
+      type = "video";
+    }
+    return { localPath: m.path, originalUrl: m.url, type, hash: m.hash, bytes: m.bytes };
+  });
+
+  const pages = args.pages.map((p, i) => {
+    const route = i === 0 ? "/" : new URL(p).pathname || `/p${i}`;
+    // layout heurístico inicial (pode evoluir com parsing do DOM em etapa posterior)
+    const layout = [
+      { kind: "nav" as const },
+      { kind: "hero" as const, notes: "Converter primeira dobra (above-the-fold) para hero" },
+      { kind: "section" as const, notes: "Blocos de conteúdo sequenciais" },
+      { kind: "gallery" as const, notes: "Se foram detectadas muitas imagens" },
+      { kind: "footer" as const }
+    ];
+    return { url: p, route, layout };
+  });
+
+  const notes = [
+    "Este manifesto foi gerado automaticamente. Revise tokens e rotas antes de publicar.",
+    "Assets já estão deduplicados por hash; upload para CDN do Marketplace é recomendado.",
+    "Integrações de checkout serão habilitadas no passo de publicação (Stripe sandbox)."
+  ];
+
+  return { siteUrl: args.siteUrl, tokens: args.tokens, assets, pages, notes };
+}
+
+4) Atualização do server/brandScanner.ts para usar a análise avançada e gerar o manifesto
+
+Substitua o conteúdo do arquivo INTEIRO pelo abaixo (mantém o comportamento anterior + integra Tema & Manifesto).
+
+// server/brandScanner.ts
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import { createHash } from "crypto";
+import mime from "mime";
+import { URL } from "url";
+import puppeteer, { HTTPResponse } from "puppeteer";
+import { extractPaletteFromPng, extractTypographyFromHtml, buildDesignTokens } from "./brandScannerTheme";
+import { buildCloneManifest } from "./brandCloneManifest";
+
+type ScanOptions = {
+  url: string;
+  deep?: boolean;
+};
+
+type MediaAsset = {
+  url: string;
+  path: string;
+  bytes: number;
+  mime: string;
+  hash: string;
+};
+
+type ScanResult = {
+  siteUrl: string;
+  pages: string[];
+  screenshots: string[];
+  media: MediaAsset[];
+  totalBytes: number;
+  // NOVO:
+  tokens: ReturnType<typeof buildDesignTokens>;
+  manifest: ReturnType<typeof buildCloneManifest>;
+};
+
+function envFlag(name: string, def = false) {
+  const v = process.env[name];
+  if (v == null) return def;
+  return v === "true" || v === "1";
+}
+function envNum(name: string, def: number) {
+  const v = process.env[name];
+  if (!v) return def;
+  const n = +v;
+  return Number.isFinite(n) ? n : def;
+}
+function ensureDir(p: string) {
+  fs.mkdirSync(p, { recursive: true });
+}
+function sha256(buf: Buffer) {
+  const h = createHash("sha256");
+  h.update(buf);
+  return h.digest("hex");
+}
+function parseViewport() {
+  const raw = process.env.BRAND_SCANNER_SNAPSHOT_VIEWPORT || "1440x900";
+  const [w, h] = raw.split("x").map((s) => parseInt(s, 10));
+  return { width: isFinite(w) ? w : 1440, height: isFinite(h) ? 900 : h };
+}
+function normalizeUrl(u: string): string {
+  try {
+    const parsed = new URL(u);
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    throw new Error(`Invalid URL: ${u}`);
+  }
+}
+function sameOrigin(a: string, b: string) {
+  const A = new URL(a);
+  const B = new URL(b);
+  return A.origin === B.origin;
+}
+async function downloadToFile(url: string, body: Buffer, baseDir: string): Promise<MediaAsset> {
+  const hash = sha256(body);
+  const guessExt = mime.getExtension(mime.getType(url || "") || "") || "bin";
+  const fileName = `${hash}.${guessExt}`;
+  const filePath = path.join(baseDir, fileName);
+  await fsp.writeFile(filePath, body);
+  return {
+    url,
+    path: filePath,
+    bytes: body.length,
+    mime: mime.getType(filePath) || "application/octet-stream",
+    hash,
+  };
+}
+
+export async function runBrandScannerJob(opts: ScanOptions): Promise<ScanResult> {
+  const siteUrl = normalizeUrl(opts.url);
+  const deep = opts.deep ?? true;
+
+  const storageDir = process.env.STORAGE_DIR || "./.storage";
+  const baseDir = path.join(storageDir, "brand-scanner");
+  ensureDir(baseDir);
+
+  const allowMedia = envFlag("BRAND_SCANNER_DOWNLOAD_MEDIA", true);
+  const blockThirdParty = envFlag("BRAND_SCANNER_BLOCK_THIRD_PARTY", false);
+  const navTimeout = envNum("BRAND_SCANNER_NAV_TIMEOUT_MS", 45000);
+  const maxPages = envNum("BRAND_SCANNER_MAX_PAGES", 0);
+  const maxTotalBytes = envNum("BRAND_SCANNER_MAX_TOTAL_BYTES", 500 * 1024 * 1024);
+  const allowedMimeList = (process.env.BRAND_SCANNER_ALLOWED_MIME || "image/*,video/*,image/svg+xml")
+    .split(",").map(s => s.trim());
+  const viewport = parseViewport();
+
+  const browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  const page = await browser.newPage();
+  await page.setUserAgent(process.env.BRAND_SCANNER_USER_AGENT || "EAAS-BrandScanner/2.1");
+  await page.setViewport(viewport);
+  await page.setRequestInterception(true);
+
+  const pagesVisited = new Set<string>();
+  const queue: string[] = [siteUrl];
+  const pages: string[] = [];
+  const screenshots: string[] = [];
+  const media: MediaAsset[] = [];
+  let totalBytes = 0;
+  const seenHashes = new Set<string>();
+
+  page.on("request", (req) => {
+    const rt = req.resourceType();
+    if (blockThirdParty && !sameOrigin(siteUrl, req.url())) {
+      if (allowMedia && (rt === "image" || rt === "media")) return req.continue();
+      return req.abort();
+    }
+    req.continue();
+  });
+
+  async function collectResponse(resp: HTTPResponse) {
+    try {
+      if (!allowMedia) return;
+      const req = resp.request();
+      const url = req.url();
+      const rt = req.resourceType();
+      if (!(rt === "image" || rt === "media")) return;
+
+      const ct = resp.headers()["content-type"] || "";
+      const isAllowed = allowedMimeList.some((p) => {
+        if (p.endsWith("/*")) return ct.startsWith(p.slice(0, -1));
+        return ct === p;
+      });
+      if (!isAllowed) return;
+
+      const buf = await resp.buffer();
+      if (!buf?.length) return;
+
+      const h = createHash("sha256").update(buf).digest("hex");
+      if (seenHashes.has(h)) return;
+      if (totalBytes + buf.length > maxTotalBytes) return;
+
+      const asset = await downloadToFile(url, buf, baseDir);
+      seenHashes.add(h);
+      totalBytes += buf.length;
+      media.push(asset);
+    } catch { /* ignora erros pontuais */ }
+  }
+  page.on("response", collectResponse);
+
+  let pageCount = 0;
+  const firstPageHtml: string[] = [];
+
+  while (queue.length > 0) {
+    const nextUrl = queue.shift()!;
+    if (pagesVisited.has(nextUrl)) continue;
+    pagesVisited.add(nextUrl);
+    try {
+      await page.goto(nextUrl, { timeout: navTimeout, waitUntil: "networkidle2" });
+      const html = await page.content();
+      if (pages.length === 0) firstPageHtml.push(html);
+      pages.push(nextUrl);
+
+      const shotPath = path.join(baseDir, `screenshot_${pageCount++}.png`);
+      await page.screenshot({ path: shotPath, fullPage: true });
+      screenshots.push(shotPath);
+
+      if (deep && (maxPages === 0 || pages.length < maxPages)) {
+        const links: string[] = await page.$$eval("a[href]", as => as.map(a => (a as HTMLAnchorElement).href).filter(Boolean));
+        for (const l of links) {
+          try {
+            const u = new URL(l).toString();
+            if (sameOrigin(siteUrl, u) && !pagesVisited.has(u)) queue.push(u);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { /* segue para a próxima */ }
+  }
+
+  await browser.close();
+
+  // ======= NOVO: Análise avançada =======
+  // 1) Paleta (pega até 3 screenshots, consolida)
+  const chosen = screenshots.slice(0, 3);
+  const palettes: string[][] = [];
+  for (const p of chosen) {
+    try {
+      const pal = await extractPaletteFromPng(p, 7);
+      if (pal.length) palettes.push(pal);
+    } catch { /* ignore */ }
+  }
+  const palette = [...new Set(palettes.flat())];
+  // fallback caso não haja screenshot
+  if (palette.length === 0) palette.push("#111111", "#333333", "#777777", "#aaaaaa", "#e6e6e6", "#ffffff");
+
+  // 2) Tipografia (a partir do HTML da primeira página)
+  const html0 = firstPageHtml[0] || "";
+  const typography = extractTypographyFromHtml(html0);
+
+  // 3) Tokens
+  const tokens = buildDesignTokens(palette, typography);
+
+  // 4) Manifesto de clonagem
+  const manifest = buildCloneManifest({
+    siteUrl,
+    tokens,
+    media,
+    pages
+  });
+
+  // Persistir manifesto para auditoria/operação (opcional, mas útil)
+  const manifestPath = path.join(baseDir, "manifest.json");
+  await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
+  return {
+    siteUrl,
+    pages,
+    screenshots,
+    media,
+    totalBytes,
+    tokens,
+    manifest
+  };
+}
+
+5) Dependências necessárias
+
+No seu package.json, confirme (ou adicione):
+
+{
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.56",
+    "mime": "^4.0.4",
+    "puppeteer": "^22.15.0"
+  }
+}
+
+
+Se estiver usando TypeScript, garanta também os tipos (devDependencies) habituais (tsx, typescript, etc.) que você já tem no projeto.
+
+6) Como rodar (igual antes)
+
+Atualize os novos arquivos:
+
+server/color.ts
+
+server/brandScannerTheme.ts
+
+server/brandCloneManifest.ts
+
+Substitua server/brandScanner.ts pelo novo.
+
+Instale deps:
+npm i @napi-rs/canvas mime puppeteer
+
+Execute:
+npm run dev
+
+Teste (exemplo):
+POST /api/brand-scanner/scan
+Body:
+
+{ "url": "https://www.seu-site-cliente.com", "deep": true }
+
+
+Saída esperada:
+
+/.storage/brand-scanner/screenshot_0.png (…1, 2…)
+
+Assets de mídia baixados.
+
+/.storage/brand-scanner/manifest.json com tokens e blueprints de páginas.
+
+7) O que ficou entregue nesta etapa
+
+✅ CIELAB + K-Means para paleta real da UI.
+
+✅ Extração tipográfica (font-family, @font-face, baseSize).
+
+✅ Tokens de design (cores, spacing, radius, elevation).
+
+✅ Manifesto de clonagem com rotas e layout heurístico, pronto para alimentar o Marketplace.
+

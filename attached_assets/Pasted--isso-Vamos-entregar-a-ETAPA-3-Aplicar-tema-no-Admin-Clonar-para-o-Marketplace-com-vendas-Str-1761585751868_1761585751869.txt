@@ -1,0 +1,669 @@
+É isso! Vamos entregar a ETAPA 3 — Aplicar tema no Admin & Clonar para o Marketplace com vendas (Stripe sandbox) em nível épico, já com serviços, rotas, templates React e integração de checkout. Tudo pronto para copiar/colar no Replit.
+
+Nesta etapa você ganha:
+
+Serviço adminThemeApplier: aplica tokens no Dashboard Admin (gera CSS variables + theme.json).
+
+Serviço marketplaceCloner: publica assets (CDN local), monta páginas a partir do manifesto e habilita checkout Stripe (sandbox).
+
+Rotas:
+POST /api/brand-scanner/apply-admin-theme
+POST /api/brand-scanner/clone-to-marketplace
+POST /api/checkout/create-session
+POST /api/checkout/webhook
+
+Frontend (React/Vite) com sections reutilizáveis (Hero/Section/Gallery/Nav/Footer) e roteador do Marketplace que lê o manifesto.
+
+0) Pré-requisitos rápidos
+
+No .env (da Etapa 1) confirme:
+
+STORAGE_DIR=./.storage
+STORAGE_PUBLIC_BASE_URL=/public
+
+STRIPE_MODE=sandbox
+STRIPE_API_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+
+No server/index.ts, garanta o static:
+
+// depois dos middlewares padrão…
+import path from "path";
+import express from "express";
+
+const storageDir = process.env.STORAGE_DIR || "./.storage";
+const publicBase = process.env.STORAGE_PUBLIC_BASE_URL || "/public";
+app.use(publicBase, express.static(path.join(storageDir, "public"), { maxAge: "7d", etag: true }));
+
+
+Crie as pastas se não existirem:
+
+/.storage/public/assets (para CDN local)
+
+frontend/src/theme
+
+frontend/src/marketplace/components
+
+frontend/src/marketplace/pages
+
+1) server/adminThemeApplier.ts — aplica tokens no Admin (arquivo completo)
+// server/adminThemeApplier.ts
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+
+type Tokens = {
+  colors: {
+    primary?: string; secondary?: string; accent?: string;
+    surface?: string; background?: string; text?: string;
+    palette?: string[];
+  };
+  typography: { fontFamilies: string[]; baseSizePx?: number };
+  spacing: { base: number; scale: number[] };
+  radius: { sm: number; md: number; lg: number; pill: number };
+  elevation: { sm: string; md: string; lg: string };
+};
+
+function ensureDir(p: string) { fs.mkdirSync(p, { recursive: true }); }
+
+function cssVarName(name: string) {
+  return `--eaas-${name}`;
+}
+
+function tokensToCssVars(t: Tokens): string {
+  const lines: string[] = [];
+  const push = (k: string, v: string | number | undefined) => {
+    if (v == null) return;
+    lines.push(`  ${cssVarName(k)}: ${v};`);
+  };
+
+  push("color-primary", t.colors.primary || "#0d6efd");
+  push("color-secondary", t.colors.secondary || "#6c757d");
+  push("color-accent", t.colors.accent || "#6610f2");
+  push("color-surface", t.colors.surface || "#ffffff");
+  push("color-background", t.colors.background || "#f8f9fa");
+  push("color-text", t.colors.text || "#212529");
+
+  push("font-base-size", `${t.typography.baseSizePx || 16}px`);
+  push("font-stack", (t.typography.fontFamilies && t.typography.fontFamilies.length)
+    ? t.typography.fontFamilies.map(f => `"${f}"`).join(", ") + ', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"'
+    : 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial');
+
+  push("space-0", `${t.spacing.scale[0] || 0}px`);
+  for (let i = 1; i < t.spacing.scale.length; i++) push(`space-${i}`, `${t.spacing.scale[i]}px`);
+
+  push("radius-sm", `${t.radius.sm}px`);
+  push("radius-md", `${t.radius.md}px`);
+  push("radius-lg", `${t.radius.lg}px`);
+  push("radius-pill", `${t.radius.pill}px`);
+
+  push("shadow-sm", t.elevation.sm);
+  push("shadow-md", t.elevation.md);
+  push("shadow-lg", t.elevation.lg);
+
+  return `:root {\n${lines.join("\n")}\n}\n`;
+}
+
+export async function applyAdminTheme(tokens: Tokens) {
+  const storageDir = process.env.STORAGE_DIR || "./.storage";
+  const themeDir = path.join(storageDir, "theme");
+  ensureDir(themeDir);
+
+  // 1) Persistimos o JSON do tema (para painel/Admin)
+  const themeJsonPath = path.join(themeDir, "theme.json");
+  await fsp.writeFile(themeJsonPath, JSON.stringify(tokens, null, 2), "utf-8");
+
+  // 2) Geramos o CSS de variables (consumido no Admin)
+  const css = tokensToCssVars(tokens);
+  const cssPath = path.join(themeDir, "generated.css");
+  await fsp.writeFile(cssPath, css, "utf-8");
+
+  // 3) Copiamos os arquivos para a pasta pública, para o Frontend servir
+  const publicDir = path.join(storageDir, "public", "theme");
+  ensureDir(publicDir);
+  await fsp.writeFile(path.join(publicDir, "theme.json"), JSON.stringify(tokens, null, 2), "utf-8");
+  await fsp.writeFile(path.join(publicDir, "generated.css"), css, "utf-8");
+
+  return {
+    themeJson: `/public/theme/theme.json`,
+    themeCss: `/public/theme/generated.css`
+  };
+}
+
+2) server/marketplaceCloner.ts — clona para Marketplace e habilita checkout (arquivo completo)
+// server/marketplaceCloner.ts
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import mime from "mime";
+
+type CloneAsset = {
+  localPath: string;
+  originalUrl: string;
+  type: "image" | "video" | "svg" | "other";
+  hash: string;
+  bytes: number;
+};
+
+type PageBlueprint = {
+  url: string;
+  route: string;
+  layout: Array<{ kind: "hero" | "section" | "gallery" | "footer" | "nav" | "content"; notes?: string }>;
+};
+
+type Tokens = any;
+
+export type CloneManifest = {
+  siteUrl: string;
+  tokens: Tokens;
+  assets: CloneAsset[];
+  pages: PageBlueprint[];
+  notes: string[];
+};
+
+function ensureDir(p: string) { fs.mkdirSync(p, { recursive: true }); }
+
+export async function publishAssetsToCdn(assets: CloneAsset[]) {
+  const storageDir = process.env.STORAGE_DIR || "./.storage";
+  const cdnDir = path.join(storageDir, "public", "assets");
+  ensureDir(cdnDir);
+
+  const published: Array<{ url: string; hash: string; type: string; bytes: number; originalUrl: string }> = [];
+
+  for (const a of assets) {
+    const ext = path.extname(a.localPath) || `.${mime.getExtension(a.type === "svg" ? "image/svg+xml" : (a.type === "image" ? "image/png" : "video/mp4"))}`;
+    const fileName = `${a.hash}${ext}`;
+    const dest = path.join(cdnDir, fileName);
+
+    try {
+      await fsp.copyFile(a.localPath, dest);
+      published.push({
+        url: `/public/assets/${fileName}`,
+        hash: a.hash,
+        type: a.type,
+        bytes: a.bytes,
+        originalUrl: a.originalUrl
+      });
+    } catch {
+      // ignora arquivo faltando
+    }
+  }
+  return published;
+}
+
+export async function writeMarketplaceManifest(input: CloneManifest, publishedAssets: Array<{ url: string; hash: string }>) {
+  const storageDir = process.env.STORAGE_DIR || "./.storage";
+  const marketDir = path.join(storageDir, "public", "marketplace");
+  ensureDir(marketDir);
+
+  // Skinny manifest para o frontend
+  const manifest = {
+    siteUrl: input.siteUrl,
+    tokens: input.tokens,
+    pages: input.pages,
+    assets: publishedAssets
+  };
+
+  const manifestPath = path.join(marketDir, "manifest.json");
+  await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
+  return { manifestUrl: `/public/marketplace/manifest.json` };
+}
+
+3) server/stripe.ts — Stripe sandbox (create session + webhook) (arquivo completo)
+// server/stripe.ts
+import Stripe from "stripe";
+import type { Request, Response } from "express";
+import { buffer } from "micro";
+
+const apiKey = process.env.STRIPE_API_KEY!;
+export const stripe = new Stripe(apiKey, { apiVersion: "2024-06-20" });
+
+export async function createCheckoutSession(req: Request, res: Response) {
+  try {
+    // Exemplo simples: recebe items do body
+    const { items, success_url, cancel_url, customer_email } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "items is required" });
+    }
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: items.map((it: any) => ({
+        price_data: {
+          currency: it.currency || "usd",
+          product_data: { name: it.name || "Item" },
+          unit_amount: it.unit_amount, // em cents
+        },
+        quantity: it.quantity || 1
+      })),
+      success_url: success_url || "https://example.com/success",
+      cancel_url: cancel_url || "https://example.com/cancel",
+      customer_email,
+    });
+    res.json({ id: session.id, url: session.url });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || "stripe error" });
+  }
+}
+
+// Webhook (registre a rota com raw body!)
+export async function handleStripeWebhook(req: Request, res: Response) {
+  const sig = req.headers["stripe-signature"];
+  const whsec = process.env.STRIPE_WEBHOOK_SECRET!;
+  let event: Stripe.Event;
+
+  try {
+    const raw = (req as any).rawBody || (await buffer(req));
+    event = stripe.webhooks.constructEvent(raw, sig as string, whsec);
+  } catch (err: any) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Trate eventos principais (sandbox)
+  switch (event.type) {
+    case "checkout.session.completed":
+      // TODO: marcar pedido como pago, enviar confirmação
+      break;
+  }
+  res.json({ received: true });
+}
+
+
+IMPORTANTE: para o webhook funcionar no Express, precisamos passar o raw body nessa rota. No server/index.ts, antes de app.use(express.json()), adicione:
+
+// Para Stripe webhook: rota crua antes do json parser
+import { handleStripeWebhook } from "./stripe";
+app.post("/api/checkout/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
+
+// Depois, aplique o parser JSON para o resto
+app.use(express.json({ limit: "4mb" }));
+
+
+E registre também a rota de criar sessão (após json):
+
+import { createCheckoutSession } from "./stripe";
+app.post("/api/checkout/create-session", createCheckoutSession);
+
+4) server/routes.ts — adicionar rotas de aplicação de tema e clonagem
+// server/routes.ts
+import type { Express, Request, Response } from "express";
+import { singleTenantMiddleware } from "./singleTenant";
+import { runBrandScannerJob } from "./brandScanner";
+import { applyAdminTheme } from "./adminThemeApplier";
+import { publishAssetsToCdn, writeMarketplaceManifest } from "./marketplaceCloner";
+
+export function registerRoutes(app: Express) {
+  app.use("/api", singleTenantMiddleware);
+
+  app.get("/api/health", (req, res) => {
+    res.json({ ok: true, env: process.env.NODE_ENV, singleTenant: process.env.SINGLE_TENANT === "true" });
+  });
+
+  // 1) Scan
+  app.post("/api/brand-scanner/scan", async (req: Request, res: Response) => {
+    const { url, deep = true } = req.body || {};
+    if (!url) return res.status(400).json({ error: "url is required" });
+    try {
+      const result = await runBrandScannerJob({ url, deep });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "BrandScanner failed" });
+    }
+  });
+
+  // 2) Aplicar tokens no Admin
+  app.post("/api/brand-scanner/apply-admin-theme", async (req: Request, res: Response) => {
+    const { tokens } = req.body || {};
+    if (!tokens) return res.status(400).json({ error: "tokens required" });
+    try {
+      const out = await applyAdminTheme(tokens);
+      res.json({ applied: true, ...out });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "apply theme error" });
+    }
+  });
+
+  // 3) Clonar para Marketplace
+  app.post("/api/brand-scanner/clone-to-marketplace", async (req: Request, res: Response) => {
+    const { manifest } = req.body || {};
+    if (!manifest) return res.status(400).json({ error: "manifest required" });
+    try {
+      const published = await publishAssetsToCdn(manifest.assets || []);
+      const out = await writeMarketplaceManifest(manifest, published);
+      res.json({ cloned: true, manifestUrl: out.manifestUrl, assets: published });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "clone error" });
+    }
+  });
+}
+
+5) Frontend — Theme loader no Admin e Marketplace Router
+5.1) frontend/src/theme/useTokens.ts (hook para carregar tema)
+// frontend/src/theme/useTokens.ts
+import { useEffect, useState } from "react";
+
+export type Tokens = {
+  colors: any;
+  typography: any;
+  spacing: any;
+  radius: any;
+  elevation: any;
+};
+
+export function useTokens() {
+  const [tokens, setTokens] = useState<Tokens | null>(null);
+  const [cssUrl, setCssUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const themeJson = "/public/theme/theme.json";
+    const css = "/public/theme/generated.css";
+    fetch(themeJson).then(r => r.json()).then(setTokens).catch(() => {});
+    setCssUrl(css);
+  }, []);
+
+  useEffect(() => {
+    if (!cssUrl) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = cssUrl;
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }, [cssUrl]);
+
+  return tokens;
+}
+
+
+No Admin, basta importar useTokens() no layout raiz para aplicar as CSS variables (o link é injetado automaticamente).
+
+5.2) Components do Marketplace (reutilizáveis)
+
+Crie frontend/src/marketplace/components/Nav.tsx:
+
+import React from "react";
+
+export default function Nav() {
+  return (
+    <nav style={{
+      padding: "var(--eaas-space-2)",
+      display: "flex",
+      gap: "var(--eaas-space-2)",
+      alignItems: "center",
+      boxShadow: "var(--eaas-shadow-sm)",
+      background: "var(--eaas-color-surface)",
+      color: "var(--eaas-color-text)"
+    }}>
+      <strong style={{ fontSize: "1.1rem" }}>Marketplace</strong>
+      <div style={{ marginLeft: "auto" }}>
+        <a href="/" style={{ marginRight: 12 }}>Home</a>
+        <a href="/catalog">Catálogo</a>
+      </div>
+    </nav>
+  );
+}
+
+
+Crie frontend/src/marketplace/components/Hero.tsx:
+
+import React from "react";
+
+export default function Hero(props: { title?: string; subtitle?: string; imageUrl?: string }) {
+  return (
+    <section style={{
+      display: "grid",
+      gridTemplateColumns: "1.2fr 1fr",
+      gap: "var(--eaas-space-4)",
+      padding: "var(--eaas-space-6)",
+      background: "var(--eaas-color-background)",
+      color: "var(--eaas-color-text)"
+    }}>
+      <div>
+        <h1 style={{ fontSize: "2.2rem", margin: 0 }}>{props.title || "Bem-vindo!"}</h1>
+        <p style={{ fontSize: "1.1rem", opacity: .85 }}>{props.subtitle || "Seu site clonado com vendas habilitadas."}</p>
+        <a href="/catalog" style={{
+          display: "inline-block",
+          marginTop: 12,
+          padding: "10px 16px",
+          borderRadius: "var(--eaas-radius-md)",
+          background: "var(--eaas-color-primary)",
+          color: "white",
+          textDecoration: "none",
+          boxShadow: "var(--eaas-shadow-sm)"
+        }}>Ver produtos</a>
+      </div>
+      {props.imageUrl && (
+        <img src={props.imageUrl} alt="hero" style={{ width: "100%", borderRadius: "var(--eaas-radius-lg)" }}/>
+      )}
+    </section>
+  );
+}
+
+
+Crie frontend/src/marketplace/components/Section.tsx:
+
+import React from "react";
+
+export default function Section(props: { title?: string; children?: React.ReactNode }) {
+  return (
+    <section style={{ padding: "var(--eaas-space-5)" }}>
+      {props.title && <h2 style={{ marginTop: 0 }}>{props.title}</h2>}
+      <div>{props.children}</div>
+    </section>
+  );
+}
+
+
+Crie frontend/src/marketplace/components/Gallery.tsx:
+
+import React from "react";
+export default function Gallery(props: { images: string[] }) {
+  return (
+    <section style={{ padding: "var(--eaas-space-5)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 16 }}>
+        {props.images.map((src, i) => (
+          <img key={i} src={src} alt={`img-${i}`} style={{ width: "100%", borderRadius: "var(--eaas-radius-md)" }}/>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+
+Crie frontend/src/marketplace/components/Footer.tsx:
+
+import React from "react";
+
+export default function Footer() {
+  return (
+    <footer style={{
+      padding: "var(--eaas-space-4)",
+      background: "var(--eaas-color-surface)",
+      color: "var(--eaas-color-text)",
+      boxShadow: "var(--eaas-shadow-sm)"
+    }}>
+      <small>© {new Date().getFullYear()} Marketplace</small>
+    </footer>
+  );
+}
+
+5.3) Marketplace Router que lê o manifesto
+
+Crie frontend/src/marketplace/pages/MarketplaceRouter.tsx:
+
+import React, { useEffect, useMemo, useState } from "react";
+import Nav from "../components/Nav";
+import Hero from "../components/Hero";
+import Section from "../components/Section";
+import Gallery from "../components/Gallery";
+import Footer from "../components/Footer";
+
+type Manifest = {
+  siteUrl: string;
+  tokens: any;
+  assets: { url: string; hash: string }[];
+  pages: Array<{ url: string; route: string; layout: Array<{ kind: string; notes?: string }> }>;
+};
+
+export default function MarketplaceRouter() {
+  const [manifest, setManifest] = useState<Manifest | null>(null);
+
+  useEffect(() => {
+    fetch("/public/marketplace/manifest.json")
+      .then(r => r.json())
+      .then(setManifest)
+      .catch(() => {});
+  }, []);
+
+  const images = useMemo(() => (manifest?.assets || [])
+    .filter(a => a.url.match(/\.(png|jpe?g|webp|svg)$/i))
+    .map(a => a.url)
+  , [manifest]);
+
+  if (!manifest) return <div style={{ padding: 24 }}>Carregando Marketplace…</div>;
+
+  // Simples mapeamento de rota por path
+  const path = typeof window !== "undefined" ? window.location.pathname : "/";
+  const current = manifest.pages.find(p => p.route === path) || manifest.pages[0];
+
+  return (
+    <div style={{ background: "var(--eaas-color-background)", color: "var(--eaas-color-text)", fontFamily: "var(--eaas-font-stack)" }}>
+      <Nav />
+      {current?.layout?.map((blk, i) => {
+        switch (blk.kind) {
+          case "hero": return <Hero key={i} title="Seu novo site" subtitle={manifest.siteUrl} imageUrl={images[0]} />;
+          case "section": return <Section key={i} title="Seção"><p>Conteúdo importado/reestruturado.</p></Section>;
+          case "gallery": return <Gallery key={i} images={images.slice(0, 9)} />;
+          case "nav": return null; // Nav já renderizado
+          case "footer": return <Footer key={i} />;
+          default: return <Section key={i}><p>Bloco: {blk.kind}</p></Section>;
+        }
+      })}
+      {!current?.layout?.some(b => b.kind === "footer") && <Footer />}
+    </div>
+  );
+}
+
+
+Como usar: inclua esse MarketplaceRouter numa rota do seu app (ex.: /), ou crie uma página dedicada /marketplace.
+
+6) Integração do Checkout no Frontend (sandbox)
+
+Crie frontend/src/marketplace/components/BuyButton.tsx:
+
+import React, { useState } from "react";
+
+export default function BuyButton(props: { name: string; unit_amount: number; currency?: string }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleBuy() {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/checkout/create-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: [{ name: props.name, unit_amount: props.unit_amount, currency: props.currency || "usd", quantity: 1 }],
+          success_url: window.location.origin + "/?status=success",
+          cancel_url: window.location.origin + "/?status=cancel"
+        })
+      });
+      const js = await r.json();
+      if (js?.url) window.location.href = js.url;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button onClick={handleBuy} disabled={loading} style={{
+      padding: "10px 16px",
+      borderRadius: "var(--eaas-radius-md)",
+      background: "var(--eaas-color-accent)",
+      color: "white",
+      border: "none",
+      cursor: "pointer",
+      boxShadow: "var(--eaas-shadow-sm)"
+    }}>
+      {loading ? "Redirecionando…" : "Comprar"}
+    </button>
+  );
+}
+
+
+Use o botão dentro de uma Section ou Card de produto:
+
+// exemplo dentro de Section
+// <BuyButton name="Produto Exemplo" unit_amount={1999} currency="usd" />
+
+7) Fluxo de uso — ponta a ponta
+
+Rodar o Brand Scanner:
+
+POST /api/brand-scanner/scan
+{
+  "url": "https://site-do-cliente.com",
+  "deep": true
+}
+
+
+Resposta inclui { tokens, manifest } e salva em /.storage/brand-scanner/manifest.json.
+
+Aplicar tema no Admin:
+
+POST /api/brand-scanner/apply-admin-theme
+{
+  "tokens": { ...do passo anterior... }
+}
+
+
+Resposta: URLs de theme.json e generated.css. Admin já carrega via useTokens().
+
+Clonar para o Marketplace:
+
+POST /api/brand-scanner/clone-to-marketplace
+{
+  "manifest": { ...manifest do passo 1 ... }
+}
+
+
+Resposta traz manifestUrl (ex.: /public/marketplace/manifest.json) e assets publicados em /public/assets/....
+
+Frontend:
+
+O MarketplaceRouter lê /public/marketplace/manifest.json e renderiza páginas.
+
+O Admin já usa o CSS de tokens.
+
+Checkout Stripe (sandbox):
+
+O BuyButton chama POST /api/checkout/create-session e redireciona ao checkout.
+
+Configure o webhook (Stripe CLI / dashboard) apontando para /api/checkout/webhook.
+
+8) package.json — deps sugeridas (adicione se faltar)
+{
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.56",
+    "mime": "^4.0.4",
+    "puppeteer": "^22.15.0",
+    "stripe": "^16.9.0"
+  }
+}
+
+
+Se o seu frontend já existe, apenas adicione os arquivos. Se não existir, posso te mandar um vite template minimal.
+
+9) Checklist de produção (mesmo em sandbox)
+
+ Single-Tenant ativo (Etapa 1).
+
+ Brand Scanner 2.1 (mídias + manifesto + tokens).
+
+ Admin Theme Applier (CSS variables + JSON público).
+
+ Marketplace Cloner (assets -> /public/assets, manifest -> /public/marketplace/manifest.json).
+
+ Roteador do Marketplace lendo manifesto.
+
+ Stripe sandbox (create-session + webhook raw).
