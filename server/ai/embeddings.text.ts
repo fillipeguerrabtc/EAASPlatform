@@ -185,6 +185,7 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   const B = texts.length;
   const inputIds = new BigInt64Array(B * MAX_LEN);
   const attnMask = new BigInt64Array(B * MAX_LEN);
+  const tokenTypeIds = new BigInt64Array(B * MAX_LEN); // All zeros for MiniLM
   
   for (let b = 0; b < B; b++) {
     const toks = wordpiece(basicTokenize(texts[b] || ""), v);
@@ -195,12 +196,14 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
       const id = arr[i];
       inputIds[b * MAX_LEN + i] = BigInt(id);
       attnMask[b * MAX_LEN + i] = BigInt(id === padId ? 0 : 1);
+      tokenTypeIds[b * MAX_LEN + i] = BigInt(0); // Segment A (no segment B)
     }
   }
   
   const out = await sess.run({
     input_ids: new ort.Tensor("int64", inputIds, [B, MAX_LEN]),
-    attention_mask: new ort.Tensor("int64", attnMask, [B, MAX_LEN])
+    attention_mask: new ort.Tensor("int64", attnMask, [B, MAX_LEN]),
+    token_type_ids: new ort.Tensor("int64", tokenTypeIds, [B, MAX_LEN])
   });
   
   // Try last_hidden_state first (most common)

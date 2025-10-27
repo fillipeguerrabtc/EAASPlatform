@@ -1468,3 +1468,10 @@ export interface ThemeTokens {
 // MARKETING MODULE
 // ========================================
 export * from "./schema.marketing";
+
+// ========================================
+// AI MULTIMODAL 2.0 MODULE
+// ========================================
+export * from "./schema.ai.core";
+export * from "./schema.ai.graph";
+export * from "./schema.ai.eval";

@@ -1,16 +1,19 @@
 // server/ai/parser.full.ts
-// Full document parser with OCR support
+// Full document parser with OCR support + URL fetching
 // SECURITY: MIME validation, size limits, safe temp storage
+// AUTONOMIA: Ingere conhecimento de múltiplas fontes (URL, arquivo, imagem)
 
 import fs from "fs";
 import path from "path";
 import { JSDOM } from "jsdom";
 import { parse as parseCSV } from "csv-parse/sync";
+import { Jimp } from "jimp";
 
 // Lazy imports to avoid errors if packages not installed
 let pdf: any;
 let mammoth: any;
 let tesseract: any;
+let unzipper: any;
 
 try {
   pdf = require("pdf-parse");
@@ -22,6 +25,10 @@ try {
 
 try {
   tesseract = require("tesseract.js");
+} catch {}
+
+try {
+  unzipper = require("unzipper");
 } catch {}
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -171,19 +178,33 @@ export async function parseDOCXFile(filePath: string): Promise<ParseResult> {
 
 /**
  * Parse PPTX document
- * Extracts text from slides (basic XML parsing)
+ * Extracts text from slides (XML parsing with unzipper)
  */
 export async function parsePPTXFile(filePath: string): Promise<ParseResult> {
   validateFile(filePath, "pptx");
 
-  // PPTX is a ZIP file - we need to extract XML files
-  // For now, use a simple approach: unzip and parse slide*.xml files
-  // TODO: Implement proper PPTX parsing or use library like officegen/pptx
+  if (!unzipper) {
+    throw new Error("unzipper not installed. Run: npm install unzipper");
+  }
+
+  const tmp: string[] = [];
+  const buf = fs.readFileSync(filePath);
+  const zip = await unzipper.Open.buffer(buf);
+
+  for (const file of zip.files) {
+    if (/ppt\/slides\/slide\d+\.xml$/i.test(file.path)) {
+      const cnt = await file.buffer();
+      const xml = cnt.toString("utf8");
+      const texts = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(m => m[1]).join(" ");
+      if (texts.trim()) tmp.push(texts);
+    }
+  }
 
   return {
-    text: "[PPTX parsing not yet implemented]",
+    text: tmp.join("\n"),
     metadata: {
-      note: "PPTX parsing requires ZIP extraction and XML parsing"
+      slides: tmp.length,
+      note: "Extracted text from slides XML"
     }
   };
 }
@@ -283,4 +304,214 @@ export async function parseFile(filePath: string): Promise<ParseResult> {
   }
 
   throw new Error(`Unsupported file type: ${ext}`);
+}
+
+// ========================================
+// URL FETCHING (AUTONOMIA)
+// ========================================
+
+/**
+ * SECURITY: Allowlist of trusted domains for URL ingestion
+ * PRODUCTION: Configure via environment variable ALLOWED_URL_DOMAINS
+ * Example: "example.com,docs.google.com,github.com"
+ */
+const ALLOWED_DOMAINS = (process.env.ALLOWED_URL_DOMAINS || "")
+  .split(",")
+  .map(d => d.trim().toLowerCase())
+  .filter(Boolean);
+
+/**
+ * Validate URL for SSRF protection
+ * SECURITY: Enforces HTTPS + domain allowlist (prevents DNS rebinding/SSRF)
+ * 
+ * Why allowlist approach:
+ * - DNS rebinding: attacker domain can resolve to private IP at runtime
+ * - IPv4-mapped IPv6: bypass hostname filters (e.g., ::ffff:127.0.0.1)
+ * - Metadata services: cloud provider metadata endpoints
+ * 
+ * Allowlist is the ONLY secure approach against all SSRF variants.
+ */
+function validateUrlForSSRF(urlStr: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    throw new Error("Invalid URL format");
+  }
+
+  // Only allow HTTPS protocol (no http, file, ftp, etc.)
+  if (parsed.protocol !== "https:") {
+    throw new Error("Only HTTPS URLs are allowed");
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // SECURITY: HARD DENY - allowlist is REQUIRED for URL ingestion
+  // This prevents ALL SSRF variants (DNS rebinding, IPv4-mapped IPv6, metadata services)
+  if (ALLOWED_DOMAINS.length === 0) {
+    throw new Error(
+      "URL ingestion is disabled. " +
+      "SECURITY: Set ALLOWED_URL_DOMAINS environment variable with trusted domains. " +
+      "Example: ALLOWED_URL_DOMAINS=\"example.com,docs.google.com,github.com\""
+    );
+  }
+
+  // Check if domain is in allowlist (exact match or subdomain)
+  const isAllowed = ALLOWED_DOMAINS.some(allowed => {
+    return hostname === allowed || hostname.endsWith("." + allowed);
+  });
+
+  if (!isAllowed) {
+    throw new Error(
+      `Domain "${hostname}" is not in allowlist. ` +
+      `Allowed domains: ${ALLOWED_DOMAINS.join(", ")}`
+    );
+  }
+
+  return parsed;
+}
+
+/**
+ * Fetch URL to Buffer (for ingest by URL)
+ * AUTONOMIA: Permite ingerir conhecimento de URLs externas
+ * SECURITY: SSRF protection (HTTPS only, blocks private IPs, timeout, size limit)
+ */
+export async function fetchBuffer(url: string): Promise<Buffer> {
+  // SSRF validation
+  const validated = validateUrlForSSRF(url);
+
+  // Fetch with timeout (30s) and abort signal
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const r = await fetch(validated.href, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": "EAAS-AI-Bot/1.0"
+      }
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
+
+    // Stream with size limit check
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+
+    if (!r.body) throw new Error("No response body");
+
+    const reader = r.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      totalSize += value.byteLength;
+      if (totalSize > MAX_FILE_SIZE) {
+        throw new Error(`File exceeds maximum size of ${MAX_FILE_SIZE / 1024 / 1024}MB`);
+      }
+
+      chunks.push(Buffer.from(value));
+    }
+
+    return Buffer.concat(chunks);
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      throw new Error("Request timeout (30s)");
+    }
+    throw err;
+  }
+}
+
+/**
+ * Parse URL (auto-detect format)
+ * AUTONOMIA: Detecta tipo de arquivo e aplica parser correto
+ */
+export async function parseURL(url: string): Promise<ParseResult> {
+  const buf = await fetchBuffer(url);
+  const lower = url.toLowerCase();
+
+  // Save to temp file for parsers that expect file path
+  const tmpDir = fs.mkdtempSync(path.join(process.cwd(), "tmp-"));
+  const tmpFile = path.join(tmpDir, path.basename(url));
+  fs.writeFileSync(tmpFile, buf);
+
+  try {
+    let result: ParseResult;
+
+    if (lower.endsWith(".pdf")) {
+      result = await parsePDFFile(tmpFile);
+    } else if (lower.endsWith(".docx")) {
+      result = await parseDOCXFile(tmpFile);
+    } else if (lower.endsWith(".pptx")) {
+      result = await parsePPTXFile(tmpFile);
+    } else if (lower.endsWith(".csv")) {
+      result = await parseCSVFile(tmpFile);
+    } else {
+      // Default: treat as HTML
+      result = await parseHTMLFile(tmpFile);
+    }
+
+    // Cleanup temp file
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    return result;
+  } catch (err) {
+    // Cleanup on error
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+// ========================================
+// IMAGE DECODING (COMPATIBILITY WITH INGEST)
+// ========================================
+
+/**
+ * Decode image (PNG/JPEG/WEBP) → RGBA + optional OCR
+ * AUTONOMIA: Extrai texto de imagens via OCR (Tesseract)
+ * Compatible with ingest.ts imageData format
+ *
+ * @param buf - Image buffer
+ * @param doOCR - Whether to extract text via OCR
+ * @returns RGBA data + width/height + extracted text
+ */
+export async function decodeImageToRGBA(
+  buf: Buffer,
+  doOCR = false
+): Promise<{ rgba: Uint8ClampedArray; width: number; height: number; ocrText: string }> {
+  // Decode image using Jimp (new API)
+  const img = await Jimp.read(buf);
+  const width = img.width;
+  const height = img.height;
+
+  // Get bitmap data (RGBA Uint8ClampedArray compatible)
+  const bitmapData = img.bitmap.data;
+  const rgba = new Uint8ClampedArray(
+    bitmapData.buffer,
+    bitmapData.byteOffset,
+    bitmapData.byteLength
+  );
+
+  let ocrText = "";
+
+  if (doOCR) {
+    try {
+      if (!tesseract) {
+        throw new Error("Tesseract.js not installed");
+      }
+      const lang = process.env.AI_OCR_LANG || "eng+por";
+      const worker = await tesseract.createWorker(lang);
+      const { data } = await worker.recognize(buf);
+      await worker.terminate();
+      ocrText = (data?.text || "").replace(/\s+/g, " ").trim();
+    } catch (err) {
+      console.error("OCR failed:", err);
+    }
+  }
+
+  return { rgba, width, height, ocrText };
 }

@@ -38,6 +38,11 @@ const ingestTextSchema = z.object({
   source: z.string().optional().default("manual")
 });
 
+const ingestUrlSchema = z.object({
+  url: z.string().url(),
+  source: z.string().optional()
+});
+
 const router = Router();
 
 // Configure multer for file uploads
@@ -209,6 +214,59 @@ router.post("/query", isAuthenticated, async (req, res) => {
 // ========================================
 // INGEST
 // ========================================
+
+/**
+ * POST /api/ai/ingest/url
+ * Ingest document from URL (auto-detect format: HTML/PDF/DOCX/PPTX/CSV)
+ * AUTONOMIA: Permite ingerir conhecimento de URLs externas
+ *
+ * Body:
+ * {
+ *   url: string (valid URL),
+ *   source?: string (optional)
+ * }
+ */
+router.post("/ingest/url", isAuthenticated, async (req, res) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const tenantId = userId;
+
+    // Zod validation
+    const parseResult = ingestUrlSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid request",
+        details: parseResult.error.errors
+      });
+    }
+
+    const { url, source } = parseResult.data;
+
+    // Use parseURL from parser.full.ts (imported dynamically to avoid circular deps)
+    const { parseURL } = await import("./parser.full");
+    const parsed = await parseURL(url);
+
+    const docId = await ingestRawText(
+      tenantId,
+      parsed.text,
+      source || url,
+      { uploadedBy: userId, metadata: parsed.metadata }
+    );
+
+    res.json({
+      documentId: docId,
+      message: "URL content ingested successfully",
+      metadata: parsed.metadata
+    });
+  } catch (error: any) {
+    console.error("Ingest URL error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * POST /api/ai/ingest/file
