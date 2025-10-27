@@ -53,6 +53,7 @@ import HRPage from "@/pages/hr";
 import UsersPage from "@/pages/users";
 import UserApprovals from "@/pages/admin/user-approvals";
 import AiGovernance from "@/pages/admin/ai-governance";
+import AiPersonaPage from "@/pages/admin/ai-persona";
 import CrmWorkflowsPage from "@/pages/admin/crm-workflows";
 import HrLeaveRequestsPage from "@/pages/admin/hr-leave-requests";
 import HrPerformanceReviewsPage from "@/pages/admin/hr-performance-reviews";
@@ -169,6 +170,7 @@ function Router() {
             <Route path="/admin/reports/templates" component={ReportTemplatesPage} />
             <Route path="/admin/user-approvals" component={UserApprovals} />
             <Route path="/admin/ai-governance" component={AiGovernance} />
+            <Route path="/admin/ai-persona" component={AiPersonaPage} />
             <Route path="/admin/ai/knowledge-base" component={AiKnowledgeBasePage} />
             <Route path="/" component={Shop} />
             <Route path="/shop" component={Shop} />
@@ -229,6 +231,7 @@ function Router() {
           <Route path="/hr/leave-requests" component={HrLeaveRequestsPage} />
           <Route path="/admin/user-approvals" component={UserApprovals} />
           <Route path="/admin/ai-governance" component={AiGovernance} />
+          <Route path="/admin/ai-persona" component={AiPersonaPage} />
           <Route path="/shop" component={Shop} />
           <Route path="/cart" component={CartPage} />
         </>

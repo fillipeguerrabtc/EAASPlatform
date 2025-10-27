@@ -18,7 +18,8 @@ import {
   Warehouse,
   UserCog,
   Brain,
-  Palette
+  Palette,
+  Smile
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,6 +52,12 @@ export function AppSidebar() {
       url: "/admin/ai-governance",
       icon: Brain,
       testId: "ai-governance",
+    },
+    {
+      title: "AI Persona & Tom",
+      url: "/admin/ai-persona",
+      icon: Smile,
+      testId: "ai-persona",
     },
   ];
 
