@@ -50,6 +50,7 @@ import CompanyProfile from "@/pages/admin/company-profile";
 import RBAC from "@/pages/rbac";
 import InventoryPage from "@/pages/inventory";
 import HRPage from "@/pages/hr";
+import UsersPage from "@/pages/users";
 import UserApprovals from "@/pages/admin/user-approvals";
 import AiGovernance from "@/pages/admin/ai-governance";
 import CrmWorkflowsPage from "@/pages/admin/crm-workflows";
@@ -221,7 +222,7 @@ function Router() {
           <Route path="/categories" component={CategoriesPage} />
           <Route path="/tenant-settings" component={TenantSettings} />
           <Route path="/company-profile" component={CompanyProfile} />
-          <Route path="/users" component={HRPage} />
+          <Route path="/users" component={UsersPage} />
           <Route path="/rbac" component={RBAC} />
           <Route path="/inventory" component={InventoryPage} />
           <Route path="/hr" component={HRPage} />

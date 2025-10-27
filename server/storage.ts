@@ -97,6 +97,8 @@ import {
   type InsertProductVariantValue,
   type ProductVariant,
   type InsertProductVariant,
+  type CalendarEventParticipant,
+  type InsertCalendarEventParticipant,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -150,6 +152,7 @@ import {
   productVariantOptions,
   productVariantValues,
   productVariants,
+  calendarEventParticipants,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -272,6 +275,11 @@ export interface IStorage {
   createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
   updateCalendarEvent(id: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined>;
   deleteCalendarEvent(id: string): Promise<void>;
+  
+  // Calendar Event Participants
+  listCalendarEventParticipants(eventId: string): Promise<CalendarEventParticipant[]>;
+  createCalendarEventParticipant(participant: InsertCalendarEventParticipant): Promise<CalendarEventParticipant>;
+  deleteCalendarEventParticipant(id: string): Promise<void>;
   
   // Categories
   listCategories(): Promise<Category[]>;
@@ -1168,6 +1176,25 @@ export class DbStorage implements IStorage {
   async deleteCalendarEvent(id: string): Promise<void> {
     await db.delete(calendarEvents)
       .where(eq(calendarEvents.id, id));
+  }
+
+  // ========================================
+  // CALENDAR EVENT PARTICIPANTS
+  // ========================================
+
+  async listCalendarEventParticipants(eventId: string): Promise<CalendarEventParticipant[]> {
+    return await db.select().from(calendarEventParticipants)
+      .where(eq(calendarEventParticipants.eventId, eventId));
+  }
+
+  async createCalendarEventParticipant(insertParticipant: InsertCalendarEventParticipant): Promise<CalendarEventParticipant> {
+    const result = await db.insert(calendarEventParticipants).values(insertParticipant).returning();
+    return result[0];
+  }
+
+  async deleteCalendarEventParticipant(id: string): Promise<void> {
+    await db.delete(calendarEventParticipants)
+      .where(eq(calendarEventParticipants.id, id));
   }
 
   // ========================================

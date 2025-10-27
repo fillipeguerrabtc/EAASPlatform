@@ -7,7 +7,7 @@ import { z } from "zod";
 // ENUMS
 // ========================================
 
-export const userRoleEnum = pgEnum("user_role", ["super_admin", "tenant_admin", "manager", "agent", "customer"]);
+export const userRoleEnum = pgEnum("user_role", ["super_admin", "tenant_admin", "manager", "agent", "customer", "partner", "supplier"]);
 export const conversationChannelEnum = pgEnum("conversation_channel", ["web", "whatsapp", "facebook", "instagram"]);
 export const conversationStatusEnum = pgEnum("conversation_status", ["open", "in_progress", "resolved", "closed"]);
 export const productTypeEnum = pgEnum("product_type", ["product", "service", "experience", "real_estate", "vehicle"]);
@@ -476,11 +476,23 @@ export const calendarEvents = pgTable("calendar_events", {
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time").notNull(),
   resourceId: varchar("resource_id"),
-  customerId: varchar("customer_id").references(() => customers.id).notNull(),
+  customerId: varchar("customer_id").references(() => customers.id),
   orderId: varchar("order_id").references(() => orders.id),
+  createdBy: varchar("created_by").references((): any => users.id),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Calendar Event Participants (internal users + external emails)
+export const calendarEventParticipants = pgTable("calendar_event_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: varchar("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references((): any => users.id, { onDelete: "cascade" }), // Internal participant
+  externalEmail: text("external_email"), // External participant
+  name: text("name"), // Display name for external participants
+  status: text("status").default("pending").notNull(), // 'pending' | 'accepted' | 'declined'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ========================================
@@ -680,6 +692,11 @@ export type Payment = typeof payments.$inferSelect;
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
 export type CalendarEvent = typeof calendarEvents.$inferSelect;
+
+// Calendar Event Participants
+export const insertCalendarEventParticipantSchema = createInsertSchema(calendarEventParticipants).omit({ id: true, createdAt: true });
+export type InsertCalendarEventParticipant = z.infer<typeof insertCalendarEventParticipantSchema>;
+export type CalendarEventParticipant = typeof calendarEventParticipants.$inferSelect;
 
 // Financial Accounts
 export const insertFinancialAccountSchema = createInsertSchema(financialAccounts).omit({ id: true, createdAt: true, updatedAt: true });

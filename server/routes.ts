@@ -2515,6 +2515,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
+  // CALENDAR EVENT PARTICIPANTS
+  // ========================================
+
+  app.get("/api/calendar-events/:id/participants", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const participants = await storage.listCalendarEventParticipants(req.params.id);
+      res.json(participants);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/calendar-events/:id/participants", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { insertCalendarEventParticipantSchema } = await import("@shared/schema");
+      const data = insertCalendarEventParticipantSchema.parse({
+        ...req.body,
+        eventId: req.params.id
+      });
+      const participant = await storage.createCalendarEventParticipant(data);
+      res.status(201).json(participant);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/calendar-events/:eventId/participants/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteCalendarEventParticipant(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
   // CATEGORIES
   // ========================================
 
