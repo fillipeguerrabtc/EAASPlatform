@@ -60,6 +60,7 @@ export default function AiKnowledgeBasePage() {
   const [editingItem, setEditingItem] = useState<KnowledgeBaseItem | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isUploading, setIsUploading] = useState(false);
 
   const { data: items, isLoading } = useQuery<KnowledgeBaseItem[]>({
     queryKey: ["/api/knowledge-base"],
@@ -128,6 +129,105 @@ export default function AiKnowledgeBasePage() {
       metadata: item.metadata || {},
       isActive: item.isActive,
     });
+  };
+
+  const handleDownloadAttachment = (item: KnowledgeBaseItem) => {
+    const attachment = item.metadata?.attachment;
+    if (!attachment?.content) return;
+
+    // Create download link from base64
+    const link = document.createElement('a');
+    link.href = attachment.content;
+    link.download = attachment.fileName || 'attachment.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Download iniciado",
+      description: `Baixando "${attachment.fileName}"`,
+    });
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Only accept text files (limit 1MB for base64 storage)
+    if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
+      toast({
+        title: "Formato inv\u00e1lido",
+        description: "Apenas arquivos .txt s\u00e3o suportados no momento.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > 1024 * 1024) { // 1MB limit
+      toast({
+        title: "Arquivo muito grande",
+        description: "O tamanho m\u00e1ximo \u00e9 1MB para anexos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const text = await file.text();
+      
+      // Convert file to base64 for storage
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        
+        // Set form values
+        if (!form.getValues('title')) {
+          form.setValue('title', file.name.replace('.txt', ''));
+        }
+        form.setValue('content', text);
+        
+        // Store FULL file as attachment in metadata (base64)
+        const currentMetadata = (form.getValues('metadata') as Record<string, any>) || {};
+        form.setValue('metadata', {
+          ...(typeof currentMetadata === 'object' && currentMetadata !== null ? currentMetadata : {}),
+          attachment: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            uploadedAt: new Date().toISOString(),
+            content: base64, // Base64 encoded file for download
+          },
+        });
+
+        toast({
+          title: "Arquivo anexado!",
+          description: `"${file.name}" foi anexado e pode ser baixado posteriormente.`,
+        });
+        setIsUploading(false);
+      };
+
+      reader.onerror = () => {
+        toast({
+          title: "Erro ao processar arquivo",
+          description: "N\u00e3o foi poss\u00edvel ler o arquivo.",
+          variant: "destructive",
+        });
+        setIsUploading(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (error) {
+      toast({
+        title: "Erro ao ler arquivo",
+        description: "N\u00e3o foi poss\u00edvel processar o arquivo.",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    } finally {
+      // Reset file input
+      event.target.value = '';
+    }
   };
 
   const onSubmit = (data: FormValues) => {
@@ -309,6 +409,17 @@ export default function AiKnowledgeBasePage() {
                     <TableCell>{format(new Date(item.updatedAt), "dd/MM/yyyy")}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
+                        {item.metadata?.attachment && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDownloadAttachment(item)}
+                            data-testid={`button-download-${item.id}`}
+                            title="Baixar anexo"
+                          >
+                            <Download className="w-4 h-4 text-green-600" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -392,6 +503,27 @@ export default function AiKnowledgeBasePage() {
                 )}
               />
 
+              {/* File Upload Section */}
+              <div className="space-y-2">
+                <Label>Importar Arquivo TXT (Opcional)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept=".txt,text/plain"
+                    onChange={handleFileUpload}
+                    disabled={isUploading}
+                    className="flex-1"
+                    data-testid="input-file-upload"
+                  />
+                  {isUploading && (
+                    <span className="text-sm text-muted-foreground">Carregando...</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Carregue um arquivo .txt e o conteúdo será automaticamente extraído
+                </p>
+              </div>
+
               <FormField
                 control={form.control}
                 name="content"
@@ -401,7 +533,7 @@ export default function AiKnowledgeBasePage() {
                     <FormControl>
                       <Textarea
                         {...field}
-                        placeholder="Conteúdo completo do documento"
+                        placeholder="Conteúdo completo do documento ou importe um arquivo acima"
                         className="min-h-40"
                         data-testid="textarea-content"
                       />
