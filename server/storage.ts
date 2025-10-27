@@ -694,6 +694,12 @@ export class DbStorage implements IStorage {
   }
 
   async createTenant(insertTenant: InsertTenant): Promise<Tenant> {
+    // SINGLE-TENANT ENFORCEMENT: Atomic check to prevent race conditions
+    const existing = await db.select().from(tenants).limit(1);
+    if (existing.length > 0) {
+      throw new Error("Este sistema suporta apenas uma empresa (single-tenant). Uma empresa já existe.");
+    }
+    
     const result = await db.insert(tenants).values(insertTenant).returning();
     return result[0];
   }

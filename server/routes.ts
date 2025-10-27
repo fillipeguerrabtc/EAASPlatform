@@ -122,6 +122,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
+      // Single-tenant enforcement error from storage layer
+      if (error.message?.includes("single-tenant") || error.message?.includes("Uma empresa já existe")) {
+        return res.status(409).json({ error: error.message });
+      }
       res.status(500).json({ error: error.message });
     }
   });
