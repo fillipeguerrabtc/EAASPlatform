@@ -333,7 +333,7 @@
       "desc": "Smart calendar for scheduling and events"
     },
     "tenants": {
-      "desc": "Multi-tenant architecture for multiple companies"
+      "desc": "Centralized business settings management"
     },
     "ready": {
       "title": "Ready to Get Started?",

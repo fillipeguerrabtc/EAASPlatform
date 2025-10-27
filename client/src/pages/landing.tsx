@@ -52,7 +52,7 @@ export default function Landing() {
       <SEO
         title="EAAS - Everything As A Service Platform | AI-Powered Business Automation"
         description="Revolutionary all-in-one PaaS platform with AI, CRM 360°, Complete ERP, Marketplace Universal, Omnichat, and Payment Management. Simplify, scale, and automate your business operations."
-        keywords="paas platform, all-in-one business platform, ai automation, crm 360, erp software, marketplace platform, omnichat, business automation, multi-tenant saas, payment management, knowledge base ai"
+        keywords="paas platform, all-in-one business platform, ai automation, crm 360, erp software, marketplace platform, omnichat, business automation, secure platform, payment management, knowledge base ai"
         canonical="https://eaas.com"
         ogTitle="EAAS - Everything As A Service Platform"
         ogDescription="Revolutionary all-in-one PaaS platform with AI, CRM 360°, ERP, Marketplace, and Omnichat. Built for scale."
@@ -136,7 +136,7 @@ export default function Landing() {
             <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
-                <span>Multi-tenant</span>
+                <span>Seguro e Escalável</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-purple-600 dark:text-purple-500" />

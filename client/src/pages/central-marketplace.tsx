@@ -108,8 +108,8 @@ export default function CentralMarketplace() {
             },
             {
               icon: Shield,
-              title: "Multi-tenant Seguro",
-              description: "Isolamento total de dados entre tenants com RBAC",
+              title: "Segurança Avançada",
+              description: "Proteção de dados com RBAC e criptografia",
             },
             {
               icon: Check,
