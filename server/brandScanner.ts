@@ -24,6 +24,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
+import { extractPaletteFromPng, extractTypographyFromHtml, buildDesignTokens } from './brandScannerTheme';
+import { buildCloneManifest } from './brandCloneManifest';
 
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
@@ -88,6 +90,11 @@ export interface BrandAnalysis {
     hero?: string;
   };
   mediaAssets?: MediaAsset[]; // ✅ NOVO
+  
+  // ✅ ENHANCED - Advanced analysis
+  advancedPalette?: { hex: string; weight: number }[]; // CIELAB server-side
+  advancedTypography?: { family: string; source: string }[]; // Regex HTML extraction
+  cloneManifest?: any; // Clone manifest for marketplace
 }
 
 // =========================================
@@ -672,18 +679,80 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
       }
 
       // ====================================
+      // ADVANCED ANALYSIS (ENHANCED)
+      // ====================================
+      let advancedPalette: { hex: string; weight: number }[] | undefined;
+      let advancedTypography: { family: string; source: string }[] | undefined;
+      let enhancedTokens: ThemeTokens | undefined = brandData.tokens;
+      let cloneManifest: any | undefined;
+      
+      // CIELAB server-side palette extraction from screenshot
+      try {
+        const pngBuffer = Buffer.from(fullScreenshot, 'base64');
+        advancedPalette = await extractPaletteFromPng(pngBuffer, 8);
+        console.log(`✓ CIELAB palette extracted: ${advancedPalette.length} colors`);
+      } catch (error: any) {
+        console.warn(`⚠️ Advanced palette extraction failed: ${error.message}`);
+      }
+      
+      // Typography extraction from HTML
+      try {
+        const htmlContent = await page.content();
+        advancedTypography = extractTypographyFromHtml(htmlContent);
+        console.log(`✓ Typography extracted: ${advancedTypography.length} fonts`);
+      } catch (error: any) {
+        console.warn(`⚠️ Typography extraction failed: ${error.message}`);
+      }
+      
+      // Build enhanced design tokens (combine client-side + server-side data)
+      try {
+        if (advancedPalette && advancedTypography) {
+          enhancedTokens = buildDesignTokens(advancedPalette, advancedTypography);
+          console.log('✓ Enhanced design tokens built');
+        }
+      } catch (error: any) {
+        console.warn(`⚠️ Design tokens build failed: ${error.message}`);
+      }
+      
+      // Build clone manifest for marketplace
+      try {
+        const htmlContent = await page.content();
+        cloneManifest = buildCloneManifest(
+          url,
+          htmlContent,
+          enhancedTokens || brandData.tokens,
+          mediaAssets.map(m => ({
+            localPath: m.localPath,
+            originalUrl: m.url,
+            type: m.mimeType.startsWith('image/') ? 'image' as const : 
+                  m.mimeType.startsWith('video/') ? 'video' as const : 'other' as const,
+            hash: m.sha256,
+            bytes: m.sizeBytes,
+          }))
+        );
+        console.log('✓ Clone manifest built');
+      } catch (error: any) {
+        console.warn(`⚠️ Clone manifest build failed: ${error.message}`);
+      }
+
+      // ====================================
       // ASSEMBLE RESULTS
       // ====================================
       const analysis: BrandAnalysis = {
         colors: brandData.colors,
-        tokens: brandData.tokens,
+        tokens: enhancedTokens || brandData.tokens,
         assets: brandData.assets,
         typography: brandData.typography,
         spacing: brandData.spacing,
         screenshots: {
           full: `data:image/png;base64,${fullScreenshot}`,
         },
-        mediaAssets, // ✅ NOVO
+        mediaAssets,
+        
+        // Enhanced data
+        advancedPalette,
+        advancedTypography,
+        cloneManifest,
       };
 
       console.log('✅ Brand Scanner 2.1 PRO - Extraction Complete:', {
@@ -693,6 +762,11 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         fonts: brandData.typography,
         mediaDownloaded: mediaAssets.length,
         totalMediaBytes: mediaAssets.reduce((sum, m) => sum + m.sizeBytes, 0),
+        advancedFeatures: {
+          cielabPalette: !!advancedPalette,
+          htmlTypography: !!advancedTypography,
+          cloneManifest: !!cloneManifest,
+        },
       });
 
       return analysis;

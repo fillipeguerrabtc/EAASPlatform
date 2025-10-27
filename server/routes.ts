@@ -364,6 +364,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Apply theme tokens to Admin Dashboard
+  app.post("/api/brand-scanner/apply-admin-theme", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      // Zod validation schema
+      const schema = z.object({
+        tokens: z.object({
+          colors: z.object({
+            primary: z.string().optional(),
+            secondary: z.string().optional(),
+            accent: z.string().optional(),
+            surface: z.string().optional(),
+            background: z.string().optional(),
+            text: z.string().optional(),
+            palette: z.array(z.string()).optional(),
+          }),
+          typography: z.object({
+            fontFamilies: z.array(z.string()),
+            baseSizePx: z.number().optional(),
+          }),
+          spacing: z.object({
+            base: z.number(),
+            scale: z.array(z.number()),
+          }),
+          radius: z.object({
+            sm: z.number(),
+            md: z.number(),
+            lg: z.number(),
+            pill: z.number(),
+          }),
+          elevation: z.object({
+            sm: z.string(),
+            md: z.string(),
+            lg: z.string(),
+          }),
+        }),
+      });
+
+      const validated = schema.parse(req.body);
+      
+      const { applyAdminTheme } = await import("./adminThemeApplier");
+      const result = await applyAdminTheme(validated.tokens);
+      
+      console.log("✅ Admin theme applied:", result);
+      res.json(result);
+      
+    } catch (error: any) {
+      console.error("Apply admin theme error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.errors 
+        });
+      }
+      
+      res.status(500).json({ 
+        error: "Failed to apply admin theme",
+        details: error.message 
+      });
+    }
+  });
+
+  // Clone brand to marketplace (publish assets + write manifest)
+  app.post("/api/brand-scanner/clone-to-marketplace", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      // Zod validation schema
+      const schema = z.object({
+        manifest: z.object({
+          siteUrl: z.string().url(),
+          tokens: z.any().refine(val => val !== undefined, { message: "tokens is required" }),
+          assets: z.array(z.object({
+            localPath: z.string(),
+            originalUrl: z.string(),
+            type: z.enum(['image', 'video', 'svg', 'other']),
+            hash: z.string(),
+            bytes: z.number(),
+          })),
+          pages: z.array(z.object({
+            url: z.string(),
+            route: z.string(),
+            layout: z.array(z.object({
+              kind: z.enum(['hero', 'section', 'gallery', 'footer', 'nav', 'content']),
+              notes: z.string().optional(),
+            })),
+          })),
+          notes: z.array(z.string()),
+        }),
+      });
+
+      const validated = schema.parse(req.body);
+      
+      // Ensure tokens is present
+      if (!validated.manifest.tokens) {
+        return res.status(400).json({ error: "tokens is required in manifest" });
+      }
+      
+      const { publishAssetsToCdn, writeMarketplaceManifest } = await import("./marketplaceCloner");
+      
+      // Step 1: Publish assets to CDN
+      const publishedAssets = await publishAssetsToCdn(validated.manifest.assets);
+      console.log(`✅ Published ${publishedAssets.length} assets to CDN`);
+      
+      // Step 2: Write marketplace manifest
+      const manifestResult = await writeMarketplaceManifest(validated.manifest as any, publishedAssets);
+      console.log("✅ Marketplace manifest written:", manifestResult);
+      
+      res.json({
+        assetsPublished: publishedAssets.length,
+        manifestUrl: manifestResult.manifestUrl,
+      });
+      
+    } catch (error: any) {
+      console.error("Clone to marketplace error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.errors 
+        });
+      }
+      
+      res.status(500).json({ 
+        error: "Failed to clone to marketplace",
+        details: error.message 
+      });
+    }
+  });
+
   // ========================================
   // BRAND SCANNER 2.0 (Extract + Clone)
   // ========================================
@@ -5546,6 +5674,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Erro ao deletar product bundle" });
     }
   });
+
+  // ========================================
+  // SERVE STATIC FILES FROM .storage/public
+  // ========================================
+  // Serve brand scanner assets, theme files, and marketplace manifest
+  const STORAGE_DIR = process.env.STORAGE_DIR || "./.storage";
+  const publicPath = `${STORAGE_DIR}/public`;
+  
+  app.use("/public", express.static(publicPath, {
+    maxAge: "1h", // Cache for 1 hour
+    etag: true,
+    lastModified: true,
+  }));
+  
+  console.log(`✓ Serving static files from ${publicPath} at /public`);
 
   const httpServer = createServer(app);
 
