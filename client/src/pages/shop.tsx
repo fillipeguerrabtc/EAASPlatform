@@ -20,8 +20,9 @@ import {
   Sparkles
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { type Product } from "@shared/schema";
+import { type Product, type ProductVariantOption, type ProductVariantValue, type ProductVariant } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { EaasLogo } from "@/components/eaas-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SEO } from "@/components/seo";
@@ -58,26 +59,29 @@ export default function Shop() {
   });
 
   const addToCartMutation = useMutation({
-    mutationFn: async (product: Product) => {
+    mutationFn: async ({ productId, variantId }: { productId: string; variantId?: string }) => {
       const currentItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
-      const existingItemIndex = currentItems.findIndex(item => item.productId === product.id);
+      const existingItemIndex = currentItems.findIndex(
+        (item) => item.productId === productId && item.variantId === variantId
+      );
       
-      // SECURE: Only send productId and quantity - server calculates prices
+      // SECURE: Only send productId, variantId, and quantity - server calculates prices
       let newItems;
       if (existingItemIndex >= 0) {
         newItems = currentItems.map((item, index) => 
           index === existingItemIndex 
-            ? { productId: item.productId, quantity: item.quantity + 1 }
-            : { productId: item.productId, quantity: item.quantity }
+            ? { productId: item.productId, variantId: item.variantId, quantity: item.quantity + 1 }
+            : { productId: item.productId, variantId: item.variantId, quantity: item.quantity }
         );
       } else {
         newItems = [...currentItems, { 
-          productId: product.id, 
+          productId, 
+          variantId,
           quantity: 1
         }];
       }
       
-      // Server recalculates total from actual product prices
+      // Server recalculates total from actual product prices or variant prices
       if (cart?.id) {
         return apiRequest("PATCH", `/api/carts/${cart.id}`, { items: newItems });
       } else {
@@ -121,6 +125,162 @@ export default function Shop() {
   // Calculate cart items
   const cartItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
   const cartItemCount = cartItems.length;
+
+  // Component for variant selection
+  const ProductVariantSelector = ({ product }: { product: Product }) => {
+    const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
+    const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+    const [dialogOpen, setDialogOpen] = useState(false);
+
+    const { data: options } = useQuery<ProductVariantOption[]>({
+      queryKey: ["/api/products", product.id, "variant-options"],
+      enabled: dialogOpen,
+    });
+
+    const { data: allOptionValues } = useQuery<Record<string, ProductVariantValue[]>>({
+      queryKey: ["/api/products", product.id, "all-option-values"],
+      queryFn: async () => {
+        if (!options || options.length === 0) return {};
+        
+        const valuesMap: Record<string, VariantValue[]> = {};
+        for (const option of options) {
+          const response = await fetch(`/api/variant-options/${option.id}/values`);
+          if (response.ok) {
+            valuesMap[option.id] = await response.json();
+          } else {
+            valuesMap[option.id] = [];
+          }
+        }
+        return valuesMap;
+      },
+      enabled: !!options && options.length > 0,
+    });
+
+    const { data: variants } = useQuery<ProductVariant[]>({
+      queryKey: ["/api/products", product.id, "variants"],
+      enabled: dialogOpen,
+    });
+
+    const handleAddToCart = () => {
+      if (!selectedVariantId && options && options.length > 0) {
+        toast({
+          title: "Selecione as opções",
+          description: "Por favor, selecione todas as opções do produto antes de adicionar ao carrinho.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      addToCartMutation.mutate({ productId: product.id, variantId: selectedVariantId });
+      setDialogOpen(false);
+      setSelectedOptions({});
+      setSelectedVariantId(undefined);
+    };
+
+    const activeVariants = variants?.filter(v => v.isActive) || [];
+    const hasVariants = activeVariants.length > 0;
+
+    const selectedVariant = selectedVariantId 
+      ? activeVariants.find(v => v.id === selectedVariantId)
+      : undefined;
+
+    const displayPrice = selectedVariant?.price || product.price;
+    const displayInventory = selectedVariant 
+      ? selectedVariant.inventory 
+      : product.inventory;
+
+    return (
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+          <Button 
+            className="flex-1" 
+            disabled={addToCartMutation.isPending}
+            data-testid={`button-add-to-cart-${product.id}`}
+          >
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            {t('shop.addToCart')}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{product.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {hasVariants && options && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Selecione as opções:</p>
+                {options.map((option) => {
+                  const values = allOptionValues?.[option.id] || [];
+                  return (
+                    <div key={option.id} className="space-y-2">
+                      <label className="text-sm font-medium">{option.name}</label>
+                      <Select
+                        value={selectedOptions[option.name] || ""}
+                        onValueChange={(value) => {
+                          const newOptions = { ...selectedOptions, [option.name]: value };
+                          setSelectedOptions(newOptions);
+
+                          const matchingVariant = activeVariants.find(v => {
+                            const variantValues = v.variantValues as any;
+                            return options.every(opt => {
+                              return variantValues?.[opt.name] === newOptions[opt.name];
+                            });
+                          });
+
+                          setSelectedVariantId(matchingVariant?.id);
+                        }}
+                      >
+                        <SelectTrigger data-testid={`select-variant-${option.id}`}>
+                          <SelectValue placeholder={`Selecione ${option.name}`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {values.map((val) => (
+                            <SelectItem key={val.id} value={val.value}>
+                              {val.value}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="space-y-2 pt-4 border-t">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-primary">R$ {displayPrice}</span>
+              </div>
+              {displayInventory !== null && displayInventory !== undefined && (
+                <div className="text-sm">
+                  {displayInventory > 0 ? (
+                    <span className="text-green-600 dark:text-green-400">
+                      {displayInventory} {t('shop.inStock')}
+                    </span>
+                  ) : (
+                    <span className="text-destructive">{t('shop.outOfStock')}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Button 
+              className="w-full" 
+              onClick={handleAddToCart}
+              disabled={
+                addToCartMutation.isPending ||
+                (displayInventory !== null && displayInventory <= 0) ||
+                (hasVariants && !selectedVariantId)
+              }
+              data-testid="button-confirm-add-to-cart"
+            >
+              {addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  };
 
   const renderProductCard = (product: Product) => {
     const Icon = productTypeIcons[product.type];
@@ -177,15 +337,7 @@ export default function Shop() {
           </div>
         </CardContent>
         <CardFooter className="flex gap-2">
-          <Button 
-            className="flex-1" 
-            onClick={() => addToCartMutation.mutate(product)}
-            disabled={addToCartMutation.isPending || (product.inventory !== null && product.inventory <= 0)}
-            data-testid={`button-add-to-cart-${product.id}`}
-          >
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            {addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart')}
-          </Button>
+          <ProductVariantSelector product={product} />
           <Button 
             variant="outline"
             data-testid={`button-view-details-${product.id}`}

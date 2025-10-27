@@ -1685,7 +1685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { items } = req.body;
 
-      // SECURITY: Validate items and recalculate total from actual product prices
+      // SECURITY: Validate items and recalculate total from actual product/variant prices
       const products = await storage.listProducts();
       const validatedItems = [];
       let total = 0;
@@ -1699,13 +1699,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: `Product ${product.name} is not available` });
         }
 
+        let price = product.price;
+        let inventory = product.inventory;
+
+        // If variantId is provided, use variant price and inventory
+        if (item.variantId) {
+          const variant = await storage.getProductVariant(item.variantId);
+          if (!variant || variant.productId !== item.productId) {
+            return res.status(400).json({ error: `Variant ${item.variantId} not found for product ${product.name}` });
+          }
+          if (!variant.isActive) {
+            return res.status(400).json({ error: `Variant is not available` });
+          }
+          
+          // Use variant price if set, otherwise fall back to product price
+          price = variant.price || product.price;
+          inventory = variant.inventory;
+        }
+
+        // Check inventory if tracking is enabled
+        if (inventory !== null && inventory !== undefined) {
+          const quantity = Math.max(1, parseInt(item.quantity) || 1);
+          if (inventory < quantity) {
+            return res.status(400).json({ 
+              error: `Insufficient stock for ${product.name}. Available: ${inventory}, Requested: ${quantity}` 
+            });
+          }
+        }
+
         validatedItems.push({
           productId: item.productId,
+          variantId: item.variantId || null,
           quantity: Math.max(1, parseInt(item.quantity) || 1),
-          price: product.price, // Use actual price from database
+          price, // Use actual price from database (product or variant)
         });
         
-        total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+        total += parseFloat(price) * validatedItems[validatedItems.length - 1].quantity;
       }
 
       const cart = await storage.createCart({
@@ -1734,7 +1763,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Items are required" });
       }
 
-      // SECURITY: Validate items and recalculate total from actual product prices
+      // SECURITY: Validate items and recalculate total from actual product/variant prices
       const products = await storage.listProducts();
       const validatedItems = [];
       let total = 0;
@@ -1748,13 +1777,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: `Product ${product.name} is not available` });
         }
 
+        let price = product.price;
+        let inventory = product.inventory;
+
+        // If variantId is provided, use variant price and inventory
+        if (item.variantId) {
+          const variant = await storage.getProductVariant(item.variantId);
+          if (!variant || variant.productId !== item.productId) {
+            return res.status(400).json({ error: `Variant ${item.variantId} not found for product ${product.name}` });
+          }
+          if (!variant.isActive) {
+            return res.status(400).json({ error: `Variant is not available` });
+          }
+          
+          // Use variant price if set, otherwise fall back to product price
+          price = variant.price || product.price;
+          inventory = variant.inventory;
+        }
+
+        // Check inventory if tracking is enabled
+        if (inventory !== null && inventory !== undefined) {
+          const quantity = Math.max(1, parseInt(item.quantity) || 1);
+          if (inventory < quantity) {
+            return res.status(400).json({ 
+              error: `Insufficient stock for ${product.name}. Available: ${inventory}, Requested: ${quantity}` 
+            });
+          }
+        }
+
         validatedItems.push({
           productId: item.productId,
+          variantId: item.variantId || null,
           quantity: Math.max(1, parseInt(item.quantity) || 1),
-          price: product.price, // Use actual price from database
+          price, // Use actual price from database (product or variant)
         });
         
-        total += parseFloat(product.price) * validatedItems[validatedItems.length - 1].quantity;
+        total += parseFloat(price) * validatedItems[validatedItems.length - 1].quantity;
       }
 
       const cart = await storage.updateCart(req.params.id, {
