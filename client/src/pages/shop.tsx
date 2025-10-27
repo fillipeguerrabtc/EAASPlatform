@@ -176,6 +176,7 @@ export default function Shop() {
     const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
     const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [actionType, setActionType] = useState<'cart' | 'buy'>('cart');
 
     const { data: options } = useQuery<ProductVariantOption[]>({
       queryKey: ["/api/products", product.id, "variant-options"],
@@ -238,6 +239,11 @@ export default function Shop() {
       setSelectedVariantId(undefined);
     };
 
+    const openDialog = (type: 'cart' | 'buy') => {
+      setActionType(type);
+      setDialogOpen(true);
+    };
+
     const activeVariants = variants?.filter(v => v.isActive) || [];
     const hasVariants = activeVariants.length > 0;
 
@@ -251,17 +257,8 @@ export default function Shop() {
       : product.inventory;
 
     return (
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogTrigger asChild>
-          <Button 
-            className="flex-1" 
-            disabled={addToCartMutation.isPending}
-            data-testid={`button-add-to-cart-${product.id}`}
-          >
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            {t('shop.addToCart')}
-          </Button>
-        </DialogTrigger>
+      <>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{product.name}</DialogTitle>
@@ -329,33 +326,44 @@ export default function Shop() {
               <Button 
                 variant="outline"
                 className="flex-1" 
-                onClick={handleAddToCart}
+                onClick={actionType === 'cart' ? handleAddToCart : handleBuyNow}
                 disabled={
-                  addToCartMutation.isPending ||
+                  (actionType === 'cart' ? addToCartMutation.isPending : buyNowMutation.isPending) ||
                   (displayInventory !== null && displayInventory <= 0) ||
                   (hasVariants && !selectedVariantId)
                 }
-                data-testid="button-confirm-add-to-cart"
+                data-testid={actionType === 'cart' ? "button-confirm-add-to-cart" : "button-confirm-buy-now"}
               >
                 <ShoppingCart className="mr-2 h-4 w-4" />
-                {addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart')}
-              </Button>
-              <Button 
-                className="flex-1" 
-                onClick={handleBuyNow}
-                disabled={
-                  buyNowMutation.isPending ||
-                  (displayInventory !== null && displayInventory <= 0) ||
-                  (hasVariants && !selectedVariantId)
+                {actionType === 'cart' 
+                  ? (addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart'))
+                  : (buyNowMutation.isPending ? t('common.processing') : 'Comprar Agora')
                 }
-                data-testid="button-buy-now"
-              >
-                {buyNowMutation.isPending ? t('common.processing') : 'Comprar Agora'}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      <Button 
+        className="flex-1" 
+        disabled={addToCartMutation.isPending}
+        onClick={() => openDialog('cart')}
+        data-testid={`button-add-to-cart-${product.id}`}
+      >
+        <ShoppingCart className="mr-2 h-4 w-4" />
+        {t('shop.addToCart')}
+      </Button>
+
+      <Button 
+        className="flex-1" 
+        onClick={() => openDialog('buy')}
+        disabled={buyNowMutation.isPending}
+        data-testid={`button-buy-now-${product.id}`}
+      >
+        Comprar Agora
+      </Button>
+      </>
     );
   };
 
@@ -413,10 +421,13 @@ export default function Shop() {
             )}
           </div>
         </CardContent>
-        <CardFooter className="flex gap-2">
-          <ProductVariantSelector product={product} />
+        <CardFooter className="flex flex-col gap-2">
+          <div className="flex gap-2 w-full">
+            <ProductVariantSelector product={product} />
+          </div>
           <Button 
             variant="outline"
+            className="w-full"
             data-testid={`button-view-details-${product.id}`}
           >
             {t('shop.viewDetails')}
