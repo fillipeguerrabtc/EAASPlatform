@@ -545,8 +545,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "mode must be 'extract' or 'clone'" });
       }
 
-      // Create job in database
-      const job = await storage.createBrandJob({
+      // Enqueue job in PostgreSQL queue
+      const { JobQueueService } = await import("./queue/service");
+      const jobType = mode === 'extract' ? 'brand_extract' : 'brand_clone';
+      
+      const queueJob = await JobQueueService.enqueue(
+        tenantId,
+        jobType as any,
+        {
+          url,
+          userId: (req as any).user?.id,
+        },
+        {
+          priority: 5, // Medium priority
+        }
+      );
+
+      // Also create entry in brandJobs table for compatibility
+      const brandJob = await storage.createBrandJob({
         tenantId,
         url,
         mode: mode as 'extract' | 'clone',
@@ -554,12 +570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: (req as any).user?.id,
       });
 
-      // Execute job asynchronously (in production this would be a queue)
-      executeJob(job.id, url, mode).catch(err => {
-        console.error(`Job ${job.id} failed:`, err);
-      });
-
-      res.status(201).json({ jobId: job.id, status: 'queued' });
+      res.status(201).json({ jobId: queueJob.id, brandJobId: brandJob.id, status: 'queued' });
     } catch (error: any) {
       console.error("Failed to create brand job:", error);
       res.status(500).json({ error: error.message });

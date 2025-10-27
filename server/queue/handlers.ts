@@ -600,3 +600,108 @@ export async function handleMarketingCampaign(job: Job): Promise<any> {
     throw error;
   }
 }
+
+// ========================================
+// BRAND SCANNER EXTRACT HANDLER
+// ========================================
+
+export type BrandExtractPayload = {
+  tenantId: string;
+  url: string;
+  userId?: string;
+};
+
+export async function handleBrandExtract(
+  payload: BrandExtractPayload,
+  job: Job
+): Promise<{ success: boolean; themeId?: string }> {
+  const { tenantId, url, userId = "system" } = payload;
+
+  try {
+    logger.info({ jobId: job.id, url }, "Starting brand extraction");
+
+    // Import scanner
+    const { scanWebsiteBrandPro } = await import("../brandScannerPro");
+    
+    // Run scan with timeout
+    const brandAnalysis = await scanWebsiteBrandPro(url, {
+      maxDepth: 2,
+      maxPages: 10,
+      timeout: 30000,
+      respectRobots: true,
+    });
+
+    // Save theme bundle
+    const { storage } = await import("../storage");
+    const nextVersion = await storage.getNextThemeVersion(tenantId);
+    
+    // Convert logos to assets format
+    const assets = brandAnalysis.logos.map(logo => ({
+      url: logo.url,
+      type: logo.type as 'logo' | 'favicon',
+    }));
+    
+    const theme = await storage.createThemeBundle({
+      tenantId,
+      version: nextVersion,
+      tokens: brandAnalysis.tokens,
+      assets,
+      jobId: job.id,
+      sourceUrl: url,
+      createdBy: userId,
+      isActive: false,
+    });
+
+    logger.info({ jobId: job.id, themeId: theme.id }, "Brand extraction completed");
+
+    return { success: true, themeId: theme.id };
+  } catch (error: any) {
+    logger.error({ jobId: job.id, error: error.message }, "Brand extraction failed");
+    throw error;
+  }
+}
+
+// ========================================
+// BRAND SCANNER CLONE HANDLER
+// ========================================
+
+export type BrandClonePayload = {
+  tenantId: string;
+  url: string;
+  userId?: string;
+};
+
+export async function handleBrandClone(
+  payload: BrandClonePayload,
+  job: Job
+): Promise<{ success: boolean; cloneId?: string }> {
+  const { tenantId, url, userId = "system" } = payload;
+
+  try {
+    logger.info({ jobId: job.id, url }, "Starting website clone");
+
+    // Import clone builder
+    const { buildStaticSnapshot } = await import("../cloneBuilder");
+    
+    // Build clone
+    const cloneBundle = await buildStaticSnapshot(url);
+
+    // Save clone bundle
+    const { storage } = await import("../storage");
+    const clone = await storage.createCloneSnapshot({
+      tenantId,
+      url,
+      html: cloneBundle.html,
+      manifest: JSON.stringify(cloneBundle.manifest),
+      jobId: job.id,
+      createdBy: userId,
+    });
+
+    logger.info({ jobId: job.id, cloneId: clone.id }, "Website clone completed");
+
+    return { success: true, cloneId: clone.id };
+  } catch (error: any) {
+    logger.error({ jobId: job.id, error: error.message }, "Website clone failed");
+    throw error;
+  }
+}

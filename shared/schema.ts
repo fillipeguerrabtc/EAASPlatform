@@ -1469,7 +1469,7 @@ export interface ThemeTokens {
 // ========================================
 
 export const jobStatusEnum = pgEnum("job_status", ["pending", "processing", "completed", "failed", "cancelled"]);
-export const jobTypeEnum = pgEnum("job_type", ["crm_csv_import", "marketing_campaign", "email_send", "other"]);
+export const jobTypeEnum = pgEnum("job_type", ["crm_csv_import", "marketing_campaign", "brand_extract", "brand_clone", "email_send", "other"]);
 
 export const jobQueue = pgTable("job_queue", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
