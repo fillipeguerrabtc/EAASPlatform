@@ -25,12 +25,23 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Backend:** Node.js with Express, PostgreSQL (Neon) managed by Drizzle ORM, and TypeScript.
 - **Architecture:** Single-tenant, Role-Based Access Control (RBAC).
 - **URL Structure:** `/admin/*`, `/shop`, `/my-account`.
-- **Database Schema:** 32 tables covering tenant settings, users, marketplace, CRM, Omnichat, AI knowledge base, payments, calendar events, Inventory, HR, AI Planning, and AI Governance (aiGovernance for LTL+D policies, aiTraces for Critics decision history, aiMetrics for aggregated stats).
+- **Database Schema:** 42 tables covering tenant settings, users, marketplace, CRM (10 new tables), Omnichat, AI knowledge base, payments, calendar events, Inventory, HR, AI Planning, and AI Governance (aiGovernance for LTL+D policies, aiTraces for Critics decision history, aiMetrics for aggregated stats).
 - **Backend API:** Comprehensive CRUD operations with Zod validation.
 - **Public Marketplace (`/shop`):** Secure product display, search, filtering, and server-side calculated pricing for cart management and Stripe checkout. Includes a complete product variants system with SKU-based inventory tracking and multi-option variants.
 - **AI Autonomous Sales System:** Incorporates a Planner/ToT (Tree-of-Thought) System based on POMDP, a Multi-Layer Critics System for validation (Factual, Numeric, Ethical, Risk), and Hybrid RAG Scoring. Critics System is fully integrated in all AI response flows with persistence in `aiTraces` and aggregated metrics in `aiMetrics`.
 - **ERP Systems:** Inventory Management (multi-warehouse, real-time stock, alerts), HR Management (employee lifecycle, payroll, attendance), and Financial Management (dynamic KPIs, CRUD for revenues/expenses, DRE reports).
 - **Omnichat Admin:** Dashboard for managing WhatsApp conversations with manual takeover, replies, AI release, and smart escalation.
+- **CRM Enterprise Module (NEW):** Production-grade customer relationship management system with complete Single-Tenant enforcement:
+  - **Database Tables (10):** `companies` (B2B organizations), `contacts` (individuals with LGPD/GDPR consent), `pipelines` (sales processes), `pipelineStages` (pipeline stages with types: lead/qualified/proposal/negotiation/won/lost), `deals` (sales opportunities with value tracking), `activities` (interactions: note/call/meeting/task/email/whatsapp/facebook/instagram/web), `segments` (dynamic lists with queryJson filtering), `imports` (CSV import history), `crmAudit` (audit trail for all changes), `contactTags` (normalized tag pivot table)
+  - **Deduplication System:** Email-based (case-insensitive), phone-based (normalized), and name similarity detection with optional merge candidates
+  - **Service Layer:** Full CRUD operations with RBAC enforcement, pagination, and Single-Tenant context injection via `withTenant()` helper
+  - **Segments Engine:** Dynamic contact/company/deal filtering using JSON query rules with operators (eq/neq/contains/starts/ends/gte/lte/in) and AND/OR logic
+  - **CSV Import Queue:** Asynchronous BullMQ worker with Redis for background processing, real-time progress tracking, field mapping, and error handling
+  - **Integration Webhooks:** Twilio WhatsApp sandbox (auto-creates contacts + activities from incoming messages), Meta Facebook/Instagram (message ingestion with webhook verification)
+  - **REST API (40+ endpoints):** Complete CRUD for companies, contacts, pipelines, deals, activities, segments; Segment execution (/segments/:id/run); CSV upload (/imports/upload); Activity feed (/activities/feed); Deal statistics by stage (/stats/deals-by-stage)
+  - **Technologies:** Drizzle ORM, Zod validation, BullMQ + IORedis, Multer (file uploads), csv-parse, advanced SQL with indexes on tenantId/email/phone/stageId/dueAt
+  - **Audit Trail:** Complete change history logging (create/update/delete/import/message actions) with before/after snapshots and context metadata
+  - **Security:** SQL injection protection via parameterized queries, RBAC permission checks, Single-Tenant enforcement on all operations, file upload validation
 - **Categories Admin UI:** Hierarchical category management with infinite recursive visualization and cycle prevention.
 - **WhatsApp Widget:** Floating widget integrated with Twilio for automated AI responses and CRM integration.
 - **Shopping System:** Supports anonymous sessionId-based cart management and an authenticated customer area (`/my-account`) with order history, tracking, shopping cart, and 24/7 AI support.
@@ -46,8 +57,10 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 
 ### External Dependencies
 - **Stripe:** Payment processing.
-- **Twilio WhatsApp:** WhatsApp integration.
+- **Twilio WhatsApp:** WhatsApp integration (CRM webhooks enabled).
+- **Meta (Facebook/Instagram):** Social media integration (CRM webhooks enabled).
 - **OpenAI:** AI capabilities.
 - **PostgreSQL (Neon):** Primary database.
 - **Drizzle ORM:** Object-Relational Mapper.
 - **Puppeteer + Chromium:** Intelligent Brand Scanner.
+- **BullMQ + Redis:** CRM asynchronous job processing (CSV imports).

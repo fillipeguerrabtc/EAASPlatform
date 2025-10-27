@@ -76,5 +76,17 @@ export async function singleTenantGuard(req: Request, _res: Response, next: Next
   }
 }
 
+/**
+ * Helper to ensure tenantId is always present in data objects
+ * Usage: const payload = withTenant({ name: "Acme Corp" });
+ * Result: { name: "Acme Corp", tenantId: "tenant_xxx" }
+ */
+export function withTenant<T extends Record<string, any>>(data: T): T & { tenantId: string } {
+  if (!cachedPrimaryTenantId) {
+    throw new Error("Primary tenant not initialized. Call getPrimaryTenantId() first.");
+  }
+  return { ...data, tenantId: cachedPrimaryTenantId };
+}
+
 // Export for use in migrations
 export { getPrimaryTenantId };

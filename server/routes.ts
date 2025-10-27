@@ -60,6 +60,9 @@ import { planAction, type PlannerState } from "./ai/planner";
 import { singleTenantGuard } from "./singleTenant";
 // Pagination Helper
 import { parseListQuery } from "./lib/pagination";
+// CRM Module
+import { registerCrmRoutes } from "./modules/crm/routes";
+import { twilioWhatsappWebhook, metaWebhookVerify, metaWebhookReceive } from "./modules/crm/integrations";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -112,6 +115,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Enforces single-tenant architecture by freezing tenantId to fixed value
   // Prevents multi-tenant data leakage and prepares for future column cleanup
   app.use(singleTenantGuard);
+
+  // ========================================
+  // CRM INTEGRATION WEBHOOKS (before auth - webhooks don't need auth)
+  // ========================================
+  
+  // Twilio WhatsApp webhook
+  app.post("/api/integrations/twilio/whatsapp", twilioWhatsappWebhook);
+  
+  // Meta (Facebook/Instagram) webhooks
+  app.get("/api/integrations/meta/webhook", metaWebhookVerify);
+  app.post("/api/integrations/meta/webhook", metaWebhookReceive);
+
+  // ========================================
+  // CRM MODULE ROUTES
+  // ========================================
+  registerCrmRoutes(app);
 
   // ========================================
   // AUTHENTICATION

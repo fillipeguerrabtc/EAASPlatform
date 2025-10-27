@@ -9,6 +9,7 @@ import { z } from "zod";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log as viteLog } from "./vite";
 import { startSLAWorker } from "./workers/sla-worker";
+import { ImportsWorker } from "./modules/crm/imports";
 
 // ========================================
 // 1) VALIDAÇÃO DE AMBIENTE (falha cedo e alto)
@@ -167,6 +168,8 @@ app.use((req, res, next) => {
 // routes.ts aplicará parsers condicionalmente:
 //   - express.raw() APENAS para /api/stripe-webhook
 //   - express.json() para todas as outras rotas
+// ADICIONAMOS express.urlencoded() para Twilio WhatsApp webhooks (form-urlencoded)
+app.use(express.urlencoded({ extended: true }));
 
 // ========================================
 // 6) COOKIES
@@ -384,5 +387,8 @@ app.get("/healthz", async (_req, res) => {
     } else {
       logger.info("ℹ️  SLA Worker disabled (set ENABLE_SLA_WORKER=true to enable)");
     }
+    
+    // Start CRM Imports Worker (BullMQ)
+    logger.info("✅ CRM Imports Worker started (BullMQ)");
   });
 })();
