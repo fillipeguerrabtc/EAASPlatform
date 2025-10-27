@@ -1,6 +1,6 @@
 // server/ai/ann.ts
 // ANN HNSW incremental index with automatic checkpointing
-// SECURITY: Tenant-isolated indexes, graceful shutdown
+// SECURITY: Tenant-isolated indexes, graceful shutdown, singleton cache
 
 import { HierarchicalNSW } from "hnswlib-node";
 import fs from "fs";
@@ -10,6 +10,9 @@ type Space = "cosine" | "l2";
 type Modality = "text" | "image";
 
 const DIR = path.resolve(process.cwd(), "data", "ann");
+
+// Singleton cache to prevent memory leaks from signal handlers
+const indexCache = new Map<string, AnnIndex>();
 
 function ensureDir() {
   if (!fs.existsSync(DIR)) {
@@ -25,8 +28,13 @@ function idxPath(tenantId: string, modality: Modality, dim: number, space: Space
   };
 }
 
+function cacheKey(tenantId: string, modality: Modality, dim: number, space: Space): string {
+  return `${tenantId}:${modality}:${dim}:${space}`;
+}
+
 /**
  * ANN HNSW index with checkpoint support
+ * SINGLETON: Use getInstance() to prevent memory leaks
  */
 export class AnnIndex {
   private idx: HierarchicalNSW | null = null;
@@ -36,8 +44,9 @@ export class AnnIndex {
   private tenantId: string;
   private lastSave = 0;
   private dirty = false;
+  private static signalHandlersRegistered = false;
 
-  constructor(tenantId: string, modality: Modality, dim: number, space: Space = "cosine") {
+  private constructor(tenantId: string, modality: Modality, dim: number, space: Space = "cosine") {
     this.tenantId = tenantId;
     this.modality = modality;
     this.dim = dim;
@@ -46,10 +55,25 @@ export class AnnIndex {
   }
 
   /**
+   * Get or create singleton instance
+   */
+  static getInstance(tenantId: string, modality: Modality, dim: number, space: Space = "cosine"): AnnIndex {
+    const key = cacheKey(tenantId, modality, dim, space);
+    
+    if (!indexCache.has(key)) {
+      indexCache.set(key, new AnnIndex(tenantId, modality, dim, space));
+    }
+    
+    return indexCache.get(key)!;
+  }
+
+  /**
    * Load existing index or create new one
    * @param capacity - Initial capacity (can grow)
    */
   loadOrCreate(capacity: number) {
+    if (this.idx) return; // Already loaded
+
     const p = idxPath(this.tenantId, this.modality, this.dim, this.space);
     const idx = new HierarchicalNSW(this.space, this.dim);
 
@@ -71,20 +95,30 @@ export class AnnIndex {
       console.log(`✅ Created new ANN index: ${p.bin}`);
     }
 
-    // Register shutdown handlers for checkpoint
-    process.on("SIGINT", () => {
-      try {
-        this.saveNow();
-      } catch {}
-      process.exit(0);
-    });
+    // Register shutdown handlers ONCE for all indexes
+    if (!AnnIndex.signalHandlersRegistered) {
+      AnnIndex.signalHandlersRegistered = true;
 
-    process.on("SIGTERM", () => {
-      try {
-        this.saveNow();
-      } catch {}
-      process.exit(0);
-    });
+      process.on("SIGINT", () => {
+        try {
+          // Save all cached indexes
+          for (const idx of indexCache.values()) {
+            idx.saveNow();
+          }
+        } catch {}
+        process.exit(0);
+      });
+
+      process.on("SIGTERM", () => {
+        try {
+          // Save all cached indexes
+          for (const idx of indexCache.values()) {
+            idx.saveNow();
+          }
+        } catch {}
+        process.exit(0);
+      });
+    }
   }
 
   /**
@@ -146,7 +180,7 @@ export class AnnIndex {
   /**
    * Force save now
    */
-  private saveNow() {
+  saveNow() {
     if (!this.idx) return;
 
     const p = idxPath(this.tenantId, this.modality, this.dim, this.space);

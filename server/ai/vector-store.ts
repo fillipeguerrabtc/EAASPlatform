@@ -9,7 +9,7 @@ import {
   aiChunks,
   aiAnnMeta
 } from "@shared/schema.ai.core";
-import { eq, sql, inArray } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
 import { AnnIndex } from "./ann";
 
 type Modality = "text" | "image";
@@ -76,6 +76,14 @@ export async function upsertTextEmbedding(
   vector: number[],
   model: string
 ) {
+  // Check if exists to prevent metadata drift
+  const existing = await db
+    .select()
+    .from(aiEmbeddingsText)
+    .where(eq(aiEmbeddingsText.chunkId, chunkId));
+
+  const isNew = !existing.length;
+
   await db
     .insert(aiEmbeddingsText)
     .values({
@@ -94,12 +102,15 @@ export async function upsertTextEmbedding(
       }
     });
 
-  // ANN incremental update
-  const ann = new AnnIndex(tenantId, "text", vector.length, "cosine");
+  // ANN incremental update (singleton)
+  const ann = AnnIndex.getInstance(tenantId, "text", vector.length, "cosine");
   ann.loadOrCreate(1000);
   ann.add([vector], [idHash(chunkId)]);
 
-  await upsertAnnMeta(tenantId, "text", vector.length, +1);
+  // Only increment metadata if new chunk
+  if (isNew) {
+    await upsertAnnMeta(tenantId, "text", vector.length, +1);
+  }
 }
 
 /**
@@ -111,7 +122,7 @@ export async function knnText(
   queryVec: number[],
   k = 50
 ): Promise<Array<{ chunkId: string; score: number }>> {
-  const ann = new AnnIndex(tenantId, "text", queryVec.length, "cosine");
+  const ann = AnnIndex.getInstance(tenantId, "text", queryVec.length, "cosine");
   ann.loadOrCreate(1000);
 
   const out = ann.search(queryVec, k);
@@ -149,6 +160,14 @@ export async function upsertImageEmbedding(
   vector: number[],
   model: string
 ) {
+  // Check if exists to prevent metadata drift
+  const existing = await db
+    .select()
+    .from(aiEmbeddingsImage)
+    .where(eq(aiEmbeddingsImage.chunkId, chunkId));
+
+  const isNew = !existing.length;
+
   await db
     .insert(aiEmbeddingsImage)
     .values({
@@ -167,12 +186,15 @@ export async function upsertImageEmbedding(
       }
     });
 
-  // ANN incremental update
-  const ann = new AnnIndex(tenantId, "image", vector.length, "cosine");
+  // ANN incremental update (singleton)
+  const ann = AnnIndex.getInstance(tenantId, "image", vector.length, "cosine");
   ann.loadOrCreate(1000);
   ann.add([vector], [idHash(chunkId)]);
 
-  await upsertAnnMeta(tenantId, "image", vector.length, +1);
+  // Only increment metadata if new chunk
+  if (isNew) {
+    await upsertAnnMeta(tenantId, "image", vector.length, +1);
+  }
 }
 
 /**
@@ -184,7 +206,7 @@ export async function knnImage(
   queryVec: number[],
   k = 50
 ): Promise<Array<{ chunkId: string; score: number }>> {
-  const ann = new AnnIndex(tenantId, "image", queryVec.length, "cosine");
+  const ann = AnnIndex.getInstance(tenantId, "image", queryVec.length, "cosine");
   ann.loadOrCreate(1000);
 
   const out = ann.search(queryVec, k);
@@ -214,15 +236,20 @@ export async function knnImage(
 
 /**
  * Get chunks by IDs (supports both text and image chunks)
- * SECURITY: Returns chunks for specified IDs only
+ * SECURITY: Tenant-isolated - only returns chunks for specified tenant
  */
-export async function getChunksByIds(ids: string[]): Promise<any[]> {
+export async function getChunksByIds(tenantId: string, ids: string[]): Promise<any[]> {
   if (!ids.length) return [];
 
   const rows = await db
     .select()
     .from(aiChunks)
-    .where(inArray(aiChunks.id, ids));
+    .where(
+      and(
+        eq(aiChunks.tenantId, tenantId),
+        inArray(aiChunks.id, ids)
+      )
+    );
 
   return rows as any[];
 }
