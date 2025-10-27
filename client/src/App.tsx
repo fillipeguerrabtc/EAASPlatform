@@ -223,6 +223,7 @@ function Router() {
           <Route path="/finance/reports" component={FinanceReports} />
           <Route path="/categories" component={CategoriesPage} />
           <Route path="/tenant-settings" component={TenantSettings} />
+          <Route path="/admin/tenant-settings" component={TenantSettings} />
           <Route path="/company-profile" component={CompanyProfile} />
           <Route path="/users" component={UsersPage} />
           <Route path="/rbac" component={RBAC} />

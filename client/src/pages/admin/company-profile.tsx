@@ -9,10 +9,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { z } from "zod";
-import { Building2, Globe, Sparkles } from "lucide-react";
+import { Building2, Globe } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useState } from "react";
 
 const profileSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -26,8 +25,6 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function CompanyProfile() {
   const { toast } = useToast();
-  const [isScanning, setIsScanning] = useState(false);
-  const [websiteUrl, setWebsiteUrl] = useState("");
 
   // Fetch the single tenant (first one in the system)
   const { data: tenants, isLoading } = useQuery<any[]>({
@@ -68,42 +65,6 @@ export default function CompanyProfile() {
       });
     },
   });
-
-  const scanBrandMutation = useMutation({
-    mutationFn: async (url: string) => {
-      if (!tenant?.id) throw new Error("Tenant not found");
-      return await apiRequest("POST", `/api/tenants/${tenant.id}/scan-brand`, { websiteUrl: url });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tenants"] });
-      toast({
-        title: "Brand Scanner concluído!",
-        description: "Identidade visual extraída com sucesso",
-      });
-      setIsScanning(false);
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Erro no Brand Scanner",
-        description: error.message || "Falha ao escanear website",
-      });
-      setIsScanning(false);
-    },
-  });
-
-  const handleScanBrand = () => {
-    if (!websiteUrl) {
-      toast({
-        variant: "destructive",
-        title: "URL obrigatória",
-        description: "Informe a URL do website para escanear",
-      });
-      return;
-    }
-    setIsScanning(true);
-    scanBrandMutation.mutate(websiteUrl);
-  };
 
   if (isLoading) {
     return (
@@ -275,50 +236,6 @@ export default function CompanyProfile() {
         </CardContent>
       </Card>
 
-      {/* Brand Scanner Inteligente */}
-      <Card data-testid="card-brand-scanner">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            Brand Scanner Inteligente
-          </CardTitle>
-          <CardDescription>
-            Extraia automaticamente logo, cores e fontes do seu website
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="website-url">URL do Website</Label>
-            <Input
-              id="website-url"
-              type="url"
-              placeholder="https://www.exemplo.com"
-              value={websiteUrl}
-              onChange={(e) => setWebsiteUrl(e.target.value)}
-              data-testid="input-scan-website-url"
-            />
-          </div>
-
-          <Button 
-            onClick={handleScanBrand}
-            disabled={isScanning || !websiteUrl}
-            className="w-full"
-            data-testid="button-scan-brand"
-          >
-            {isScanning ? (
-              <>
-                <Sparkles className="mr-2 h-4 w-4 animate-spin" />
-                Escaneando Website...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Escanear Website
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }
