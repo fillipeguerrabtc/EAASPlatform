@@ -135,6 +135,7 @@ export const users = pgTable("users", {
 // Products/Services/Experiences
 export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().default("default"),
   type: productTypeEnum("type").default("product").notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -147,7 +148,9 @@ export const products = pgTable("products", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_products_tenant").on(table.tenantId),
+]);
 
 // Product Variant Options (defines option types like "Color", "Size", "Material")
 export const productVariantOptions = pgTable("product_variant_options", {
@@ -170,6 +173,7 @@ export const productVariantValues = pgTable("product_variant_values", {
 // Product Variants (specific SKU combinations with individual pricing, stock, images)
 export const productVariants = pgTable("product_variants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().default("default"),
   productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
   sku: text("sku").notNull().unique(), // Unique SKU identifier
   variantValues: jsonb("variant_values").notNull(), // { "Color": "Red", "Size": "M" }
@@ -180,7 +184,9 @@ export const productVariants = pgTable("product_variants", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_product_variants_tenant").on(table.tenantId),
+]);
 
 // Categories (for products/services organization)
 export const categories = pgTable("categories", {

@@ -24,11 +24,8 @@ export class ERPService {
     limit?: number;
     offset?: number;
   }) {
-    const conditions = [
-      // CRITICAL: Always filter by tenantId... wait, products don't have tenantId!
-      // This is a problem - existing products table doesn't have tenantId
-      // We need to handle this differently
-    ];
+    // CRITICAL: tenantId filter
+    const conditions = [eq(products.tenantId, tenantId)];
     
     const { search, category, isActive, limit = 50, offset = 0 } = filters || {};
     
@@ -49,27 +46,26 @@ export class ERPService {
       conditions.push(eq(products.isActive, isActive));
     }
     
-    const query = db
+    return await db
       .select()
       .from(products)
+      .where(and(...conditions))
       .limit(limit)
       .offset(offset)
       .orderBy(desc(products.createdAt));
-    
-    if (conditions.length > 0) {
-      return await query.where(and(...conditions));
-    }
-    
-    return await query;
   }
   
   async getProduct(tenantId: string, productId: string) {
-    // CRITICAL: No tenantId in existing products table
-    // This is a limitation we need to document
+    // CRITICAL: tenantId filter
     const [product] = await db
       .select()
       .from(products)
-      .where(eq(products.id, productId))
+      .where(
+        and(
+          eq(products.tenantId, tenantId),
+          eq(products.id, productId)
+        )
+      )
       .limit(1);
     
     return product || null;
@@ -92,6 +88,7 @@ export class ERPService {
     const [product] = await db
       .insert(products)
       .values({
+        tenantId,
         type: (data.type as any) || "product",
         name: data.name,
         description: data.description,
@@ -119,13 +116,19 @@ export class ERPService {
     metadata: any;
     isActive: boolean;
   }>) {
+    // CRITICAL: tenantId filter to prevent cross-tenant modification
     const [updated] = await db
       .update(products)
       .set({
         ...data,
         updatedAt: new Date(),
       })
-      .where(eq(products.id, productId))
+      .where(
+        and(
+          eq(products.tenantId, tenantId),
+          eq(products.id, productId)
+        )
+      )
       .returning();
     
     return updated || null;
@@ -136,29 +139,31 @@ export class ERPService {
   // ========================================
   
   async listVariants(tenantId: string, productId?: string) {
-    const conditions = [];
+    // CRITICAL: tenantId filter
+    const conditions = [eq(productVariants.tenantId, tenantId)];
     
     if (productId) {
       conditions.push(eq(productVariants.productId, productId));
     }
     
-    const query = db
+    return await db
       .select()
       .from(productVariants)
+      .where(and(...conditions))
       .orderBy(desc(productVariants.createdAt));
-    
-    if (conditions.length > 0) {
-      return await query.where(and(...conditions));
-    }
-    
-    return await query;
   }
   
   async getVariant(tenantId: string, variantId: string) {
+    // CRITICAL: tenantId filter
     const [variant] = await db
       .select()
       .from(productVariants)
-      .where(eq(productVariants.id, variantId))
+      .where(
+        and(
+          eq(productVariants.tenantId, tenantId),
+          eq(productVariants.id, variantId)
+        )
+      )
       .limit(1);
     
     return variant || null;
@@ -176,6 +181,7 @@ export class ERPService {
     const [variant] = await db
       .insert(productVariants)
       .values({
+        tenantId,
         productId: data.productId,
         sku: data.sku,
         variantValues: data.variantValues as any,

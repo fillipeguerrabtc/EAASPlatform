@@ -423,16 +423,23 @@ export class ERP2Service {
       discountCents = Math.min(discountCents, order.subtotalCents);
       
       // ATOMIC: Increment redemption counter
+      // CRITICAL: tenantId filter to prevent cross-tenant modification
       await tx
         .update(coupons)
         .set({
           timesRedeemed: sql`${coupons.timesRedeemed} + 1`,
         })
-        .where(eq(coupons.id, coupon.id));
+        .where(
+          and(
+            eq(coupons.tenantId, tenantId),
+            eq(coupons.id, coupon.id)
+          )
+        );
       
       // Update order with discount
       const newTotal = order.subtotalCents + order.taxCents + order.shippingCents - discountCents;
       
+      // CRITICAL: tenantId filter to prevent cross-tenant modification
       await tx
         .update(orders)
         .set({
@@ -440,7 +447,12 @@ export class ERP2Service {
           totalCents: newTotal,
           updatedAt: new Date(),
         })
-        .where(eq(orders.id, orderId));
+        .where(
+          and(
+            eq(orders.tenantId, tenantId),
+            eq(orders.id, orderId)
+          )
+        );
       
       return {
         discountCents,
@@ -555,13 +567,19 @@ export class ERP2Service {
       .returning();
     
     // Update order status
+    // CRITICAL: tenantId filter to prevent cross-tenant modification
     await db
       .update(orders)
       .set({
         status: "processing",
         updatedAt: new Date(),
       })
-      .where(eq(orders.id, data.orderId));
+      .where(
+        and(
+          eq(orders.tenantId, tenantId),
+          eq(orders.id, data.orderId)
+        )
+      );
     
     return fulfillment;
   }
@@ -658,6 +676,7 @@ export class ERP2Service {
       throw new Error("Return not found");
     }
     
+    // CRITICAL: tenantId filter to prevent cross-tenant modification
     const [updated] = await db
       .update(returnsTbl)
       .set({
@@ -665,7 +684,12 @@ export class ERP2Service {
         refundAmountCents: approved ? refundAmountCents : null,
         approvedAt: approved ? new Date() : null,
       })
-      .where(eq(returnsTbl.id, returnId))
+      .where(
+        and(
+          eq(returnsTbl.tenantId, tenantId),
+          eq(returnsTbl.id, returnId)
+        )
+      )
       .returning();
     
     return updated;

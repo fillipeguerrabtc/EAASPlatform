@@ -63,6 +63,10 @@ import { parseListQuery } from "./lib/pagination";
 // CRM Module
 import { registerCrmRoutes } from "./modules/crm/routes";
 import { twilioWhatsappWebhook, metaWebhookVerify, metaWebhookReceive } from "./modules/crm/integrations";
+// ERP Module
+import { registerERPRoutes } from "./modules/erp/routes";
+import { registerERP2Routes } from "./modules/erp2/routes";
+import { registerMarketplaceRoutes } from "./modules/marketplace/routes";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -5705,6 +5709,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CRM MODULE ROUTES (requires authentication)
   // ========================================
   registerCrmRoutes(app, isAuthenticated);
+
+  // ========================================
+  // ERP MODULE ROUTES (requires authentication)
+  // ========================================
+  app.use("/api/erp", isAuthenticated);
+  registerERPRoutes(app);
+  
+  app.use("/api/erp2", isAuthenticated);
+  registerERP2Routes(app);
+
+  // ========================================
+  // MARKETPLACE MODULE ROUTES (PUBLIC - no auth required)
+  // ========================================
+  registerMarketplaceRoutes(app);
 
   // ========================================
   // SERVE STATIC FILES FROM .storage/public
