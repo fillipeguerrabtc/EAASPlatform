@@ -1,0 +1,505 @@
+0) Faxina Single-Tenant (DB, server, client)
+0.1 Banco/Schema (Drizzle) — remover tenantId e índices derivados
+
+O que fazer
+
+Remover a coluna tenantId de todas as tabelas (customers, deals, orders, products…).
+
+Remover índices compostos que envolvam tenantId.
+
+Onde havia “chaves únicas por tenant”, migrar para chaves únicas “globais” (single-tenant).
+
+Migração Drizzle (exemplo genérico)
+
+// drizzle/2025_10_27_000_remove_tenantId.ts
+import { sql } from "drizzle-orm";
+
+export const up = async (db: any) => {
+  await db.execute(sql`ALTER TABLE customers DROP COLUMN IF EXISTS tenantId;`);
+  await db.execute(sql`ALTER TABLE deals DROP COLUMN IF EXISTS tenantId;`);
+  await db.execute(sql`ALTER TABLE products DROP COLUMN IF EXISTS tenantId;`);
+  await db.execute(sql`ALTER TABLE orders DROP COLUMN IF EXISTS tenantId;`);
+  await db.execute(sql`ALTER TABLE activities DROP COLUMN IF EXISTS tenantId;`);
+  // ...repita para todas as tabelas que herdaram tenantId
+  // e remova índices compostos por tenantId
+  await db.execute(sql`DROP INDEX IF EXISTS idx_customers_tenant_email;`);
+  await db.execute(sql`DROP INDEX IF EXISTS idx_customers_tenant_phone;`);
+};
+
+export const down = async (db: any) => {
+  await db.execute(sql`ALTER TABLE customers ADD COLUMN tenantId text;`);
+  // ... (não deve ser necessário no seu contexto)
+};
+
+
+Extras
+
+Se tiver qualquer “resolver de tenant” em middleware, remover.
+
+.env/configs que falavam de multi-tenant: apagar.
+
+0.2 Server — tirar middleware/parametrização de tenant
+
+Trocas padrão nas rotas
+
+Remover qualquer requireTenant, resolveTenantId e checagens/headers x-tenant-id.
+
+Remover filtros por tenantId no storage.ts e consultas Drizzle.
+
+Ajustar validações “únicas por tenant” → “únicas globais”.
+
+Exemplo de rota (antes vs. depois)
+
+// antes (multi)
+app.get("/api/customers", async (req, res) => {
+  const tenantId = (req as any).tenantId;
+  const rows = await storage.listCustomersByTenant(tenantId);
+  res.json(rows);
+});
+
+// depois (single)
+app.get("/api/customers", async (_req, res) => {
+  const rows = await storage.listCustomers(); // agora global
+  res.json(rows);
+});
+
+0.3 Client — remover gating/seletores de tenant
+
+Se existir seletor de “Conta/Workspace/Empresa” relacionado a tenant: esconder/remover.
+
+Ajustar chamadas de API que enviavam tenantId no body/query/header.
+
+1) CRM (Clientes, Deals, Pipeline, Atividades, Workflows, Omnichat)
+1.1 Lacunas/erros típicos que vi (e que precisam ficar enterprise)
+
+Dedupe real de contatos (email/telefone) com upsert inteligente.
+
+Paginação/Busca/Ordenação em todas as listas (clientes, deals, atividades).
+
+Workflows úteis (gatilhos → ações) realmente executando: criar tarefa, mover estágio, enviar msg (WhatsApp sandbox), atribuir dono, marcar SLA.
+
+Omnichat ligado ao CRM: cada conversa vira “activity” + opção de gerar lead/deal com 1 clique.
+
+RBAC simples (single-tenant): roles admin, manager, agent (apenas escopo da empresa).
+
+Export/Import CSV de clientes e atividades.
+
+Auditoria mínima: quem mov eu deal/estágio e quando; quem editou um cliente.
+
+1.2 Patches
+
+(A) Storage → dedupe + upsert de Cliente (email/telefone)
+
+// server/storage.crm.ts
+import { db, customers } from "../shared/schema";
+import { eq } from "drizzle-orm";
+
+export async function upsertCustomer(input: {
+  name?: string; email?: string; phone?: string; tags?: string[];
+  company?: string; note?: string;
+}) {
+  const email = input.email?.toLowerCase().trim();
+  const phone = input.phone?.replace(/\D/g, "");
+
+  let existing = null as any;
+
+  if (email) {
+    [existing] = await db.select().from(customers).where(eq(customers.email, email)).limit(1);
+  }
+  if (!existing && phone) {
+    [existing] = await db.select().from(customers).where(eq(customers.phone, phone)).limit(1);
+  }
+
+  if (existing) {
+    const [updated] = await db.update(customers)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(customers.id, existing.id))
+      .returning();
+    return updated;
+  } else {
+    const [created] = await db.insert(customers).values({ ...input }).returning();
+    return created;
+  }
+}
+
+
+(B) Rotas CRM com paginação/busca
+
+// server/routes.crm.ts
+app.get("/api/customers", async (req, res) => {
+  const page = Math.max(1, parseInt(String(req.query.page || "1"), 10));
+  const pageSize = Math.min(100, Math.max(10, parseInt(String(req.query.pageSize || "20"), 10)));
+  const q = String(req.query.q || "").toLowerCase();
+
+  let rows = await storage.listCustomers(); // já single-tenant
+  if (q) {
+    rows = rows.filter(r =>
+      (r.name || "").toLowerCase().includes(q) ||
+      (r.email || "").toLowerCase().includes(q) ||
+      (r.phone || "").toLowerCase().includes(q)
+    );
+  }
+  const total = rows.length;
+  const data = rows.slice((page - 1) * pageSize, page * pageSize);
+  res.json({ page, pageSize, total, data });
+});
+
+
+(C) Workflows: gatilhos e ações úteis (mínimo viável)
+
+// server/crm/workflows.ts
+type Trigger =
+  | { type: "customer.created"; customerId: string }
+  | { type: "deal.stage_changed"; dealId: string; from?: string; to: string };
+
+type Action =
+  | { type: "create_activity"; title: string; dueInHours?: number }
+  | { type: "move_deal_stage"; to: string }
+  | { type: "send_whatsapp"; template: string; customerId?: string };
+
+export async function runCrmWorkflows(trigger: Trigger) {
+  const workflows = await storage.listCrmWorkflows(); // agora global (single)
+  for (const wf of workflows.filter(w => w.trigger === trigger.type)) {
+    for (const action of wf.actions) {
+      if (action.type === "create_activity") {
+        const due = new Date(Date.now() + (action.dueInHours ?? 4) * 3600 * 1000);
+        await storage.createActivity({ title: action.title, dueDate: due, status: "open" });
+      }
+      if (action.type === "move_deal_stage" && trigger.type === "deal.stage_changed") {
+        await storage.updateDealStage(trigger.dealId, action.to);
+      }
+      if (action.type === "send_whatsapp") {
+        await integrations.whatsappSandboxSend({
+          customerId: action.customerId ?? ("customerId" in trigger ? (trigger as any).customerId : undefined),
+          template: action.template,
+        });
+      }
+    }
+  }
+}
+
+
+(D) Omnichat → Activity + criação de lead em 1 clique
+
+Ao receber mensagem inbound (webhook sandbox), criar/atualizar cliente via upsertCustomer e criar activity (type: "message", direction: "inbound").
+
+Botão no chat (“Criar Oportunidade”) chama POST /api/deals com customerId preenchido.
+
+(E) RBAC simples (server middleware)
+
+Middleware lê req.user.role (admin|manager|agent) e permite/nega métodos destrutivos (ex.: DELETE /api/stages só para admin).
+
+Checklist CRM (imediato)
+
+ Remover tenantId de tudo e índices.
+
+ upsertCustomer, dedupe forte.
+
+ Paginação/busca em todas as listas.
+
+ Workflows acionáveis (create_activity, move_deal_stage, send_whatsapp).
+
+ Omnichat gera Activity e “Criar Oportunidade”.
+
+ RBAC simples nas rotas.
+
+ Export/Import CSV.
+
+2) ERP (Produtos, Estoque, Compras, Vendas, Faturamento, Fiscal simplificado)
+2.1 Lacunas/erros típicos
+
+SKU/Variantes incompletos (produto com opções: tamanho/cor/…).
+
+Movimentações de estoque sem trilha (stock_moves: entrada, venda, devolução, ajuste).
+
+Reservas (alocar estoque no checkout antes do pagamento).
+
+Compras/Fornecedores (POs) e reposição automatizada (reorder point).
+
+Faturamento/Notas: sandbox Stripe ok (webhooks idempotentes), mas faltam estados claros (pending → paid → fulfilled → returned).
+
+De/Para Fiscal (BR): manter simples agora (alíquota padrão + CFOP genérico), deixar ganchos para NFe mais tarde.
+
+2.2 Patches
+
+(A) Schema de Stock Moves (Drizzle)
+
+// shared/schema.stock.ts
+export const stockMoves = pgTable("stock_moves", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sku: text("sku").notNull(),
+  quantity: integer("quantity").notNull(), // +entrada / -saída
+  reason: text("reason").notNull(), // "purchase" | "sale" | "return" | "adjust"
+  refType: text("ref_type"), // "order" | "po" | "rma"
+  refId: text("ref_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+
+(B) Reservas de estoque em orders
+
+// server/erp/inventory.ts
+export async function reserveStock(items: {sku: string; qty: number}[], orderId: string) {
+  for (const it of items) {
+    await db.insert(stockMoves).values({ sku: it.sku, quantity: -it.qty, reason: "reserve", refType: "order", refId: orderId });
+  }
+}
+export async function releaseReservation(items: {sku: string; qty: number}[], orderId: string) {
+  for (const it of items) {
+    await db.insert(stockMoves).values({ sku: it.sku, quantity: +it.qty, reason: "release", refType: "order", refId: orderId });
+  }
+}
+export async function confirmSale(items: {sku: string; qty: number}[], orderId: string) {
+  // reserva já debitou; aqui apenas marca “consumido” (ou converte “reserve” em “sale” se preferir)
+  await db.insert(stockMoves).values({ sku: "meta", quantity: 0, reason: "sale_confirm", refType: "order", refId: orderId });
+}
+
+
+(C) Webhooks Stripe (idempotência + estados)
+
+// server/integrations/stripe.ts
+app.post("/webhooks/stripe", express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers["stripe-signature"] as string;
+  const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+
+  const key = `stripe:${event.id}`;
+  if (await cache.seen(key)) return res.status(200).end(); // idempotência
+  await cache.mark(key);
+
+  if (event.type === "checkout.session.completed") {
+    const orderId = event.data.object.metadata?.orderId!;
+    await storage.markOrderPaid(orderId);
+  }
+  if (event.type === "charge.refunded") {
+    const orderId = event.data.object.metadata?.orderId!;
+    await storage.markOrderRefunded(orderId);
+  }
+  res.json({ received: true });
+});
+
+
+(D) Compras (PO) e reposição
+
+Criar purchase_orders (cabecalho) e purchase_order_items.
+
+cron simples: se stock_on_hand + in_purchase < reorder_point → sugerir PO.
+
+Checklist ERP
+
+ Variantes/SKU sólidos.
+
+ stock_moves + reservas + devoluções.
+
+ Estados de pedido claros e transições atômicas.
+
+ Webhooks Stripe idempotentes.
+
+ PO/reorder básico.
+
+ Exportações (CSV) de estoque/pedidos.
+
+3) IA (Atendimento & Vendas) — Omnichannel + Roteiros + RAG
+3.1 Lacunas/erros típicos
+
+Promptos soltos (sem versionamento/ABA-test).
+
+Orquestração: triagem → intenção → ferramenta (CRM/ERP/Marketplace) → resposta.
+
+Base de conhecimento (RAG) sem hygiene: chunking ruim, sem re-rank, sem cache.
+
+Avaliação (conversas de teste, rotuladas, com métricas de “resolução”, “handoff”, “CSAT”).
+
+Fallback humano: criar ticket/atividade automática no CRM quando a IA não tem confiança.
+
+3.2 Patches
+
+(A) “Brain” simples com router de intenção
+
+// server/ai/brain.ts
+export async function handleMessage(msg: {text: string; userId?: string}) {
+  const intent = await nlu.classify(msg.text); // "check_order" | "create_lead" | "catalog" | "faq" | "handoff"
+  switch (intent) {
+    case "create_lead": {
+      const c = await crm.upsertCustomer({ name: "Desconhecido", phone: extractPhone(msg.text) });
+      return reply(`Criei seu cadastro. Como posso ajudar nas próximas etapas?`);
+    }
+    case "check_order": {
+      const orderId = extractOrderId(msg.text);
+      const order = await erp.getOrder(orderId);
+      return reply(formatOrderStatus(order));
+    }
+    case "catalog": {
+      const q = extractQuery(msg.text);
+      const items = await marketplace.searchCatalog(q);
+      return reply(renderCards(items));
+    }
+    case "faq": {
+      const ans = await rag.answer(msg.text);
+      return reply(ans.text, ans.sources);
+    }
+    default:
+      await crm.createActivity({ title: "Handoff humano", note: msg.text, status: "open" });
+      return reply(`Vou te colocar com um atendente humano agora, ok?`);
+  }
+}
+
+
+(B) Prompt Management (versionado)
+
+Tabela prompts (name, version, body, createdAt, isActive).
+
+Endpoint para ativar versão; logs por conversa (qual versão, latência, custo).
+
+(C) RAG com higiene
+
+Chunk 400–800 tokens; re-rank (cosine + MMR); cache top-k em Redis por 24h;
+
+Guardrails: linguagem detectada (pt-BR), palavrão → tom neutro; “unknown policy” → fallback humano.
+
+Checklist IA
+
+ Router de intenção.
+
+ Ações ligadas a CRM/ERP/Marketplace.
+
+ Promptos versionados + métricas.
+
+ RAG com higiene e fontes.
+
+ Fallback humano → cria Activity.
+
+ WhatsApp sandbox plugado nas mesmas rotas.
+
+4) Marketplace (produtos, serviços, experiências, ativos físicos/virtuais)
+4.1 Lacunas/erros típicos
+
+Tipos de item (produto físico, serviço, experiência com agenda, ativo digital).
+
+Calendário/agenda para experiências/serviços (slots, capacidade, overbooking).
+
+Checkout unificado (carrinho com itens heterogêneos).
+
+Frete (produtos físicos) vs. agendamento (serviços/experiências).
+
+Reviews (com moderação) e SEO (sitemap, rich snippets).
+
+Integração ERP (estoque, fulfillment) e CRM (cliente e histórico de pedido/conversão).
+
+4.2 Patches
+
+(A) Schema de catálogo unificado
+
+// shared/schema.marketplace.ts
+export type ItemType = "physical" | "service" | "experience" | "digital";
+
+export const catalogItems = pgTable("catalog_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: text("type").notNull(), // ItemType
+  sku: text("sku").notNull().unique(),
+  title: text("title").notNull(),
+  description: text("description"),
+  price: integer("price_cents").notNull(),
+  currency: text("currency").default("BRL"),
+  active: boolean("active").default(true),
+  // flags
+  requiresShipping: boolean("requires_shipping").default(false),
+  requiresScheduling: boolean("requires_scheduling").default(false),
+  digitalDownloadUrl: text("digital_download_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+
+(B) Agenda/Slots para experiências
+
+export const scheduleSlots = pgTable("schedule_slots", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itemId: uuid("item_id").notNull().references(() => catalogItems.id),
+  start: timestamp("start").notNull(),
+  end: timestamp("end").notNull(),
+  capacity: integer("capacity").default(1),
+  booked: integer("booked").default(0),
+});
+
+
+(C) Carrinho com itens heterogêneos + frete ou agendamento
+
+// server/marketplace/cart.ts
+export async function addToCart(cartId: string, itemId: string, qty: number, slotId?: string) {
+  const item = await storage.getItem(itemId);
+  if (!item.active) throw new Error("Item inativo");
+
+  if (item.requiresScheduling) {
+    if (!slotId) throw new Error("Slot obrigatório para este item");
+    const slot = await storage.getSlot(slotId);
+    if (slot.booked + qty > slot.capacity) throw new Error("Sem vagas");
+  }
+
+  await storage.addCartLine({ cartId, itemId, qty, slotId });
+}
+
+
+(D) Checkout → integra ERP + Stripe sandbox
+
+Para physical: calcular frete (stub), reservar estoque (ERP).
+
+Para service/experience: reservar slot.
+
+Criar order com linhas; redirecionar para Stripe sandbox; webhook confirma pagamento →
+
+physical: marcar paid, preparar fulfillment.
+
+service/experience: marcar booked, disparar e-mail/WhatsApp com voucher/detalhes.
+
+digital: liberar digitalDownloadUrl.
+
+(E) Reviews/SEO
+
+reviews (orderId, itemId, rating, comment, approved).
+
+GET /sitemap.xml + JSON-LD nos detalhes do item.
+
+Checklist Marketplace
+
+ Catalogo unificado + tipos.
+
+ Agenda/Slots para experiências.
+
+ Carrinho heterogêneo.
+
+ Checkout + reservas (estoque/slot).
+
+ Webhooks → estados corretos.
+
+ Reviews + SEO.
+
+5) Qualidade de Código & Complexidade (limpar, padronizar, acelerar)
+
+Padronização
+
+Imports sem sufixo .js dentro do TypeScript (evita quebra na build).
+
+ESM consistente no server (fileURLToPath ao invés de import.meta.dirname).
+
+Camadas: routes finas → chamam services (CRM/ERP/AI/Marketplace) → chamam storage.
+
+Zod (ou equivalente) para validar DTOs de entrada de API.
+
+Transações Drizzle para operações multi-tabela (ex.: pedido + linhas + reservas).
+
+Logs estruturados (pino) com requestId por requisição.
+
+Feature flags simples por .env (ex.: FEATURE_MARKETPLACE=true).
+
+Performance
+
+Cache leve (Redis/in-memory) para catálogos e buscas repetidas.
+
+Fila/background jobs (BullMQ) para tarefas pesadas (crawler, envios, geração de PDF/NF).
+
+LIMIT/OFFSET ou keyset pagination em todas as listas.
+
+DevEx
+
+npm run dev com tsx e watch em client+server.
+
+npm run e2e (Playwright) com 5 cenários: criar cliente, converter lead em deal, criar pedido físico, criar experiência com slot, fluxo WhatsApp→lead.
