@@ -88,7 +88,9 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 
 **Stripe Webhook Idempotency (Financial Security):**
 - ✅ **Persistent Tracking:** Created `webhookEvents` table with UNIQUE constraint on event_id
+- ✅ **Atomic Processing:** Webhook event storage and payment processing run inside `db.transaction()` for atomicity
 - ✅ **Duplicate Prevention:** Database-level guarantee prevents processing same Stripe event twice
+- ✅ **Retry Safety:** If processing fails, transaction rollback allows Stripe retries to succeed
 - ✅ **Audit Trail:** Full webhook payload stored for debugging and compliance
 
 **Transaction Safety (Data Integrity):**
@@ -102,6 +104,14 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - ✅ **Email Uniqueness:** UNIQUE index on `LOWER(email)` prevents duplicate customers with same email
 - ✅ **Phone Uniqueness:** UNIQUE index on normalized phone (digits only) prevents duplicates with formatting variations
 - ✅ **Case-Insensitive:** Email deduplication works regardless of case (user@example.com = USER@EXAMPLE.COM)
+
+**API Pagination System (Performance & Scalability):**
+- ✅ **Standard Helper:** Created `parseListQuery()` helper with safe bounds (page 1-∞, pageSize 10-100, default 20)
+- ✅ **Backward Compatible:** List endpoints return array payload (preserves existing frontend)
+- ✅ **HTTP Headers:** Pagination metadata in headers (X-Total-Count, X-Page, X-Page-Size, X-Total-Pages)
+- ✅ **Applied Routes:** GET /api/customers, /api/products, /api/orders
+- ✅ **Search Support:** Case-insensitive search via `ilike` (customers: name/email/phone, products: name/description)
+- ✅ **Consistent Counts:** Count queries use same filters as data queries for accuracy
 
 **Portability & Compatibility:**
 - ✅ **Brand Scanner:** Dynamic Puppeteer path resolution works in Replit, Docker, Ubuntu, Heroku, AWS
