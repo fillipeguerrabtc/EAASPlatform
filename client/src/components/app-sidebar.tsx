@@ -39,6 +39,21 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { t } = useTranslation();
 
+  const aiItems = [
+    {
+      title: "Base de Conhecimento",
+      url: "/knowledge-base",
+      icon: Book,
+      testId: "knowledge-base",
+    },
+    {
+      title: "AI Governance",
+      url: "/admin/ai-governance",
+      icon: Brain,
+      testId: "ai-governance",
+    },
+  ];
+
   const menuItems = [
     {
       title: t('nav.dashboard'),
@@ -95,12 +110,6 @@ export function AppSidebar() {
       testId: "omnichat-admin",
     },
     {
-      title: t('nav.knowledgeBase'),
-      url: "/knowledge-base",
-      icon: Book,
-      testId: "knowledge-base",
-    },
-    {
       title: "Pedidos",
       url: "/orders",
       icon: Package,
@@ -154,12 +163,7 @@ export function AppSidebar() {
       icon: Shield,
       testId: "rbac",
     },
-    {
-      title: "AI Governance",
-      url: "/admin/ai-governance",
-      icon: Brain,
-      testId: "ai-governance",
-    },
+
     {
       title: "Perfil da Empresa",
       url: "/company-profile",
@@ -183,6 +187,30 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.testId}>
+                    <SidebarMenuButton asChild isActive={isActive} data-testid={`link-${item.testId}`}>
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* AI Configuration Section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-4">
+            Configurações de IA
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {aiItems.map((item) => {
                 const isActive = location === item.url;
                 return (
                   <SidebarMenuItem key={item.testId}>
