@@ -663,7 +663,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get AI Traces with filters
   app.get("/api/ai/governance/traces", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -700,7 +700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get AI Metrics Summary
   app.get("/api/ai/governance/metrics/summary", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -728,7 +728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get Dashboard KPIs
   app.get("/api/dashboard/kpis", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -765,7 +765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get AI Governance Policies
   app.get("/api/ai/governance/policies", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -787,7 +787,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create AI Governance Policy
   app.post("/api/ai/governance/policies", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -935,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create review (authenticated users only)
   app.post("/api/reviews", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = await storage.getUser((req.user as any).userId);
+      const user = await storage.getUser((req.user as any).id);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
@@ -1222,7 +1222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Takeover conversation (assign to current user, disable AI)
   app.post("/api/conversations/:id/takeover", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = (req.user as any).userId;
+      const userId = (req.user as any).id;
       
       const conversation = await storage.updateConversation(req.params.id, {
         assignedTo: userId,
@@ -1597,7 +1597,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/ai/chat", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const customerId = (req.user as any).userId;
+      const customerId = (req.user as any).id;
       
       // Validate request body with Zod
       const aiChatSchema = z.object({
@@ -1996,7 +1996,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(503).json({ error: "Stripe not configured" });
       }
       
-      const customerId = (req.user as any).userId;
+      const customerId = (req.user as any).id;
       
       // SECURITY: Get user's cart and recalculate total from actual product prices
       const cart = await storage.getActiveCart(customerId);

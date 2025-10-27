@@ -144,89 +144,96 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto">
           <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {/* Revenue KPI */}
-            <Card className="hover-elevate" data-testid="card-revenue">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
-                <DollarSign className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                {kpisLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold" data-testid="text-total-revenue">
-                      R$ {kpis?.totalRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      {kpis && kpis.revenueGrowth >= 0 ? (
-                        <TrendingUp className="h-3 w-3 text-green-600" />
-                      ) : (
-                        <TrendingDown className="h-3 w-3 text-red-600" />
-                      )}
-                      <span className={kpis && kpis.revenueGrowth >= 0 ? "text-green-600" : "text-red-600"}>
-                        {kpis?.revenueGrowth.toFixed(1)}%
-                      </span>
-                      <span>vs período anterior</span>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <Link to="/finance">
+              <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid="card-revenue">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
+                  <DollarSign className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  {kpisLoading ? (
+                    <Skeleton className="h-8 w-24" />
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold" data-testid="text-total-revenue">
+                        R$ {kpis?.totalRevenue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                        {kpis && kpis.revenueGrowth >= 0 ? (
+                          <TrendingUp className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <TrendingDown className="h-3 w-3 text-red-600" />
+                        )}
+                        <span className={kpis && kpis.revenueGrowth >= 0 ? "text-green-600" : "text-red-600"}>
+                          {kpis?.revenueGrowth?.toFixed(1) || '0.0'}%
+                        </span>
+                        <span>vs período anterior</span>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
 
             {/* Orders KPI */}
-            <Card className="hover-elevate" data-testid="card-orders">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pedidos</CardTitle>
-                <ShoppingCart className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                {kpisLoading ? (
-                  <Skeleton className="h-8 w-16" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold" data-testid="text-total-orders-kpi">
-                      {kpis?.totalOrders}
-                    </div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      {kpis && kpis.ordersGrowth >= 0 ? (
-                        <TrendingUp className="h-3 w-3 text-green-600" />
-                      ) : (
-                        <TrendingDown className="h-3 w-3 text-red-600" />
-                      )}
-                      <span className={kpis && kpis.ordersGrowth >= 0 ? "text-green-600" : "text-red-600"}>
-                        {kpis?.ordersGrowth.toFixed(1)}%
-                      </span>
-                      <span>crescimento</span>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <Link to="/orders">
+              <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid="card-orders">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Pedidos</CardTitle>
+                  <ShoppingCart className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  {kpisLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold" data-testid="text-total-orders-kpi">
+                        {kpis?.totalOrders || 0}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                        {kpis && kpis.ordersGrowth >= 0 ? (
+                          <TrendingUp className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <TrendingDown className="h-3 w-3 text-red-600" />
+                        )}
+                        <span className={kpis && kpis.ordersGrowth >= 0 ? "text-green-600" : "text-red-600"}>
+                          {kpis?.ordersGrowth?.toFixed(1) || '0.0'}%
+                        </span>
+                        <span>crescimento</span>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Link>
 
             {/* Customers KPI */}
-            <Card className="hover-elevate" data-testid="card-customers-kpi">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Novos Clientes</CardTitle>
-                <Users className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                {kpisLoading ? (
-                  <Skeleton className="h-8 w-16" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold" data-testid="text-total-customers-kpi">
-                      {kpis?.totalCustomers}
-                    </div>
+            <Link to="/customers">
+              <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid="card-customers-kpi">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Novos Clientes</CardTitle>
+                  <Users className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  {kpisLoading ? (
+                    <Skeleton className="h-8 w-16" />
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold" data-testid="text-total-customers-kpi">
+                        {kpis?.totalCustomers || 0}
+                      </div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                      <span className="font-medium">Taxa de conversão: {kpis?.conversionRate.toFixed(1)}%</span>
+                      <span className="font-medium">Taxa de conversão: {kpis?.conversionRate?.toFixed(1) || '0.0'}%</span>
                     </div>
                   </>
                 )}
               </CardContent>
             </Card>
+            </Link>
 
             {/* Active Conversations KPI */}
-            <Card className="hover-elevate" data-testid="card-active-conversations">
+            <Link to="/omnichat">
+              <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid="card-active-conversations">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Conversas Ativas</CardTitle>
                 <MessageSquare className="h-4 w-4 text-primary" />
@@ -237,7 +244,7 @@ export default function Dashboard() {
                 ) : (
                   <>
                     <div className="text-2xl font-bold" data-testid="text-active-conversations">
-                      {kpis?.activeConversations}
+                      {kpis?.activeConversations || 0}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       Atendimentos em andamento
@@ -246,6 +253,7 @@ export default function Dashboard() {
                 )}
               </CardContent>
             </Card>
+            </Link>
           </div>
         </div>
       </div>
@@ -257,7 +265,7 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold mb-4">🚨 Alertas Críticos</h2>
             <div className="grid gap-4 sm:grid-cols-3">
               {kpis.criticalAlerts.lowStockProducts > 0 && (
-                <Link href="/inventory">
+                <Link to="/inventory">
                   <Alert className="hover-elevate cursor-pointer border-orange-500/50" data-testid="alert-low-stock">
                     <PackageX className="h-4 w-4 text-orange-600" />
                     <AlertTitle>Estoque Baixo</AlertTitle>
@@ -268,7 +276,7 @@ export default function Dashboard() {
                 </Link>
               )}
               {kpis.criticalAlerts.pendingPayments > 0 && (
-                <Link href="/payments">
+                <Link to="/payments">
                   <Alert className="hover-elevate cursor-pointer border-yellow-500/50" data-testid="alert-pending-payments">
                     <CreditCard className="h-4 w-4 text-yellow-600" />
                     <AlertTitle>Pagamentos Pendentes</AlertTitle>
@@ -279,7 +287,7 @@ export default function Dashboard() {
                 </Link>
               )}
               {kpis.criticalAlerts.criticsEscalations > 0 && (
-                <Link href="/admin/ai-governance">
+                <Link to="/admin/ai-governance">
                   <Alert className="hover-elevate cursor-pointer border-red-500/50" data-testid="alert-critics-escalation">
                     <Brain className="h-4 w-4 text-red-600" />
                     <AlertTitle>Escalação de IA</AlertTitle>
@@ -355,8 +363,8 @@ export default function Dashboard() {
             {stats.map((stat) => {
               const Icon = stat.icon;
               return (
-                <Link key={stat.title} href={stat.link}>
-                  <Card className="hover-elevate active-elevate-2 cursor-pointer">
+                <Link key={stat.title} to={stat.link}>
+                  <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid={`card-${stat.testId}`}>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
                         {stat.title}

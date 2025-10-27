@@ -267,7 +267,7 @@ export async function scanWebsiteBrand(url: string): Promise<BrandAnalysis> {
         },
         scale: {
           basePx: parseInt(bodyStyles.fontSize) || 16,
-          ratio: 1.25 as const,
+          ratio: 1.25,
         },
       };
 
