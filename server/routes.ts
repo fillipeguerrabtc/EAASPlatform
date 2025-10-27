@@ -4166,6 +4166,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin endpoint: Get all wishlists with customer and product data
+  app.get("/api/admin/wishlists", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const items = await storage.getAllWishlistsWithDetails();
+      res.json(items);
+    } catch (error: any) {
+      console.error("Error fetching admin wishlists:", error);
+      res.status(500).json({ message: "Erro ao buscar wishlists" });
+    }
+  });
+
   // ========================================
   // CRM - WORKFLOWS
   // ========================================

@@ -373,6 +373,7 @@ export interface IStorage {
   getWishlistItem(customerId: string, productId: string): Promise<WishlistItem | undefined>;
   addToWishlist(item: InsertWishlistItem): Promise<WishlistItem>;
   removeFromWishlist(customerId: string, productId: string): Promise<void>;
+  getAllWishlistsWithDetails(): Promise<any[]>;
   
   // CRM - Workflows
   listCrmWorkflows(): Promise<CrmWorkflow[]>;
@@ -1767,6 +1768,27 @@ export class DbStorage implements IStorage {
         eq(wishlistItems.customerId, customerId),
         eq(wishlistItems.productId, productId)
       ));
+  }
+
+  async getAllWishlistsWithDetails(): Promise<any[]> {
+    const items = await db
+      .select({
+        id: wishlistItems.id,
+        customerId: wishlistItems.customerId,
+        productId: wishlistItems.productId,
+        addedAt: wishlistItems.addedAt,
+        customerName: users.name,
+        customerEmail: users.email,
+        productName: products.name,
+        productPrice: products.price,
+        productImage: products.imageUrl,
+      })
+      .from(wishlistItems)
+      .leftJoin(users, eq(wishlistItems.customerId, users.id))
+      .leftJoin(products, eq(wishlistItems.productId, products.id))
+      .orderBy(desc(wishlistItems.addedAt));
+    
+    return items;
   }
   
   // ========================================
