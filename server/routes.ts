@@ -52,6 +52,8 @@ import { z } from "zod";
 import { runAllCritics } from "./ai/critics";
 import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag";
 import { planAction, type PlannerState } from "./ai/planner";
+// Single-Tenant Guard
+import { singleTenantGuard } from "./singleTenant";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -81,6 +83,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize and setup auth (no-op if not in Replit)
   await initializeAuth();
   await setupAuth(app);
+
+  // ========================================
+  // SINGLE-TENANT MODE GUARD
+  // ========================================
+  // Enforces single-tenant architecture by freezing tenantId to fixed value
+  // Prevents multi-tenant data leakage and prepares for future column cleanup
+  app.use(singleTenantGuard);
 
   // ========================================
   // AUTHENTICATION

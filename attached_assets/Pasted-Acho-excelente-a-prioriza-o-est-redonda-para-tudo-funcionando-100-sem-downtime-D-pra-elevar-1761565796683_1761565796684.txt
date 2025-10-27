@@ -1,0 +1,263 @@
+Acho excelente — a priorização está redonda para “tudo funcionando 100%” sem downtime. Dá pra elevar um pouco a robustez com alguns ajustes finos e já te deixo os patches prontos abaixo.
+
+Ajustes que eu recomendo no seu plano
+1) Single-Tenant “congelado” — igual ao que você propôs, com 2 reforços
+
+Forçar tenantId='main' também no nível de API (se o client antigo mandar outro valor, ignorar).
+
+CHECK + TRIGGER: a CHECK já trava, o trigger “corrige” antes de falhar (evita 500 silencioso).
+
+Middleware (server/singleTenant.ts)
+// server/singleTenant.ts
+import type { Request, Response, NextFunction } from "express";
+
+export function singleTenantGuard(req: Request, _res: Response, next: NextFunction) {
+  if (process.env.SINGLE_TENANT === "true") {
+    const fixed = process.env.TENANT_FIXED_ID || "main";
+    // 1) injeta no request p/ camadas internas legadas
+    (req as any).tenantId = fixed;
+    // 2) neutraliza cabeçalhos/params legados
+    if ("x-tenant-id" in req.headers) req.headers["x-tenant-id"] = fixed;
+    // 3) se o body/qs trouxe tenantId, ignorar
+    if (req.body && typeof req.body === "object") req.body.tenantId = fixed;
+    if (req.query && typeof req.query === "object") (req.query as any).tenantId = fixed;
+  }
+  next();
+}
+
+Migração SQL (segura, sem DROP) — exemplo aplicável a TODAS as tabelas com tenantId
+-- Backfill
+UPDATE customers SET "tenantId" = COALESCE("tenantId",'main');
+UPDATE deals     SET "tenantId" = COALESCE("tenantId",'main');
+UPDATE orders    SET "tenantId" = COALESCE("tenantId",'main');
+UPDATE products  SET "tenantId" = COALESCE("tenantId",'main');
+-- ...repita para as demais tabelas que tiverem tenantId
+
+-- Default + NOT NULL
+ALTER TABLE customers ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE customers ALTER COLUMN "tenantId" SET NOT NULL;
+ALTER TABLE deals     ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE deals     ALTER COLUMN "tenantId" SET NOT NULL;
+ALTER TABLE orders    ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE orders    ALTER COLUMN "tenantId" SET NOT NULL;
+ALTER TABLE products  ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE products  ALTER COLUMN "tenantId" SET NOT NULL;
+
+-- CHECK (congela)
+ALTER TABLE customers ADD CONSTRAINT customers_single_tenant_chk CHECK ("tenantId"='main');
+ALTER TABLE deals     ADD CONSTRAINT deals_single_tenant_chk     CHECK ("tenantId"='main');
+ALTER TABLE orders    ADD CONSTRAINT orders_single_tenant_chk    CHECK ("tenantId"='main');
+ALTER TABLE products  ADD CONSTRAINT products_single_tenant_chk  CHECK ("tenantId"='main');
+
+-- (Opcional) Trigger para “corrigir” antes de falhar (exemplo customers):
+CREATE OR REPLACE FUNCTION force_single_tenant_customers()
+RETURNS trigger AS $$
+BEGIN
+  NEW."tenantId" := 'main';
+  RETURN NEW;
+END; $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_force_single_tenant_customers ON customers;
+CREATE TRIGGER trg_force_single_tenant_customers
+BEFORE INSERT OR UPDATE ON customers
+FOR EACH ROW EXECUTE FUNCTION force_single_tenant_customers();
+
+
+Depois, quando quiser a faxina de verdade, é só tirar CHECK/trigger e dropar as colunas com zero impacto.
+
+2) Stripe webhooks idempotentes — faça durável, não só in-memory
+
+O Set em memória reseta em cada deploy. Prefira Redis (ou uma tabela webhook_events com UNIQUE event_id).
+
+Versão com assinatura Stripe + raw body + idempotência durável
+// server/integrations/stripe.ts
+import express from "express";
+import Stripe from "stripe";
+import { db, webhookEvents } from "../../shared/schema"; // tabela: id, event_id UNIQUE, payload, created_at
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+
+app.post("/webhooks/stripe",
+  express.raw({ type: "application/json" }), // importante: raw body p/ verificação de assinatura
+  async (req, res) => {
+    let event: Stripe.Event;
+    try {
+      const sig = req.headers["stripe-signature"] as string;
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    } catch (err) {
+      return res.status(400).send(`Webhook Error: ${(err as Error).message}`);
+    }
+
+    // Idempotência durável
+    try {
+      await db.insert(webhookEvents).values({
+        eventId: event.id,
+        payload: JSON.stringify(event),
+      });
+    } catch {
+      // UNIQUE violation => já processado
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+
+    // Processamento
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orderId = session.metadata?.orderId!;
+        await storage.markOrderPaid(orderId);          // <- transação recomendada
+        await storage.confirmInventoryForOrder(orderId);
+        break;
+      }
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const orderId = (charge.metadata as any)?.orderId;
+        if (orderId) await storage.markOrderRefunded(orderId);
+        break;
+      }
+      // adicione outros eventos relevantes
+    }
+
+    return res.json({ received: true });
+  }
+);
+
+
+Tabela (Drizzle) para idempotência
+
+// shared/schema.webhooks.ts
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull().unique(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+3) Transações Drizzle — padronize helpers
+
+Crie helpers de transação para operações críticas (checkout, fulfillment, refund). Mantém o código limpo.
+
+// server/db/tx.ts
+import { db } from "../../shared/schema";
+
+export async function withTx<T>(fn: (tx: typeof db) => Promise<T>) {
+  return db.transaction(async (tx) => fn(tx));
+}
+
+// Exemplo: checkout
+export async function createOrderWithItems(input: { order: any; items: any[] }) {
+  return withTx(async (tx) => {
+    const [order] = await tx.insert(orders).values(input.order).returning();
+    for (const it of input.items) {
+      await tx.insert(orderItems).values({ ...it, orderId: order.id });
+    }
+    // (opcional) decremento atômico simples (sem reservas completas agora)
+    for (const it of input.items) {
+      await tx.execute(sql`UPDATE products SET stock = stock - ${it.qty} WHERE sku = ${it.sku} AND stock >= ${it.qty}`);
+    }
+    return order;
+  });
+}
+
+4) CRM: upsert/dedupe + índices de unicidade práticos
+
+Além da função de upsert, recomendo criar índices/constraints para prevenir duplicatas reais.
+
+Índices e unicidade
+-- E-mail único (case-insensitive) se existir
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='ux_customers_email_ci') THEN
+    CREATE UNIQUE INDEX ux_customers_email_ci ON customers (LOWER(email)) WHERE email IS NOT NULL;
+  END IF;
+END $$;
+
+-- Telefone único (normalizado) se existir
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='ux_customers_phone_norm') THEN
+    CREATE UNIQUE INDEX ux_customers_phone_norm ON customers (regexp_replace(phone, '\D','','g')) WHERE phone IS NOT NULL;
+  END IF;
+END $$;
+
+Upsert (server/storage.crm.ts)
+export async function upsertCustomer(input: {
+  name?: string; email?: string; phone?: string; tags?: string[]; company?: string; note?: string;
+}) {
+  const email = input.email?.toLowerCase().trim() || null;
+  const phoneNorm = input.phone ? input.phone.replace(/\D/g, "") : null;
+
+  const existing = await db.execute(sql`
+    SELECT * FROM customers
+    WHERE (${email} IS NOT NULL AND LOWER(email) = ${email})
+       OR (${phoneNorm} IS NOT NULL AND regexp_replace(phone,'\\D','','g') = ${phoneNorm})
+    LIMIT 1;
+  `).then(r => (r.rows as any[])[0]);
+
+  if (existing) {
+    const [updated] = await db.update(customers)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(customers.id, existing.id))
+      .returning();
+    return updated;
+  } else {
+    const [created] = await db.insert(customers)
+      .values({ ...input, email: input.email || null, phone: input.phone || null })
+      .returning();
+    return created;
+  }
+}
+
+5) Paginação & busca — sanitize e padronize
+
+Sanitize: limitar pageSize (≤100), default seguro.
+
+Buscar por nome/email/phone/sku com ILIKE/LOWER.
+
+Retornar total para o client paginar certo.
+
+app.get("/api/customers", async (req, res) => {
+  const page = Math.max(1, parseInt(String(req.query.page||"1"),10));
+  const pageSize = Math.min(100, Math.max(10, parseInt(String(req.query.pageSize||"20"),10)));
+  const q = String(req.query.q||"").trim().toLowerCase();
+
+  const where = q ? sql`LOWER(name) LIKE ${'%' + q + '%'}
+                  OR LOWER(email) LIKE ${'%' + q + '%'}
+                  OR regexp_replace(phone,'\\D','','g') LIKE ${'%' + q.replace(/\D/g,'') + '%'}`
+                  : sql`TRUE`;
+
+  const [{ count }] = await db.execute(sql`SELECT COUNT(*)::int AS count FROM customers WHERE ${where}`)
+                              .then(r => r.rows as any[]);
+  const rows = await db.execute(sql`
+    SELECT * FROM customers
+    WHERE ${where}
+    ORDER BY created_at DESC
+    LIMIT ${pageSize} OFFSET ${(page-1)*pageSize}
+  `).then(r => r.rows);
+
+  res.json({ page, pageSize, total: count, data: rows });
+});
+
+6) Logs estruturados (pino) — pequeno, mas ajuda muito
+import pino from "pino";
+import { randomUUID } from "crypto";
+
+const logger = pino({ level: process.env.LOG_LEVEL || "info" });
+
+app.use((req, res, next) => {
+  (req as any).id = (req.headers["x-request-id"] as string) || randomUUID();
+  logger.info({ id: (req as any).id, method: req.method, path: req.path }, "request:start");
+  res.on("finish", () => {
+    logger.info({ id: (req as any).id, status: res.statusCode }, "request:end");
+  });
+  next();
+});
+
+7) Export CSV (clientes/pedidos) — opcional, rápido
+app.get("/api/customers/export.csv", async (_req, res) => {
+  const rows = await db.select().from(customers);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="customers.csv"`);
+  res.write("id,name,email,phone,createdAt\n");
+  for (const r of rows) {
+    res.write(`${r.id},"${(r.name||"").replaceAll('"','""')}",${r.email||""},${r.phone||""},${r.createdAt?.toISOString()||""}\n`);
+  }
+  res.end();
+});
