@@ -154,7 +154,7 @@ import {
   productVariants,
   calendarEventParticipants,
 } from "@shared/schema";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, inArray } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
@@ -275,6 +275,7 @@ export interface IStorage {
   createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent>;
   updateCalendarEvent(id: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined>;
   deleteCalendarEvent(id: string): Promise<void>;
+  getMyCalendarEvents(userId: string): Promise<CalendarEvent[]>;
   
   // Calendar Event Participants
   listCalendarEventParticipants(eventId: string): Promise<CalendarEventParticipant[]>;
@@ -1176,6 +1177,26 @@ export class DbStorage implements IStorage {
   async deleteCalendarEvent(id: string): Promise<void> {
     await db.delete(calendarEvents)
       .where(eq(calendarEvents.id, id));
+  }
+
+  async getMyCalendarEvents(userId: string): Promise<CalendarEvent[]> {
+    const participantEvents = await db
+      .select({ eventId: calendarEventParticipants.eventId })
+      .from(calendarEventParticipants)
+      .where(eq(calendarEventParticipants.userId, userId));
+    
+    const eventIds = participantEvents.map(p => p.eventId);
+    
+    if (eventIds.length === 0) {
+      return [];
+    }
+    
+    const events = await db.select()
+      .from(calendarEvents)
+      .where(inArray(calendarEvents.id, eventIds))
+      .orderBy(calendarEvents.startTime);
+    
+    return events;
   }
 
   // ========================================

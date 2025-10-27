@@ -15,7 +15,10 @@ import {
   CreditCard,
   Brain,
   TrendingDown,
+  Calendar,
+  Clock,
 } from "lucide-react";
+import type { CalendarEvent } from "@shared/schema";
 import { SEO } from "@/components/seo";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +63,15 @@ export default function Dashboard() {
   const { data: orders, isLoading: ordersLoading } = useQuery({
     queryKey: ["/api/orders"],
   });
+
+  const { data: myEvents, isLoading: myEventsLoading } = useQuery<CalendarEvent[]>({
+    queryKey: ["/api/my-events"],
+  });
+
+  const upcomingEvents = (myEvents || [])
+    .filter(e => new Date(e.startTime) > new Date())
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .slice(0, 3);
 
   const stats = [
     {
@@ -301,6 +313,73 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* My Events Section */}
+      <div className="px-4 sm:px-6 lg:px-8 pb-6">
+        <div className="max-w-7xl mx-auto">
+          <Link to="/calendar">
+            <Card className="hover-elevate active-elevate-2 cursor-pointer" data-testid="card-my-events">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-lg">Meus Próximos Eventos</CardTitle>
+                </div>
+                <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {myEventsLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ) : upcomingEvents.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground">
+                    <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Nenhum evento agendado</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3" data-testid="list-upcoming-events">
+                    {upcomingEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 p-3 rounded-md border hover-elevate"
+                        data-testid={`event-${event.id}`}
+                      >
+                        <div className="flex flex-col items-center justify-center min-w-12 rounded-md bg-primary/10 p-2">
+                          <span className="text-xs font-medium text-primary">
+                            {new Date(event.startTime).toLocaleDateString('pt-BR', { day: '2-digit' })}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(event.startTime).toLocaleDateString('pt-BR', { month: 'short' })}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate" data-testid={`event-title-${event.id}`}>
+                            {event.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            <span>
+                              {new Date(event.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              {' - '}
+                              {new Date(event.endTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          {event.description && (
+                            <p className="text-xs text-muted-foreground mt-1 truncate">
+                              {event.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
 
       {/* Sales Trend Chart */}
       <div className="px-4 sm:px-6 lg:px-8 pb-8">
