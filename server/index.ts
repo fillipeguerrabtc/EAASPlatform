@@ -70,26 +70,58 @@ app.use(helmet({
   } : false, // Disable CSP in development for HMR
 }));
 
-// CORS restrito (ajuste conforme necessário)
-const allowedOrigins = env.NODE_ENV === "production" 
-  ? [process.env.PUBLIC_URL || "https://your-domain.com"].filter(Boolean)
-  : [
+// CORS configuration (Replit + localhost support)
+const buildAllowedOrigins = (): string[] => {
+  const origins: string[] = [];
+  
+  // Development: localhost variants
+  if (env.NODE_ENV === "development") {
+    origins.push(
       "http://localhost:5000",
-      "http://127.0.0.1:5000",    // Localhost IP variant
+      "http://127.0.0.1:5000",
       "http://localhost:5173",
-      "http://127.0.0.1:5173",    // Vite dev server IP variant
-    ];
+      "http://127.0.0.1:5173"
+    );
+  }
+  
+  // Replit domains (both dev and production)
+  if (process.env.REPLIT_DOMAINS) {
+    const replitDomains = process.env.REPLIT_DOMAINS.split(',').map(d => d.trim());
+    replitDomains.forEach(domain => {
+      origins.push(`https://${domain}`);
+      origins.push(`https://${domain}.replit.dev`);
+      // Support for various Replit subdomains
+      origins.push(`https://${domain}.janeway.replit.dev`);
+    });
+  }
+  
+  // Custom public URL for production
+  if (process.env.PUBLIC_URL) {
+    origins.push(process.env.PUBLIC_URL);
+  }
+  
+  return Array.from(new Set(origins)); // Dedupe
+};
+
+const allowedOrigins = buildAllowedOrigins();
 
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
     if (!origin) return callback(null, true);
+    
+    // Check if origin matches allowed origins
     if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      logger.warn({ origin }, "CORS: origin not allowed");
-      callback(new Error("Not allowed by CORS"));
+      return callback(null, true);
     }
+    
+    // Fallback: Allow any *.replit.dev domain in development
+    if (env.NODE_ENV === "development" && origin.endsWith(".replit.dev")) {
+      return callback(null, true);
+    }
+    
+    logger.warn({ origin, allowedOrigins }, "CORS: origin not allowed");
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
