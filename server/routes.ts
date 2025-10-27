@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import express from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import {
   insertTenantSchema,
   insertProductSchema,
@@ -34,6 +36,7 @@ import {
   insertPerformanceReviewSchema,
   insertProductBundleSchema,
   insertProductBundleItemSchema,
+  stockMovements,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -2521,10 +2524,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/my-events", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      if (!req.user?.id) {
+      const userId = (req.user as any)?.userId;
+      if (!userId) {
         return res.status(401).json({ error: "User not authenticated" });
       }
-      const events = await storage.getMyCalendarEvents(req.user.id);
+      const events = await storage.getMyCalendarEvents(userId);
       res.json(events);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -4427,7 +4431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/wishlist", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const customerId = req.user!.id;
+      const customerId = (req.user as any)!.userId;
       const items = await storage.listWishlistItems(customerId);
       res.json(items);
     } catch (error: any) {
@@ -4438,7 +4442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/wishlist", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const customerId = req.user!.id;
+      const customerId = (req.user as any)!.userId;
       const { productId } = z.object({ productId: z.string().min(1) }).parse(req.body);
       
       const existing = await storage.getWishlistItem(customerId, productId);
@@ -4459,7 +4463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.delete("/api/wishlist/:productId", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const customerId = req.user!.id;
+      const customerId = (req.user as any)!.userId;
       await storage.removeFromWishlist(customerId, req.params.productId);
       res.json({ success: true });
     } catch (error: any) {
@@ -4775,9 +4779,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/inventory/transfers", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const result = await db.query.inventoryMovements.findMany({
-        where: eq(inventoryMovements.type, "transfer"),
-        orderBy: desc(inventoryMovements.createdAt),
+      const result = await db.query.stockMovements.findMany({
+        where: eq(stockMovements.type, "transfer"),
+        orderBy: desc(stockMovements.createdAt),
         limit: 1000,
       });
       res.json(result);
@@ -4803,7 +4807,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Warehouse de origem e destino não podem ser iguais" });
       }
       
-      if (!req.user?.id) {
+      const userId = (req.user as any)?.userId;
+      if (!userId) {
         return res.status(401).json({ message: "Usuário não autenticado" });
       }
       
@@ -4812,7 +4817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.fromWarehouseId,
         validatedData.toWarehouseId,
         validatedData.quantity,
-        req.user.id,
+        userId,
         validatedData.notes
       );
       
@@ -5141,7 +5146,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       const validatedData = schema.parse(req.body);
-      const created = await storage.createProductBundle(validatedData.bundle, validatedData.items);
+      // Add temporary bundleId (will be replaced in storage.createProductBundle)
+      const itemsWithBundleId = validatedData.items.map(item => ({
+        ...item,
+        bundleId: "temp" as string,
+      }));
+      const created = await storage.createProductBundle(validatedData.bundle, itemsWithBundleId);
       res.status(201).json(created);
     } catch (error: any) {
       if (error instanceof z.ZodError) {

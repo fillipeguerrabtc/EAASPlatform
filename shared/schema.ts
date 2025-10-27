@@ -104,6 +104,7 @@ export const roles = pgTable("roles", {
 // Users (Single-tenant)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
   name: text("name").notNull(),
   avatar: text("avatar"),
@@ -270,6 +271,7 @@ export const orders = pgTable("orders", {
 // Customers (extended from users)
 export const customers = pgTable("customers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   email: text("email"),
