@@ -334,6 +334,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
+  // BRAND SCANNER 2.1 PRO - DIRECT API
+  // ========================================
+  // Simple endpoint for direct brand scanning with K-Means + media downloads
+  
+  app.post("/api/brand-scanner/scan", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { url } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: "url is required" });
+      }
+
+      console.log(`🎨 Brand Scanner 2.1 PRO: Scanning ${url}...`);
+      
+      // Import and execute Brand Scanner 2.1 PRO
+      const { scanWebsiteBrand } = await import("./brandScanner");
+      const brandAnalysis = await scanWebsiteBrand(url);
+      
+      console.log(`✅ Brand scan complete: ${brandAnalysis.mediaAssets?.length || 0} media assets downloaded`);
+      
+      res.json(brandAnalysis);
+    } catch (error: any) {
+      console.error("Brand Scanner 2.1 PRO error:", error);
+      res.status(500).json({ 
+        error: "Failed to scan website brand",
+        details: error.message 
+      });
+    }
+  });
+
+  // ========================================
   // BRAND SCANNER 2.0 (Extract + Clone)
   // ========================================
 

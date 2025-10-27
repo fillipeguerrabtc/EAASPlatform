@@ -168,8 +168,10 @@ function isPrivateIp(ip: string): boolean {
  * CRITICAL: Resolves hostname to IPs and blocks private ranges to prevent:
  * - DNS rebinding attacks
  * - SSRF via public domain pointing to private IP
+ * 
+ * EXPORTED: For use in media downloads and other URL fetching
  */
-async function validateUrl(url: string): Promise<string> {
+export async function validateUrl(url: string): Promise<string> {
   // Remove whitespace
   const trimmed = url.trim();
 
