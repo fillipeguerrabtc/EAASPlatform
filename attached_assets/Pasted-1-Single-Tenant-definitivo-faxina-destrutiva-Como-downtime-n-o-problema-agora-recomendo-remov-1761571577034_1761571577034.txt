@@ -1,0 +1,262 @@
+1) Single-Tenant definitivo (faxina destrutiva)
+
+Como downtime não é problema agora, recomendo remover de vez o legado multi-tenant.
+
+Migração SQL (aplique em TODAS as tabelas que ainda têm tenantId)
+
+Faça backup antes; rode em uma única migration.
+
+sql
+
+-- 1) soltar constraints "freeze"
+ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_single_tenant_chk;
+ALTER TABLE deals     DROP CONSTRAINT IF EXISTS deals_single_tenant_chk;
+ALTER TABLE orders    DROP CONSTRAINT IF EXISTS orders_single_tenant_chk;
+ALTER TABLE products  DROP CONSTRAINT IF EXISTS products_single_tenant_chk;
+-- repita para as demais tabelas que tinham CHECK/trigger
+
+-- 2) dropar índices compostos com tenantId
+DROP INDEX IF EXISTS idx_customers_tenant_email;
+DROP INDEX IF EXISTS idx_customers_tenant_phone;
+-- repita para as demais
+
+-- 3) DROP COLUMN tenantId (todas as tabelas que têm)
+ALTER TABLE customers DROP COLUMN IF EXISTS "tenantId";
+ALTER TABLE deals     DROP COLUMN IF EXISTS "tenantId";
+ALTER TABLE orders    DROP COLUMN IF EXISTS "tenantId";
+ALTER TABLE products  DROP COLUMN IF EXISTS "tenantId";
+-- repita para activities, messages, payments, etc.
+
+-- 4) índices úteis globais (unicidade prática)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='ux_customers_email_ci') THEN
+    CREATE UNIQUE INDEX ux_customers_email_ci ON customers (LOWER(email)) WHERE email IS NOT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='ux_customers_phone_norm') THEN
+    CREATE UNIQUE INDEX ux_customers_phone_norm ON customers (regexp_replace(phone,'\D','','g')) WHERE phone IS NOT NULL;
+  END IF;
+END $$;
+
+
+Server
+	•	Remover middlewares/headers x-tenant-id e qualquer filtragem por tenant.
+	•	Em storage/repos: deletar overloads “ByTenant” e manter somente versões globais.
+
+⸻
+
+2) ERP: consistência de estoque + Stripe durável
+
+2.1 Estoque sem negativos (atômico, simples e já suficiente)
+_____________________________________
+ts 
+
+// server/erp/checkout.service.ts
+export async function createOrder(input: {header:any; items:{sku:string;qty:number;price:number}[]}) {
+  return db.transaction(async (tx)=>{
+    const [order] = await tx.insert(orders).values(input.header).returning();
+    for (const it of input.items) {
+      await tx.insert(orderItems).values({...it, orderId: order.id});
+      const res = await tx.execute(sql`
+        UPDATE products
+           SET stock = stock - ${it.qty}
+         WHERE sku = ${it.sku} AND stock >= ${it.qty}
+      `);
+      if (res.rowCount === 0) throw new Error(`Sem estoque para ${it.sku}`);
+    }
+    return order;
+  });
+}
+____________________________________
+
+2.2 Webhooks Stripe assinados + idempotência durável
+
+Crie a tabela de eventos e use express.raw:
+_____________________________________
+ts
+
+// shared/schema.webhooks.ts
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: text("event_id").notNull().unique(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+_________________________________________
+ts
+
+// server/payments/stripe.webhook.ts
+app.post("/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    let event: Stripe.Event;
+    try {
+      const sig = req.headers["stripe-signature"] as string;
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    } catch (e) { return res.status(400).send("Invalid signature"); }
+
+    // idempotência durável
+    try {
+      await db.insert(webhookEvents).values({ eventId: event.id, payload: event as any });
+    } catch { return res.json({ received: true, duplicate: true }); }
+
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const s = event.data.object as Stripe.Checkout.Session;
+        const orderId = s.metadata?.orderId!;
+        await db.transaction(async (tx) => {
+          await tx.update(orders).set({ status: "paid" }).where(eq(orders.id, orderId));
+          await tx.insert(payments).values({
+            orderId, provider: "stripe", amount: s.amount_total!, currency: s.currency!, raw: event as any
+          });
+        });
+        break;
+      }
+      // …refunds etc.
+    }
+    res.json({ received: true });
+});
+
+_____________________________________
+
+3) CRM: dedupe, pipeline DnD estável e SLA simples
+
+3.1 Upsert/Dedupe (email lower + phone normalizado)
+
+ts
+
+export async function upsertCustomer(input:{name?:string;email?:string;phone?:string;...}){
+  const email = input.email?.trim().toLowerCase() ?? null;
+  const phone = input.phone?.replace(/\D/g,'') ?? null;
+
+  const existing = await db.execute(sql`
+    SELECT * FROM customers
+     WHERE (${email} IS NOT NULL AND LOWER(email) = ${email})
+        OR (${phone} IS NOT NULL AND regexp_replace(phone,'\\D','','g') = ${phone})
+     LIMIT 1
+  `).then(r => (r.rows as any[])[0]);
+
+  if (existing) {
+    const [u] = await db.update(customers)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(customers.id, existing.id))
+      .returning();
+    return u;
+  }
+  const [c] = await db.insert(customers).values(input).returning();
+  return c;
+}
+
+
+3.2 Pipeline drag-and-drop transacional (reordena irmãos)
+
+ts
+
+export async function moveDeal(dealId:string, toStageId:string, toIndex:number){
+  await db.transaction(async (tx)=>{
+    await tx.update(deals).set({ stageId: toStageId, position: toIndex, updatedAt: new Date() })
+      .where(eq(deals.id, dealId));
+    await tx.execute(sql`
+      WITH ordered AS (
+        SELECT id, row_number() OVER (ORDER BY position, updated_at) - 1 AS rn
+          FROM deals WHERE stage_id = ${toStageId}
+      )
+      UPDATE deals d SET position = o.rn FROM ordered o WHERE d.id = o.id;
+    `);
+  });
+}
+
+
+3.3 SLA/escalação (worker simples)
+
+ts
+
+export async function runSLA(){
+  const late = await db.execute(sql`
+    SELECT id FROM activities WHERE status='open' AND due_date < now()
+  `).then(r=>r.rows as any[]);
+  for (const a of late) {
+    await db.update(activities).set({ status: 'late' }).where(eq(activities.id, a.id));
+    // TODO: notificar owner/manager
+  }
+}
+
+
+4) IA (Atendimento/Vendas): telemetria + handoff automático
+	•	Métrica por resposta (modelo, tokens, ms, custo) em ai_traces.
+	•	Fallback quando confidence < 0.55 → cria Activity no CRM.
+
+ts
+
+if (answer.confidence < 0.55) {
+  await db.insert(activities).values({ title: "Handoff humano", note: msg.text, status: "open" });
+  return "Vou te colocar com um atendente humano agora, ok?";
+}
+
+
+5) Marketplace: carrinho persistente + reforços
+	•	Persistir carrinho (localStorage + cookie sessionId).
+	•	Slug SEO básico por produto.
+	•	Validação de estoque somente no backend (já coberta pelo ERP acima).
+
+ts
+
+// client/lib/cart.ts
+export const cart = {
+  load: () => JSON.parse(localStorage.getItem("cart") || "[]"),
+  save: (items:any[]) => localStorage.setItem("cart", JSON.stringify(items)),
+};
+
+
+6) UI/UX “Apple-like” (elegante, leve) — tokens + componentes
+
+Tokens (escuro por padrão; fácil alternar claro)
+
+css
+
+/* client/src/styles/theme.css */
+:root{
+  --bg:#0b0c0e; --panel:#121417; --card:#15181c;
+  --text:#e7e9ee; --muted:#8b93a1; --accent:#34d399; --accent-600:#059669; --border:#1f242b;
+}
+
+
+ts
+
+// client/tailwind.config.ts (trecho)
+extend:{
+  colors:{ bg:"var(--bg)", panel:"var(--panel)", card:"var(--card)", text:"var(--text)", muted:"var(--muted)", accent:"var(--accent)", border:"var(--border)" },
+  boxShadow:{ soft:"0 6px 24px rgba(0,0,0,.25)" }, borderRadius:{ xl:"16px","2xl":"24px" }
+}
+
+
+tsx
+
+export function TableShell({title,children,toolbar}:{title:string;children:React.ReactNode;toolbar?:React.ReactNode;}){
+  return (
+    <section className="rounded-2xl border border-border/40 bg-card shadow-soft">
+      <div className="flex items-center justify-between p-4">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        {toolbar}
+      </div>
+      <div className="border-t border-border/40">{children}</div>
+    </section>
+  );
+}
+
+
+Guidelines rápidas
+	•	Tipografia Inter/SF Pro; 15–16px corpo, h1 40–56px.
+	•	Espaçamento generoso, cantos 16–24px, sombras suaves.
+	•	Tabelas com toolbar (busca, filtros, “Exportar CSV”), skeletons e toasts.
+
+⸻
+
+Commit plan (sequência que eu faria agora)
+	1.	DB migration (DROP tenantId + índices novos).
+	2.	Refactor storage/rotas removendo qualquer parâmetro de tenant.
+	3.	ERP: checkout atômico + webhooks Stripe assinados/idempotentes.
+	4.	CRM: upsert/dedupe + pipeline DnD + SLA worker.
+	5.	IA: métricas + handoff automático.
+	6.	Marketplace: persistência carrinho + slugs.
+	7.	UI: aplicar tokens e substituir cards/tabelas nos dashboards CRM/ERP/Marketplace.
