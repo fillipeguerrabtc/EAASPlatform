@@ -466,6 +466,15 @@ export const payments = pgTable("payments", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Webhook Events (for Stripe webhook idempotency)
+export const webhookEvents = pgTable("webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: text("event_id").notNull().unique(), // Stripe event ID for idempotency
+  payload: jsonb("payload").notNull(), // Full webhook payload
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ========================================
 // CALENDAR & SCHEDULING
 // ========================================
