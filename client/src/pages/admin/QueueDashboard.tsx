@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/input";
 import { RefreshCw, PlayCircle, XCircle, AlertCircle, CheckCircle, Clock, Play, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-type JobStatus = "pending" | "processing" | "completed" | "failed";
-type JobType = "crm_csv_import" | "marketing_campaign";
+type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
+type JobType = "crm_csv_import" | "marketing_campaign" | "brand_extract" | "brand_clone" | "email_send" | "other";
 
 interface Job {
   id: string;
@@ -39,6 +39,7 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   processing: "bg-blue-500/20 text-blue-700 dark:text-blue-400",
   completed: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400",
   failed: "bg-red-500/20 text-red-700 dark:text-red-400",
+  cancelled: "bg-gray-500/20 text-gray-700 dark:text-gray-400",
 };
 
 const STATUS_ICONS: Record<JobStatus, any> = {
@@ -46,6 +47,7 @@ const STATUS_ICONS: Record<JobStatus, any> = {
   processing: PlayCircle,
   completed: CheckCircle,
   failed: AlertCircle,
+  cancelled: XCircle,
 };
 
 export default function QueueDashboard() {
