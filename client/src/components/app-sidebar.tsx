@@ -17,7 +17,8 @@ import {
   Tag,
   Warehouse,
   UserCog,
-  Brain
+  Brain,
+  Palette
 } from "lucide-react";
 import {
   Sidebar,
@@ -56,6 +57,12 @@ export function AppSidebar() {
       url: "/marketplace",
       icon: ShoppingCart,
       testId: "marketplace",
+    },
+    {
+      title: "Variantes de Produtos",
+      url: "/admin/marketplace/variants",
+      icon: Palette,
+      testId: "product-variants",
     },
     {
       title: "CRM - Dashboard",

@@ -60,6 +60,7 @@ import InventoryTransfersPage from "@/pages/admin/inventory-transfers";
 import BudgetTrackingPage from "@/pages/admin/budget-tracking";
 import WishlistsPage from "@/pages/admin/wishlists";
 import ProductBundlesPage from "@/pages/admin/product-bundles";
+import ProductVariantsPage from "@/pages/admin/product-variants";
 import ReportTemplatesPage from "@/pages/admin/report-templates";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -162,6 +163,7 @@ function Router() {
             <Route path="/admin/finance/budget" component={BudgetTrackingPage} />
             <Route path="/admin/marketplace/wishlists" component={WishlistsPage} />
             <Route path="/admin/marketplace/bundles" component={ProductBundlesPage} />
+            <Route path="/admin/marketplace/variants" component={ProductVariantsPage} />
             <Route path="/admin/reports/templates" component={ReportTemplatesPage} />
             <Route path="/admin/user-approvals" component={UserApprovals} />
             <Route path="/admin/ai-governance" component={AiGovernance} />
