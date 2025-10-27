@@ -79,11 +79,18 @@ import {
   type InsertAiMetric,
   type ReportTemplate,
   type InsertReportTemplate,
-  type StockMovement,
-  type InsertStockMovement,
-  type ProductStock,
   type Budget,
   type InsertBudget,
+  type ProductReview,
+  type InsertProductReview,
+  type MessageTemplate,
+  type InsertMessageTemplate,
+  type PerformanceReview,
+  type InsertPerformanceReview,
+  type ProductBundle,
+  type InsertProductBundle,
+  type ProductBundleItem,
+  type InsertProductBundleItem,
 } from "@shared/schema";
 import { db } from "./db";
 import {
@@ -127,16 +134,13 @@ import {
   aiTraces,
   aiMetrics,
   reportTemplates,
-  stockMovements,
-  productStock,
-  warehouses,
   budgets,
-  customers,
   interactions,
   performanceReviews,
   productBundles,
   productBundleItems,
-  products,
+  productReviews,
+  messageTemplates,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
