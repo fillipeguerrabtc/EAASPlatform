@@ -1,5 +1,5 @@
 import { useQuery, QueryKey } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export interface PaginationMetadata {
   totalCount: number;
@@ -76,7 +76,24 @@ export function usePaginatedQuery<T>(
   const { data, isLoading, error } = useQuery({
     queryKey: [...(Array.isArray(queryKey) ? queryKey : [queryKey]), page, pageSize, search],
     queryFn: () => fetchWithPagination<T>(url, page, pageSize, search),
+    placeholderData: (previousData) => previousData, // Keep previous data during transitions
   });
+
+  // Auto-clamp page when results change (including empty results)
+  useEffect(() => {
+    if (data?.pagination) {
+      const serverPage = data.pagination.page;
+      const totalPages = data.pagination.totalPages;
+      
+      // If no results (totalPages = 0), reset to page 1
+      // If current page exceeds total pages, clamp to total pages
+      if (totalPages === 0 && page !== 1) {
+        setPage(1);
+      } else if (totalPages > 0 && page > totalPages) {
+        setPage(totalPages);
+      }
+    }
+  }, [data?.pagination, page]);
 
   const hasNextPage = data?.pagination ? page < data.pagination.totalPages : false;
   const hasPrevPage = page > 1;
@@ -90,8 +107,14 @@ export function usePaginatedQuery<T>(
     pageSize,
     search,
     setPage,
-    setPageSize,
-    setSearch,
+    setPageSize: (size: number) => {
+      setPageSize(size);
+      setPage(1); // Reset to first page when changing page size
+    },
+    setSearch: (newSearch: string) => {
+      setSearch(newSearch);
+      setPage(1); // Reset to first page when searching
+    },
     nextPage: () => {
       if (hasNextPage) setPage(page + 1);
     },
