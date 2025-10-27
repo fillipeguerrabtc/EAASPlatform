@@ -32,9 +32,6 @@ import {
   addTrackingPixel,
   type SendResult
 } from "./providers";
-import IORedis from "ioredis";
-import { Queue, Worker, Job } from "bullmq";
-
 // ========================================
 // TYPES
 // ========================================
@@ -49,60 +46,6 @@ type AudienceMember = {
   contactId?: string;
   toAddress: string;
 };
-
-// ========================================
-// REDIS / BULLMQ SETUP (with graceful degradation)
-// ========================================
-
-let connection: IORedis | null = null;
-let CampaignQueue: Queue | null = null;
-let CampaignWorker: Worker | null = null;
-let QUEUE_ENABLED = false;
-
-// Forward declaration for Worker creation function
-let createWorker: (() => void) | null = null;
-
-// Check Redis availability with timeout before initializing queue
-async function initializeRedis() {
-  try {
-    const testConnection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
-      maxRetriesPerRequest: 1,
-      retryStrategy: () => null, // Don't retry on failure
-      lazyConnect: true
-    });
-
-    // Suppress error events during health check
-    testConnection.on('error', () => {
-      // Silently ignore - we handle via try-catch
-    });
-
-    await testConnection.connect();
-    await testConnection.ping();
-    testConnection.disconnect();
-
-    // Redis is available - create real connection for BullMQ
-    connection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
-      maxRetriesPerRequest: null, // Required for BullMQ
-      enableReadyCheck: false
-    });
-
-    CampaignQueue = new Queue("marketing-campaigns", { connection });
-    QUEUE_ENABLED = true;
-    
-    console.log("✅ Marketing: Redis/BullMQ initialized");
-    
-    // Create worker after queue is ready
-    if (createWorker) {
-      createWorker();
-    }
-  } catch (error: any) {
-    QUEUE_ENABLED = false;
-    console.warn("⚠️  Marketing: Redis unavailable - campaign queue disabled");
-  }
-}
-
-// Initialize Redis asynchronously (non-blocking)
-initializeRedis();
 
 // ========================================
 // MARKETING SERVICE
