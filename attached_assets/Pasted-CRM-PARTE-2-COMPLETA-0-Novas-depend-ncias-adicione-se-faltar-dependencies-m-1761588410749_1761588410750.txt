@@ -1,0 +1,520 @@
+CRM — PARTE 2 (COMPLETA)
+0) Novas dependências (adicione se faltar)
+{
+  "dependencies": {
+    "multer": "^1.4.5-lts.1",
+    "csv-parse": "^5.5.6",
+    "bullmq": "^5.9.1",
+    "ioredis": "^5.4.1"
+  }
+}
+
+1) Schema — adicionar Auditoria e (opcional) pivot de tags
+
+Edite shared/schema.crm.ts e ACRESCENTE ao final os blocos abaixo (mantenha o restante como está):
+
+// ======================
+// AUDIT LOG (histórico de mudanças chaves)
+// ======================
+export const crmAudit = pgTable("crm_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  entity: varchar("entity", { length: 32 }).notNull(), // "contact" | "company" | "deal" | "activity"
+  entityId: uuid("entity_id").notNull(),
+  action: varchar("action", { length: 32 }).notNull(), // "create" | "update" | "delete" | "import" | "message"
+  beforeJson: text("before_json"),
+  afterJson: text("after_json"),
+  context: text("context"), // free-form: userId, source, ip, webhook id, etc.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  idxTenant: index("crm_audit_tenant_idx").on(table.tenantId),
+  idxEntity: index("crm_audit_entity_idx").on(table.entity, table.entityId),
+}));
+
+// ======================
+// (Opcional) pivot para tags normalizadas de contato
+// ======================
+export const contactTags = pgTable("contact_tags", {
+  contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "cascade" }).notNull(),
+  tag: varchar("tag", { length: 64 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.contactId, table.tag] }),
+  idxTenant: index("contact_tags_tenant_idx").on(table.tenantId),
+}));
+
+2) Auditoria — utilitário para registrar eventos
+
+Novo arquivo: server/modules/crm/audit.ts
+
+// server/modules/crm/audit.ts
+import { db } from "../../db";
+import { crmAudit } from "@shared/schema.crm";
+
+export async function logAudit(args: {
+  tenantId: string;
+  entity: "contact" | "company" | "deal" | "activity";
+  entityId: string;
+  action: "create" | "update" | "delete" | "import" | "message";
+  before?: any;
+  after?: any;
+  context?: any;
+}) {
+  await db.insert(crmAudit).values({
+    tenantId: args.tenantId,
+    entity: args.entity,
+    entityId: args.entityId,
+    action: args.action,
+    beforeJson: args.before ? JSON.stringify(args.before) : null,
+    afterJson: args.after ? JSON.stringify(args.after) : null,
+    context: args.context ? JSON.stringify(args.context) : null,
+  });
+}
+
+3) Segments Engine — executar queryJson em SQL seguro (contacts/companies/deals)
+
+Novo arquivo: server/modules/crm/segments.ts
+
+// server/modules/crm/segments.ts
+import { and, or, eq, ilike, gte, lte, sql } from "drizzle-orm";
+import { db } from "../../db";
+import { segments, contacts, companies, deals } from "@shared/schema.crm";
+
+type Rule = {
+  field: string;                  // ex: "email", "firstName", "valueCents"
+  op: "eq" | "neq" | "contains" | "starts" | "ends" | "gte" | "lte" | "in";
+  value: string | number | string[] | number[];
+};
+
+type SegmentQuery = {
+  rules: Rule[];
+  logic?: "AND" | "OR";
+};
+
+function buildPredicate(entity: "contacts" | "companies" | "deals", tenantId: string, q: SegmentQuery) {
+  const logic = q.logic || "AND";
+  const parts: any[] = [eq((entity === "contacts" ? contacts.tenantId : entity === "companies" ? companies.tenantId : deals.tenantId), tenantId)];
+
+  for (const r of q.rules) {
+    const val = r.value as any;
+    switch (entity) {
+      case "contacts": {
+        const f = (contacts as any)[r.field];
+        if (!f) continue;
+        parts.push(ruleToExpr(f, r.op, val));
+        break;
+      }
+      case "companies": {
+        const f = (companies as any)[r.field];
+        if (!f) continue;
+        parts.push(ruleToExpr(f, r.op, val));
+        break;
+      }
+      case "deals": {
+        const f = (deals as any)[r.field];
+        if (!f) continue;
+        parts.push(ruleToExpr(f, r.op, val));
+        break;
+      }
+    }
+  }
+
+  if (logic === "AND") return and(...parts);
+  return or(...parts);
+}
+
+function ruleToExpr(field: any, op: Rule["op"], value: any) {
+  switch (op) {
+    case "eq":   return eq(field, value);
+    case "neq":  return sql`${field} <> ${value}`;
+    case "contains": return ilike(field, `%${value}%`);
+    case "starts":   return ilike(field, `${value}%`);
+    case "ends":     return ilike(field, `%${value}`);
+    case "gte":  return gte(field, value);
+    case "lte":  return lte(field, value);
+    case "in":   return sql`${field} = ANY(${value})`;
+  }
+}
+
+export const SegmentsEngine = {
+  async runSegment(tenantId: string, segmentId: string, { page = 1, pageSize = 50 } = {}) {
+    const seg = await db.select().from(segments).where(eq(segments.id, segmentId)).limit(1);
+    if (!seg.length) throw new Error("segment not found");
+    if (seg[0].tenantId !== tenantId) throw new Error("forbidden");
+
+    const entity = seg[0].entity as "contacts" | "companies" | "deals";
+    const query = JSON.parse(seg[0].queryJson) as SegmentQuery;
+    const pred = buildPredicate(entity, tenantId, query);
+
+    if (entity === "contacts") {
+      const rows = await db.select().from(contacts).where(pred).limit(pageSize).offset((page-1)*pageSize);
+      const [{ count }] = await db.execute(sql`select count(*)::int as count from contacts where tenant_id=${tenantId}`);
+      return { entity, rows, page, pageSize, total: Number(count) };
+    }
+    if (entity === "companies") {
+      const rows = await db.select().from(companies).where(pred).limit(pageSize).offset((page-1)*pageSize);
+      const [{ count }] = await db.execute(sql`select count(*)::int as count from companies where tenant_id=${tenantId}`);
+      return { entity, rows, page, pageSize, total: Number(count) };
+    }
+    // deals
+    const rows = await db.select().from(deals).where(pred).limit(pageSize).offset((page-1)*pageSize);
+    const [{ count }] = await db.execute(sql`select count(*)::int as count from deals where tenant_id=${tenantId}`);
+    return { entity, rows, page, pageSize, total: Number(count) };
+  }
+};
+
+
+UI Hook (listar segmentos + rodar segmento)
+Adicione no server/modules/crm/routes.ts (no final do arquivo):
+
+// SEGMENTS
+app.get("/api/crm/segments.run", async (req, res) => {
+  try {
+    const { segmentId, page = 1, pageSize = 50 } = req.query as any;
+    if (!segmentId) return res.status(400).json({ error: "segmentId required" });
+    const out = await SegmentsEngine.runSegment(getCtx(req).tenantId, String(segmentId), { page: +page, pageSize: +pageSize });
+    res.json(out);
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+
+(importe SegmentsEngine no topo)
+
+4) Imports (CSV) — upload + fila (BullMQ) + processador
+4.1) Queue/Worker de Imports
+
+Novo arquivo: server/modules/crm/imports.ts
+
+// server/modules/crm/imports.ts
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import { Queue, Worker, Job } from "bullmq";
+import IORedis from "ioredis";
+import { parse } from "csv-parse";
+import { db } from "../../db";
+import { imports, contacts, companies } from "@shared/schema.crm";
+import { CRMService } from "./service";
+import { logAudit } from "./audit";
+
+const connection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379");
+export const ImportsQueue = new Queue("crm-imports", { connection });
+
+export type ImportJobData = {
+  tenantId: string;
+  entity: "contacts" | "companies";
+  filePath: string;             // local path para o CSV
+  mapping?: Record<string, string>; // mapeamento de colunas: { csvCol -> fieldName }
+  userId?: string;
+};
+
+export async function enqueueImport(data: ImportJobData) {
+  return ImportsQueue.add("import-csv", data, { attempts: 1, removeOnComplete: true, removeOnFail: false });
+}
+
+// Worker
+export const ImportsWorker = new Worker<ImportJobData>("crm-imports", async (job: Job<ImportJobData>) => {
+  const { tenantId, entity, filePath, mapping = {}, userId = "system" } = job.data;
+
+  // cria registro do import
+  const [imp] = await db.insert(imports).values({
+    tenantId, entity, filename: path.basename(filePath), status: "processing", totalRows: 0, processedRows: 0
+  }).returning();
+
+  let processed = 0;
+  let total = 0;
+
+  const stream = fs.createReadStream(filePath);
+  const parser = stream.pipe(parse({ columns: true, skip_empty_lines: true, bom: true }));
+
+  for await (const rec of parser) {
+    total++;
+    const payload: any = {};
+    // aplica mapeamento (ou usa nome direto)
+    for (const k of Object.keys(rec)) {
+      const mapped = mapping[k] || k;
+      payload[mapped] = rec[k];
+    }
+
+    try {
+      if (entity === "contacts") {
+        const out = await CRMService.upsertContact({ tenantId, userId, role: "admin" }, payload);
+        await logAudit({ tenantId, entity: "contact", entityId: out.id, action: "import", after: payload, context: { file: filePath } });
+      } else {
+        const out = await CRMService.upsertCompany({ tenantId, userId, role: "admin" }, payload);
+        await logAudit({ tenantId, entity: "company", entityId: out.id, action: "import", after: payload, context: { file: filePath } });
+      }
+      processed++;
+      await db.update(imports).set({ processedRows: processed, totalRows: total }).where(imports.id.eq(imp.id));
+    } catch (e) {
+      // continua; pode acumular erro geral (aqui LOG)
+    }
+  }
+
+  await db.update(imports).set({ status: "done", processedRows: processed, totalRows: total }).where(imports.id.eq(imp.id));
+}, { connection });
+
+
+O worker é leve e usa o CRMService (reaproveitando dedupe/validações).
+Ele cria um registro em imports e atualiza o progresso enquanto processa.
+
+4.2) Upload de CSV + enfileirar
+
+Atualize server/modules/crm/routes.ts — adicione upload via multer e endpoints:
+
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { enqueueImport } from "./imports";
+
+// STORAGE local
+const storageDir = process.env.STORAGE_DIR || "./.storage";
+const uploadsDir = path.join(storageDir, "uploads");
+fs.mkdirSync(uploadsDir, { recursive: true });
+const upload = multer({ dest: uploadsDir });
+
+// IMPORT upload + enqueue
+app.post("/api/crm/imports/upload", upload.single("file"), async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    const { entity = "contacts" } = req.body || {};
+    if (!req.file) return res.status(400).json({ error: "file required (multipart/form-data 'file')" });
+
+    const job = await enqueueImport({
+      tenantId: ctx.tenantId,
+      entity: entity === "companies" ? "companies" : "contacts",
+      filePath: req.file.path,
+      mapping: req.body?.mapping ? JSON.parse(req.body.mapping) : undefined,
+      userId: ctx.userId
+    });
+    res.json({ queued: true, jobId: job.id });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message });
+  }
+});
+
+// IMPORT status (listar últimos)
+app.get("/api/crm/imports.list", async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    const rows = await db.execute(`select * from imports where tenant_id=$1 order by created_at desc limit 50`, [ctx.tenantId]);
+    res.json({ rows });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message });
+  }
+});
+
+5) Integrações — WhatsApp/Twilio + Meta (Facebook/Instagram) → Activities
+
+Novo arquivo: server/modules/crm/integrations.ts
+
+// server/modules/crm/integrations.ts
+import type { Request, Response } from "express";
+import crypto from "crypto";
+import { db } from "../../db";
+import { CRMService } from "./service";
+import { logAudit } from "./audit";
+
+// =============== TWILIO WHATSAPP (sandbox) ===============
+// Endpoint padrão Twilio envia form-urlencoded; já que usamos express.json,
+// garanta no index.ts: app.use(express.urlencoded({ extended: true }));
+export async function twilioWhatsappWebhook(req: Request, res: Response) {
+  try {
+    const tenantId = (req as any).tenantId || process.env.PRIMARY_TENANT_ID!;
+    const from = String(req.body.From || "");
+    const to = String(req.body.To || "");
+    const body = String(req.body.Body || "");
+
+    // upsert contato básico por phone
+    const up = await CRMService.upsertContact({ tenantId, role: "admin", userId: "twilio" }, {
+      firstName: from.replace("whatsapp:+", "WPP "),
+      phone: from,
+      source: "whatsapp",
+      isOptIn: true
+    });
+
+    // cria activity "whatsapp"
+    const act = await CRMService.createActivity({ tenantId, role: "admin", userId: "twilio" }, {
+      type: "whatsapp",
+      subject: `Msg de ${from}`,
+      content: body,
+      contactId: up.id
+    });
+
+    await logAudit({ tenantId, entity: "activity", entityId: act.id, action: "message", after: { from, to, body }, context: { provider: "twilio" }});
+    res.status(200).send("OK");
+  } catch (e: any) {
+    res.status(200).send("OK"); // Twilio precisa 200 mesmo em erro para não re-tentar demais
+  }
+}
+
+// =============== META WEBHOOK (Facebook/Instagram) ===============
+// Verificação do webhook (GET)
+export function metaWebhookVerify(req: Request, res: Response) {
+  const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || "dev";
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+}
+
+// Recebimento de eventos (POST)
+export async function metaWebhookReceive(req: Request, res: Response) {
+  try {
+    const tenantId = (req as any).tenantId || process.env.PRIMARY_TENANT_ID!;
+    const body = req.body;
+
+    // Estrutura varia entre Facebook/Instagram; simplificamos as mensagens:
+    const msgs: Array<{ from: string; text: string; channel: "facebook" | "instagram" }> = [];
+
+    if (body.object === "page" && Array.isArray(body.entry)) {
+      for (const entry of body.entry) {
+        for (const mc of entry.messaging || []) {
+          if (mc.message?.text) {
+            msgs.push({ from: String(mc.sender?.id || "fb-user"), text: mc.message.text, channel: "facebook" });
+          }
+        }
+      }
+    }
+
+    if (body.object === "instagram" && Array.isArray(body.entry)) {
+      for (const entry of body.entry) {
+        for (const ch of entry.changes || []) {
+          const txt = ch?.value?.message || ch?.value?.text;
+          const from = ch?.value?.from || "ig-user";
+          if (txt) msgs.push({ from: String(from), text: String(txt), channel: "instagram" });
+        }
+      }
+    }
+
+    for (const m of msgs) {
+      const up = await CRMService.upsertContact({ tenantId, role: "admin", userId: "meta" }, {
+        firstName: `${m.channel.toUpperCase()} ${m.from}`,
+        source: m.channel,
+        isOptIn: true
+      });
+      const act = await CRMService.createActivity({ tenantId, role: "admin", userId: "meta" }, {
+        type: m.channel as any,
+        subject: `Msg ${m.channel} de ${m.from}`,
+        content: m.text,
+        contactId: up.id
+      });
+      await logAudit({ tenantId, entity: "activity", entityId: act.id, action: "message", after: m, context: { provider: "meta" }});
+    }
+
+    res.status(200).send("EVENT_RECEIVED");
+  } catch (e: any) {
+    res.status(200).send("EVENT_RECEIVED");
+  }
+}
+
+
+Ajustes no server/index.ts (para Twilio & Meta webhooks):
+
+Antes de app.use(express.json()), adicione:
+
+app.use(express.urlencoded({ extended: true })); // Twilio form POSTs
+
+
+Adicione rotas no server/routes.ts (no topo importe os handlers):
+
+import { twilioWhatsappWebhook, metaWebhookVerify, metaWebhookReceive } from "./modules/crm/integrations";
+
+export function registerRoutes(app: Express) {
+  app.use("/api", singleTenantMiddleware);
+
+  // TWILIO WHATSAPP (sandbox) – use a URL do ngrok/Replit aqui
+  app.post("/api/integrations/twilio/whatsapp", twilioWhatsappWebhook);
+
+  // META (Facebook/Instagram)
+  app.get("/api/integrations/meta/webhook", metaWebhookVerify);
+  app.post("/api/integrations/meta/webhook", metaWebhookReceive);
+
+  // ...demais rotas já existentes...
+  registerCrmRoutes(app);
+}
+
+
+Configuração:
+• Twilio WhatsApp sandbox: aponte o webhook para /api/integrations/twilio/whatsapp.
+• Meta: configure Webhook Verify Token em .env → META_WEBHOOK_VERIFY_TOKEN=seu_token. Aponte a verificação (GET) e recebimento (POST) para /api/integrations/meta/webhook.
+
+6) UI Hooks adicionais (para telas)
+
+Adicione ao final de server/modules/crm/routes.ts:
+
+// DASHBOARD: últimos activities (feed)
+app.get("/api/crm/activities.feed", async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    const rows = await db.execute(`
+      select * from activities
+      where tenant_id=$1
+      order by created_at desc
+      limit 50
+    `, [ctx.tenantId]);
+    res.json({ rows });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message });
+  }
+});
+
+// STATS simples (deals por stage)
+app.get("/api/crm/deals.statsByStage", async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    const rows = await db.execute(`
+      select stage_id, count(*)::int as total, sum(value_cents)::bigint as value_cents
+      from deals
+      where tenant_id=$1
+      group by stage_id
+    `, [ctx.tenantId]);
+    res.json({ rows });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message });
+  }
+});
+
+
+(importe db no topo: import { db } from "../../db";)
+
+7) Como testar tudo rapidamente
+Segments
+
+Crie um segment:
+
+insert into segments (id, tenant_id, name, entity, query_json)
+values (gen_random_uuid(), 'tenant_0001', 'Gmail Contacts', 'contacts', '{"rules":[{"field":"email","op":"contains","value":"@gmail.com"}],"logic":"AND"}');
+
+
+Rode:
+
+GET /api/crm/segments.run?segmentId=<ID>&page=1&pageSize=50
+
+Imports
+
+Faça upload (multipart/form-data):
+POST /api/crm/imports/upload com file=@contatos.csv e entity=contacts
+
+Liste status:
+GET /api/crm/imports.list
+
+WhatsApp (Twilio)
+
+Configure o webhook do seu sandbox para: /api/integrations/twilio/whatsapp.
+
+Envie mensagem do seu número sandbox → verifica /api/crm/activities.feed.
+
+Meta (Facebook/Instagram)
+
+GET /api/integrations/meta/webhook?hub.mode=subscribe&hub.verify_token=SEU_TOKEN&hub.challenge=123
+
+POST /api/integrations/meta/webhook com payload de teste → veja no feed.
+
+✅ CRM PARTE 2 ENTREGUE
+
+Inclui: Segmentos executáveis, Importação CSV com fila, Integrações de mensagens → Activities, Auditoria, UI hooks e endpoints auxiliares. Tudo Single-Tenant, validado e paginado.
+
