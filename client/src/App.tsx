@@ -65,6 +65,7 @@ import WishlistsPage from "@/pages/admin/wishlists";
 import ProductBundlesPage from "@/pages/admin/product-bundles";
 import ProductVariantsPage from "@/pages/admin/product-variants";
 import ReportTemplatesPage from "@/pages/admin/report-templates";
+import QueueDashboard from "@/pages/admin/QueueDashboard";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -172,6 +173,7 @@ function Router() {
             <Route path="/admin/ai-governance" component={AiGovernance} />
             <Route path="/admin/ai-persona" component={AiPersonaPage} />
             <Route path="/admin/ai/knowledge-base" component={AiKnowledgeBasePage} />
+            <Route path="/admin/queue" component={QueueDashboard} />
             <Route path="/" component={Shop} />
             <Route path="/shop" component={Shop} />
             <Route path="/cart" component={CartPage} />

@@ -20,7 +20,8 @@ import {
   Brain,
   Palette,
   Smile,
-  Sparkles
+  Sparkles,
+  ListChecks
 } from "lucide-react";
 import {
   Sidebar,
@@ -59,6 +60,12 @@ export function AppSidebar() {
       url: "/admin/ai-persona",
       icon: Smile,
       testId: "ai-persona",
+    },
+    {
+      title: "Job Queue",
+      url: "/admin/queue",
+      icon: ListChecks,
+      testId: "job-queue",
     },
   ];
 

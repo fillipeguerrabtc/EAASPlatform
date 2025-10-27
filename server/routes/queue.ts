@@ -3,11 +3,18 @@
  * Dashboard endpoints for monitoring and managing jobs
  */
 
-import { Express } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import { db } from "../db";
 import { jobQueue } from "@shared/schema";
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
-import { isAuthenticated } from "../middleware";
+
+// Middleware to check authentication
+const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+};
 
 export function registerQueueRoutes(app: Express) {
   /**
