@@ -1,0 +1,779 @@
+ERP — PARTE 2 (Completo)
+0) Novas dependências (se faltarem)
+{
+  "dependencies": {
+    "zod": "^3.23.8",
+    "ioredis": "^5.4.1",
+    "bullmq": "^5.9.1"
+  }
+}
+
+1) Schema — Endereços, Entrega, Impostos, Cupons, Faturamento, Fulfillment/Devolução
+
+Abra shared/schema.erp.ts e ACRESCENTE os blocos abaixo (não remova nada do que já existe):
+
+// ---------- ADDRESSES ----------
+import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, index, primaryKey } from "drizzle-orm/pg-core";
+
+export const orderAddresses = pgTable("order_addresses", {
+  orderId: uuid("order_id").primaryKey().notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  email: varchar("email", { length: 240 }),
+  phone: varchar("phone", { length: 64 }),
+  // billing
+  billName: varchar("bill_name", { length: 240 }),
+  billLine1: varchar("bill_line1", { length: 240 }),
+  billLine2: varchar("bill_line2", { length: 240 }),
+  billCity: varchar("bill_city", { length: 120 }),
+  billState: varchar("bill_state", { length: 120 }),
+  billZip: varchar("bill_zip", { length: 32 }),
+  billCountry: varchar("bill_country", { length: 64 }),
+  // shipping
+  shipName: varchar("ship_name", { length: 240 }),
+  shipLine1: varchar("ship_line1", { length: 240 }),
+  shipLine2: varchar("ship_line2", { length: 240 }),
+  shipCity: varchar("ship_city", { length: 120 }),
+  shipState: varchar("ship_state", { length: 120 }),
+  shipZip: varchar("ship_zip", { length: 32 }),
+  shipCountry: varchar("ship_country", { length: 64 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("order_addr_tenant_idx").on(t.tenantId),
+}));
+
+// ---------- SHIPPING ----------
+export const shippingMethods = pgTable("shipping_methods", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  baseCents: integer("base_cents").default(0).notNull(),
+  perItemCents: integer("per_item_cents").default(0).notNull(),
+  active: boolean("active").default(true).notNull(),
+  countries: text("countries"), // CSV de países permitidos ou vazio = todos
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("ship_methods_tenant_idx").on(t.tenantId),
+  idxActive: index("ship_methods_active_idx").on(t.active)
+}));
+
+// ---------- TAX ----------
+export const taxRates = pgTable("tax_rates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  country: varchar("country", { length: 64}).notNull(), // BR, US, PT...
+  state: varchar("state", { length: 64 }),
+  city: varchar("city", { length: 120 }),
+  rateBp: integer("rate_bp").notNull(), // basis points ex.: 1250 = 12,50%
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("tax_rates_tenant_idx").on(t.tenantId),
+}));
+
+// ---------- COUPONS ----------
+export const coupons = pgTable("coupons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  code: varchar("code", { length: 64 }).notNull(),
+  // tipo: percent x valor fixo
+  isPercent: boolean("is_percent").default(true).notNull(),
+  value: integer("value").notNull(), // % (0..100) ou cents
+  minSubtotalCents: integer("min_subtotal_cents").default(0).notNull(),
+  startsAt: timestamp("starts_at"),
+  endsAt: timestamp("ends_at"),
+  maxRedemptions: integer("max_redemptions"),
+  timesRedeemed: integer("times_redeemed").default(0).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("coupons_tenant_idx").on(t.tenantId),
+  idxCode: index("coupons_code_idx").on(t.code)
+}));
+
+// ---------- INVOICES ----------
+export const invoices = pgTable("invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  orderId: uuid("order_id").notNull(),
+  number: varchar("number", { length: 64 }).notNull(),
+  totalCents: integer("total_cents").notNull(),
+  currency: varchar("currency", { length: 8 }).notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("invoices_tenant_idx").on(t.tenantId),
+  idxOrder: index("invoices_order_idx").on(t.orderId)
+}));
+
+// ---------- FULFILLMENTS ----------
+export const fulfillments = pgTable("fulfillments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  orderId: uuid("order_id").notNull(),
+  carrier: varchar("carrier", { length: 64 }),
+  trackingNumber: varchar("tracking_number", { length: 120 }),
+  itemsJson: text("items_json"), // [{"orderItemId": "...", "qty": 1}]
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("fulfill_tenant_idx").on(t.tenantId),
+  idxOrder: index("fulfill_order_idx").on(t.orderId)
+}));
+
+// ---------- RETURNS ----------
+export const returnsTbl = pgTable("returns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  orderId: uuid("order_id").notNull(),
+  reason: varchar("reason", { length: 240 }),
+  itemsJson: text("items_json"), // [{"orderItemId": "...", "qty": 1}]
+  approved: boolean("approved").default(false).notNull(),
+  refundCents: integer("refund_cents").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("returns_tenant_idx").on(t.tenantId),
+  idxOrder: index("returns_order_idx").on(t.orderId)
+}));
+
+2) Validadores (Zod)
+
+Novo arquivo: server/modules/erp2/validators.ts
+
+import { z } from "zod";
+
+export const setAddressesSchema = z.object({
+  orderId: z.string().uuid(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  billing: z.object({
+    name: z.string().min(1),
+    line1: z.string().min(1),
+    line2: z.string().optional(),
+    city: z.string().min(1),
+    state: z.string().optional(),
+    zip: z.string().optional(),
+    country: z.string().min(2)
+  }),
+  shipping: z.object({
+    name: z.string().min(1),
+    line1: z.string().min(1),
+    line2: z.string().optional(),
+    city: z.string().min(1),
+    state: z.string().optional(),
+    zip: z.string().optional(),
+    country: z.string().min(2)
+  })
+});
+
+export const shippingQuoteSchema = z.object({
+  orderId: z.string().uuid(),
+  methodId: z.string().uuid()
+});
+
+export const couponApplySchema = z.object({
+  orderId: z.string().uuid(),
+  code: z.string().min(1)
+});
+
+export const fulfillSchema = z.object({
+  orderId: z.string().uuid(),
+  carrier: z.string().optional(),
+  trackingNumber: z.string().optional(),
+  items: z.array(z.object({
+    orderItemId: z.string().uuid(),
+    qty: z.number().int().min(1)
+  })).min(1),
+  note: z.string().optional()
+});
+
+export const returnSchema = z.object({
+  orderId: z.string().uuid(),
+  reason: z.string().optional(),
+  items: z.array(z.object({
+    orderItemId: z.string().uuid(),
+    qty: z.number().int().min(1)
+  })).min(1)
+});
+
+3) Serviço ERP2 — Endereços, Frete, Imposto, Cupom, Fatura, Fulfillment, Devolução
+
+Novo arquivo: server/modules/erp2/service.ts
+
+import { db } from "../../db";
+import {
+  orders, orderItems, orderAddresses, shippingMethods, taxRates,
+  coupons, invoices, fulfillments, returnsTbl
+} from "@shared/schema.erp";
+import { and, eq, sql, desc } from "drizzle-orm";
+import {
+  setAddressesSchema, shippingQuoteSchema, couponApplySchema, fulfillSchema, returnSchema
+} from "./validators";
+
+type Ctx = { tenantId: string; role: string; userId: string };
+
+export const ERP2Service = {
+  async setAddresses(ctx: Ctx, input: unknown) {
+    const d = setAddressesSchema.parse(input);
+    // upsert:
+    await db.execute(sql`
+      insert into order_addresses (order_id, tenant_id, email, phone,
+        bill_name, bill_line1, bill_line2, bill_city, bill_state, bill_zip, bill_country,
+        ship_name, ship_line1, ship_line2, ship_city, ship_state, ship_zip, ship_country, created_at, updated_at)
+      values (${d.orderId}, ${ctx.tenantId}, ${d.email || null}, ${d.phone || null},
+        ${d.billing.name}, ${d.billing.line1}, ${d.billing.line2 || null}, ${d.billing.city}, ${d.billing.state || null}, ${d.billing.zip || null}, ${d.billing.country},
+        ${d.shipping.name}, ${d.shipping.line1}, ${d.shipping.line2 || null}, ${d.shipping.city}, ${d.shipping.state || null}, ${d.shipping.zip || null}, ${d.shipping.country}, now(), now())
+      on conflict (order_id) do update set
+        email=excluded.email, phone=excluded.phone,
+        bill_name=excluded.bill_name, bill_line1=excluded.bill_line1, bill_line2=excluded.bill_line2, bill_city=excluded.bill_city, bill_state=excluded.bill_state, bill_zip=excluded.bill_zip, bill_country=excluded.bill_country,
+        ship_name=excluded.ship_name, ship_line1=excluded.ship_line1, ship_line2=excluded.ship_line2, ship_city=excluded.ship_city, ship_state=excluded.ship_state, ship_zip=excluded.ship_zip, ship_country=excluded.ship_country,
+        updated_at=now()
+    `);
+    return { ok: true };
+  },
+
+  async shippingQuote(ctx: Ctx, input: unknown) {
+    const d = shippingQuoteSchema.parse(input);
+    const [ord] = await db.select().from(orders).where(and(eq(orders.id, d.orderId), eq(orders.tenantId, ctx.tenantId))).limit(1);
+    if (!ord) throw new Error("order not found");
+
+    const [addr] = await db.select().from(orderAddresses).where(eq(orderAddresses.orderId, d.orderId)).limit(1);
+    if (!addr) throw new Error("address missing");
+
+    const [m] = await db.select().from(shippingMethods).where(and(eq(shippingMethods.id, d.methodId), eq(shippingMethods.tenantId, ctx.tenantId))).limit(1);
+    if (!m || !m.active) throw new Error("shipping method not available");
+
+    // Itens:
+    const items = await db.select().from(orderItems).where(and(eq(orderItems.orderId, d.orderId), eq(orderItems.tenantId, ctx.tenantId)));
+    const qtyTotal = items.reduce((s, it) => s + it.quantity, 0);
+
+    // País restrito?
+    if (m.countries && m.countries.length) {
+      const set = m.countries.split(",").map(s => s.trim().toUpperCase());
+      if (!set.includes((addr.shipCountry || "").toUpperCase())) throw new Error("shipping not available to country");
+    }
+
+    const shippingCents = (m.baseCents || 0) + (m.perItemCents || 0) * qtyTotal;
+
+    // Imposto (ex.: baseado em ship country/state)
+    const [rate] = await db.select().from(taxRates)
+      .where(and(eq(taxRates.tenantId, ctx.tenantId), eq(taxRates.country, addr.shipCountry || ord.currency)))
+      .orderBy(desc(taxRates.createdAt))
+      .limit(1);
+    const rateBp = rate?.rateBp || 0;
+
+    const subtotal = ord.subtotalCents;
+    const discount = ord.discountCents;
+    const tax = Math.round(((subtotal - discount) * rateBp) / 10000);
+    const total = Math.max(0, subtotal - discount + shippingCents + tax);
+
+    // grava no pedido
+    await db.update(orders).set({
+      shippingCents: shippingCents,
+      taxCents: tax,
+      totalCents: total,
+      updatedAt: new Date()
+    }).where(eq(orders.id, d.orderId));
+    return { shippingCents, taxCents: tax, totalCents: total, currency: ord.currency };
+  },
+
+  async applyCoupon(ctx: Ctx, input: unknown) {
+    const d = couponApplySchema.parse(input);
+    const [ord] = await db.select().from(orders).where(and(eq(orders.id, d.orderId), eq(orders.tenantId, ctx.tenantId))).limit(1);
+    if (!ord) throw new Error("order not found");
+
+    const now = new Date();
+    const [c] = await db.select().from(coupons)
+      .where(and(eq(coupons.tenantId, ctx.tenantId), eq(coupons.code, d.code)))
+      .limit(1);
+    if (!c || !c.active) throw new Error("invalid coupon");
+    if (c.startsAt && c.startsAt > now) throw new Error("coupon not started");
+    if (c.endsAt && c.endsAt < now) throw new Error("coupon expired");
+    if (c.maxRedemptions && c.timesRedeemed >= c.maxRedemptions) throw new Error("coupon exhausted");
+    if (ord.subtotalCents < (c.minSubtotalCents || 0)) throw new Error("min subtotal not reached");
+
+    let discount = 0;
+    if (c.isPercent) discount = Math.floor((ord.subtotalCents * c.value) / 100);
+    else discount = Math.min(c.value, ord.subtotalCents);
+
+    const total = Math.max(0, ord.subtotalCents - discount + ord.shippingCents + ord.taxCents);
+    await db.update(orders).set({ discountCents: discount, totalCents: total, updatedAt: new Date() }).where(eq(orders.id, d.orderId));
+    await db.execute(sql`update coupons set times_redeemed = times_redeemed + 1 where id = ${c.id}`);
+    return { discountCents: discount, totalCents: total, currency: ord.currency };
+  },
+
+  async createInvoice(ctx: Ctx, orderId: string) {
+    const [ord] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.tenantId, ctx.tenantId))).limit(1);
+    if (!ord) throw new Error("order not found");
+
+    // número de fatura simples (sequencial por order ano)
+    const number = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random()*999999)).padStart(6, "0")}`;
+    const [inv] = await db.insert(invoices).values({
+      tenantId: ctx.tenantId, orderId, number, totalCents: ord.totalCents, currency: ord.currency
+    }).returning();
+    return { id: inv.id, number: inv.number };
+  },
+
+  async fulfillOrder(ctx: Ctx, input: unknown) {
+    const d = fulfillSchema.parse(input);
+    const itemsJson = JSON.stringify(d.items);
+    const [f] = await db.insert(fulfillments).values({
+      tenantId: ctx.tenantId, orderId: d.orderId, carrier: d.carrier || null, trackingNumber: d.trackingNumber || null,
+      itemsJson, note: d.note || null
+    }).returning();
+    await db.update(orders).set({ status: "fulfilled", updatedAt: new Date() }).where(and(eq(orders.id, d.orderId), eq(orders.tenantId, ctx.tenantId)));
+    return { id: f.id };
+  },
+
+  async createReturn(ctx: Ctx, input: unknown) {
+    const d = returnSchema.parse(input);
+    const itemsJson = JSON.stringify(d.items);
+    const [r] = await db.insert(returnsTbl).values({
+      tenantId: ctx.tenantId, orderId: d.orderId, reason: d.reason || null, itemsJson, refundCents: 0, approved: false
+    }).returning();
+    return { id: r.id };
+  },
+
+  async approveReturnAndRefund(ctx: Ctx, returnId: string, refundCents: number) {
+    const [r] = await db.select().from(returnsTbl).where(and(eq(returnsTbl.id, returnId), eq(returnsTbl.tenantId, ctx.tenantId))).limit(1);
+    if (!r) throw new Error("return not found");
+    await db.update(returnsTbl).set({ approved: true, refundCents }).where(eq(returnsTbl.id, returnId));
+    // (Opcional) acionar Stripe refund aqui (usar payments/providerPaymentId)
+    return { approved: true, refundCents };
+  }
+};
+
+4) Rotas ERP2
+
+Novo arquivo: server/modules/erp2/routes.ts
+
+import type { Express, Request, Response } from "express";
+import { ERP2Service } from "./service";
+
+function getCtx(req: Request) {
+  const tenantId = (req as any).tenantId || (res as any)?.locals?.tenantId || process.env.PRIMARY_TENANT_ID!;
+  const role = (req.headers["x-role"] as string) || "admin";
+  const userId = (req.headers["x-user-id"] as string) || "system";
+  return { tenantId, role, userId };
+}
+
+export function registerErp2Routes(app: Express) {
+  app.post("/api/erp/orders.set-addresses", async (req, res) => {
+    try { res.json(await ERP2Service.setAddresses(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/orders.shipping-quote", async (req, res) => {
+    try { res.json(await ERP2Service.shippingQuote(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/orders.apply-coupon", async (req, res) => {
+    try { res.json(await ERP2Service.applyCoupon(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/orders.invoice", async (req, res) => {
+    try { res.json(await ERP2Service.createInvoice(getCtx(req), String(req.body?.orderId))); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/orders.fulfill", async (req, res) => {
+    try { res.json(await ERP2Service.fulfillOrder(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/orders.return", async (req, res) => {
+    try { res.json(await ERP2Service.createReturn(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  app.post("/api/erp/returns.approve", async (req, res) => {
+    try {
+      const { returnId, refundCents } = req.body || {};
+      res.json(await ERP2Service.approveReturnAndRefund(getCtx(req), returnId, +refundCents || 0));
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+}
+
+
+Registre no seu server/routes.ts:
+
+import { registerErp2Routes } from "./modules/erp2/routes";
+export function registerRoutes(app: Express) {
+  app.use("/api", singleTenantMiddleware);
+  // ...
+  registerErpRoutes(app);
+  registerErp2Routes(app);
+}
+
+MÓDULO — MARKETPLACE DOS CLIENTES (Completo)
+
+Este módulo entrega:
+
+API pública do Marketplace (catálogo, detalhe de produto, carrinho, checkout), com carrinho em Redis (BullMQ/IORedis já instalado).
+
+Checkout que cria Order e chama o endpoint de Stripe que já fizemos.
+
+Frontend (React) com ProductList, ProductDetail, Cart e CheckoutButton (reutiliza BuyButton/fluxo create-for-order).
+
+0) Dependências (se faltarem)
+{
+  "dependencies": {
+    "ioredis": "^5.4.1",
+    "zod": "^3.23.8"
+  }
+}
+
+1) Server — Cart em Redis + rotas públicas
+
+Novo arquivo: server/modules/marketplace/cart.ts
+
+import IORedis from "ioredis";
+import { randomUUID } from "crypto";
+
+const redis = new IORedis(process.env.REDIS_URL || "redis://localhost:6379");
+const CART_TTL = 60 * 60 * 24; // 24h
+
+export type CartItem = { variantId: string; sku: string; title?: string; qty: number };
+export type Cart = { id: string; currency: string; items: CartItem[] };
+
+function key(id: string) { return `cart:${id}`; }
+
+export async function createCart(currency = "USD") {
+  const id = randomUUID();
+  const cart: Cart = { id, currency, items: [] };
+  await redis.set(key(id), JSON.stringify(cart), "EX", CART_TTL);
+  return cart;
+}
+
+export async function getCart(id: string): Promise<Cart | null> {
+  const s = await redis.get(key(id));
+  return s ? JSON.parse(s) : null;
+}
+
+export async function saveCart(cart: Cart) {
+  await redis.set(key(cart.id), JSON.stringify(cart), "EX", CART_TTL);
+}
+
+export async function addItem(id: string, item: CartItem) {
+  const cart = await getCart(id);
+  if (!cart) throw new Error("cart not found");
+  const idx = cart.items.findIndex(i => i.variantId === item.variantId);
+  if (idx >= 0) cart.items[idx].qty += item.qty;
+  else cart.items.push(item);
+  await saveCart(cart);
+  return cart;
+}
+
+export async function setItemQty(id: string, variantId: string, qty: number) {
+  const cart = await getCart(id);
+  if (!cart) throw new Error("cart not found");
+  const idx = cart.items.findIndex(i => i.variantId === variantId);
+  if (idx >= 0) {
+    if (qty <= 0) cart.items.splice(idx, 1);
+    else cart.items[idx].qty = qty;
+  }
+  await saveCart(cart);
+  return cart;
+}
+
+export async function clearCart(id: string) {
+  await redis.del(key(id));
+}
+
+
+Novo arquivo: server/modules/marketplace/routes.ts
+
+import type { Express, Request, Response } from "express";
+import { db } from "../../db";
+import { products, productVariants, inventory } from "@shared/schema.erp";
+import { and, eq, ilike, asc } from "drizzle-orm";
+import { createCart, getCart, addItem, setItemQty, clearCart } from "./cart";
+import { ERPService } from "../erp/service";
+
+function tenant(req: Request) {
+  return (req as any).tenantId || (res as any)?.locals?.tenantId || process.env.PRIMARY_TENANT_ID!;
+}
+
+export function registerMarketplaceRoutes(app: Express) {
+  // Catálogo público (com busca)
+  app.get("/api/mkt/catalog", async (req, res) => {
+    try {
+      const t = tenant(req);
+      const q = String(req.query.q || "");
+      const rows = await db.select().from(products)
+        .where(and(eq(products.tenantId, t), ilike(products.name, `%${q}%`)))
+        .orderBy(asc(products.createdAt))
+        .limit(200);
+      res.json({ rows });
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // Produto por slug
+  app.get("/api/mkt/product/:slug", async (req, res) => {
+    try {
+      const t = tenant(req);
+      const slug = String(req.params.slug);
+      const [p] = await db.select().from(products).where(and(eq(products.tenantId, t), eq(products.slug, slug))).limit(1);
+      if (!p) return res.status(404).json({ error: "not found" });
+      const variants = await db.select().from(productVariants).where(and(eq(productVariants.tenantId, t), eq(productVariants.productId, p.id)));
+      res.json({ product: p, variants });
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // Cart
+  app.post("/api/mkt/cart.create", async (req, res) => {
+    try { res.json(await createCart(String(req.body?.currency || "USD"))); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+  app.get("/api/mkt/cart.get/:id", async (req, res) => {
+    try { res.json(await getCart(String(req.params.id))); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+  app.post("/api/mkt/cart.add", async (req, res) => {
+    try {
+      const { cartId, variantId, qty = 1 } = req.body || {};
+      const t = tenant(req);
+      const [v] = await db.select().from(productVariants).where(and(eq(productVariants.tenantId, t), eq(productVariants.id, variantId))).limit(1);
+      if (!v) return res.status(404).json({ error: "variant not found" });
+      res.json(await addItem(cartId, { variantId, sku: v.sku, title: v.title || v.sku, qty }));
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+  app.post("/api/mkt/cart.setqty", async (req, res) => {
+    try {
+      const { cartId, variantId, qty } = req.body || {};
+      res.json(await setItemQty(cartId, variantId, Number(qty || 0)));
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // Checkout: cria Order e Stripe Session
+  app.post("/api/mkt/checkout", async (req, res) => {
+    try {
+      const t = tenant(req);
+      const { cartId, customerEmail, customerName } = req.body || {};
+      const cart = await getCart(String(cartId));
+      if (!cart || !cart.items.length) return res.status(400).json({ error: "cart empty" });
+
+      const input = {
+        items: cart.items.map(i => ({ variantId: i.variantId, quantity: i.qty })),
+        currency: cart.currency,
+        customerEmail, customerName,
+        shippingCents: 0, discountCents: 0
+      };
+      const ctx = { tenantId: t, role: "admin", userId: "marketplace" };
+      const { orderId } = await ERPService.createOrder(ctx, input);
+
+      // criar sessão Stripe para o order
+      const r = await fetch(`${req.protocol}://${req.get("host")}/api/checkout/create-for-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Origin": `${req.protocol}://${req.get("host")}` },
+        body: JSON.stringify({ orderId })
+      });
+      const js = await r.json();
+      // limpa carrinho
+      await clearCart(cart.id);
+      res.json({ orderId, checkout: js });
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+}
+
+
+Registre as rotas do Marketplace em server/routes.ts:
+
+import { registerMarketplaceRoutes } from "./modules/marketplace/routes";
+export function registerRoutes(app: Express) {
+  app.use("/api", singleTenantMiddleware);
+  // ...
+  registerMarketplaceRoutes(app);
+}
+
+2) Frontend — Páginas básicas do Marketplace
+
+Coloque na pasta do frontend (Vite/React) — os nomes podem ser ajustados ao seu roteador.
+
+frontend/src/marketplace/pages/ProductList.tsx
+
+import React, { useEffect, useState } from "react";
+
+export default function ProductList() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/mkt/catalog?q=${encodeURIComponent(q)}`).then(r => r.json()).then(d => setRows(d.rows || []));
+  }, [q]);
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1>Catálogo</h1>
+      <input placeholder="Buscar..." value={q} onChange={e => setQ(e.target.value)} style={{ padding: 8, width: 280 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
+        {rows.map(p => (
+          <a key={p.id} href={`/product/${p.slug}`} style={{ textDecoration: "none", color: "inherit", border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
+            {p.mainImageUrl && <img src={p.mainImageUrl} alt={p.name} style={{ width: "100%", borderRadius: 8 }} />}
+            <h3>{p.name}</h3>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+frontend/src/marketplace/pages/ProductDetail.tsx
+
+import React, { useEffect, useState } from "react";
+
+export default function ProductDetail() {
+  const [data, setData] = useState<any>(null);
+  const slug = typeof window !== "undefined" ? window.location.pathname.split("/").pop() : "";
+
+  useEffect(() => {
+    if (!slug) return;
+    fetch(`/api/mkt/product/${slug}`).then(r => r.json()).then(setData);
+  }, [slug]);
+
+  const [cartId, setCartId] = useState<string | null>(null);
+  useEffect(() => {
+    const existing = localStorage.getItem("cartId");
+    if (existing) setCartId(existing);
+    else {
+      fetch("/api/mkt/cart.create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currency: "USD" }) })
+        .then(r => r.json()).then(js => { setCartId(js.id); localStorage.setItem("cartId", js.id); });
+    }
+  }, []);
+
+  async function add(variantId: string) {
+    if (!cartId) return;
+    await fetch("/api/mkt/cart.add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cartId, variantId, qty: 1 }) });
+    alert("Adicionado ao carrinho!");
+  }
+
+  if (!data) return <div style={{ padding: 24 }}>Carregando…</div>;
+  return (
+    <div style={{ padding: 24 }}>
+      <a href="/">&larr; Voltar</a>
+      <h1>{data.product.name}</h1>
+      <p>{data.product.description}</p>
+      <h3>Variantes</h3>
+      <ul>
+        {data.variants.map((v: any) => (
+          <li key={v.id} style={{ marginBottom: 8 }}>
+            <strong>{v.title || v.sku}</strong>
+            <button onClick={() => add(v.id)} style={{ marginLeft: 12 }}>Adicionar</button>
+          </li>
+        ))}
+      </ul>
+      <a href="/cart" style={{ display: "inline-block", marginTop: 16 }}>Ir ao carrinho</a>
+    </div>
+  );
+}
+
+
+frontend/src/marketplace/pages/Cart.tsx
+
+import React, { useEffect, useState } from "react";
+
+export default function Cart() {
+  const [cart, setCart] = useState<any>(null);
+  const cartId = typeof window !== "undefined" ? localStorage.getItem("cartId") : null;
+
+  async function refresh() {
+    if (!cartId) return;
+    const js = await fetch(`/api/mkt/cart.get/${cartId}`).then(r => r.json());
+    setCart(js);
+  }
+
+  useEffect(() => { refresh(); }, [cartId]);
+
+  async function setQty(variantId: string, qty: number) {
+    await fetch("/api/mkt/cart.setqty", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ cartId, variantId, qty }) });
+    refresh();
+  }
+
+  async function checkout() {
+    const customerEmail = prompt("Email:");
+    const customerName = prompt("Nome:");
+    const js = await fetch("/api/mkt/checkout", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ cartId, customerEmail, customerName })
+    }).then(r => r.json());
+    if (js?.checkout?.url) window.location.href = js.checkout.url;
+    else alert("Falha no checkout");
+  }
+
+  if (!cart) return <div style={{ padding: 24 }}>Carregando…</div>;
+
+  return (
+    <div style={{ padding: 24 }}>
+      <h1>Carrinho</h1>
+      {cart.items.length === 0 && <p>Seu carrinho está vazio.</p>}
+      {cart.items.map((i: any) => (
+        <div key={i.variantId} style={{ padding: 8, borderBottom: "1px solid #eee" }}>
+          <strong>{i.title || i.sku}</strong>
+          <input type="number" value={i.qty} onChange={e => setQty(i.variantId, Number(e.target.value))} style={{ width: 60, marginLeft: 12 }} />
+        </div>
+      ))}
+      {cart.items.length > 0 && (
+        <button onClick={checkout} style={{ marginTop: 16 }}>Finalizar Compra</button>
+      )}
+    </div>
+  );
+}
+
+
+Integra com todos os endpoints do módulo Marketplace e com o fluxo do ERP/Stripe que já construímos.
+
+3) Ligações com o Brand Scanner / Clone Manifest (Etapa 3)
+
+O Brand Scanner já publica assets em /public/assets/... e manifest.json do Marketplace.
+
+Você pode adicionar uma “Home” do Marketplace que usa o manifest como tema e exibe os produtos (via /api/mkt/catalog), mantendo a identidade visual do cliente.
+
+Para “Produtos em destaque” na Home, basta ler /api/mkt/catalog e mostrar as primeiras N entradas nas sections renderizadas.
+
+4) Relatórios simples (ERP KPIs)
+
+Acrescente no final de server/modules/erp/routes.ts:
+
+app.get("/api/erp/reports/sales-summary", async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    const rows = await db.execute(`
+      select date_trunc('day', created_at) as day,
+             count(*)::int as orders,
+             sum(total_cents)::bigint as total_cents
+      from orders
+      where tenant_id=$1 and status in ('paid','fulfilled','refunded')
+      group by 1
+      order by 1 asc
+    `, [ctx.tenantId]);
+    res.json({ rows });
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+O que ficou entregue
+
+ERP Parte 2: endereços, frete, imposto, cupom, fatura, fulfillment, devolução — com serviços e rotas.
+
+Marketplace dos Clientes: API pública + carrinho Redis + checkout Stripe + páginas React (lista, detalhe, carrinho).
+
+Tudo Single-Tenant e plugado nos módulos anteriores (CRM/ERP/Stripe/Brand Scanner).
+
+Próximos módulos
+
+Marketing (Completo)
+
+Schemas: campanhas, templates, audience (via Segments), agendamento, logs, quotas/throttle.
+
+Canais: Email, WhatsApp/Twilio, Instagram/Facebook (reutilizando integrações), Push (opcional).
+
+Templates com variáveis (Mustache) + A/B + métricas básicas (open/click/reply para canais suportados).
+
+IA (Parte 1 — Fundação)
+
+Ingestor de documentos, embeddings + BM25, índice híbrido, RAG com planner/critic/guardrails, avaliação básica.
+
+IA (Parte 2 — Matemática densa)
+
+Derivações (LaTeX), reranking (colBERT-lite), métricas (nDCG/MRR), explicabilidade (aprox. SHAP), e testes.

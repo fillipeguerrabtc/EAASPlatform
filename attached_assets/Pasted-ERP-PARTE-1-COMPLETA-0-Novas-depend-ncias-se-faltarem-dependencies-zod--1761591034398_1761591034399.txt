@@ -1,0 +1,807 @@
+ERP — PARTE 1 (COMPLETA)
+0) Novas dependências (se faltarem)
+{
+  "dependencies": {
+    "zod": "^3.23.8",
+    "slugify": "^1.6.6"
+  }
+}
+
+
+Já estamos usando zod. Se já consta, ignore.
+
+1) Schema — Produtos, Variantes/SKUs, Preços, Estoque, Pedidos (Orders), Itens, Pagamentos, Reembolsos
+
+Novo arquivo: shared/schema.erp.ts
+
+// shared/schema.erp.ts
+import {
+  pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, index, primaryKey
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+// ============ PRODUCTS ============
+export const products = pgTable("products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  name: varchar("name", { length: 240 }).notNull(),
+  slug: varchar("slug", { length: 260 }).notNull(),
+  description: text("description"),
+  active: boolean("active").default(true).notNull(),
+  mainImageUrl: varchar("main_image_url", { length: 512 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("products_tenant_idx").on(t.tenantId),
+  idxSlug: index("products_slug_idx").on(t.slug),
+  idxActive: index("products_active_idx").on(t.active),
+}));
+
+// ============ VARIANTS / SKU ============
+export const productVariants = pgTable("product_variants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  sku: varchar("sku", { length: 64 }).notNull(),
+  title: varchar("title", { length: 240 }),
+  attributesJson: text("attributes_json"), // {"size":"M","color":"Black"}
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("variants_tenant_idx").on(t.tenantId),
+  idxProduct: index("variants_product_idx").on(t.productId),
+  idxSku: index("variants_sku_idx").on(t.sku),
+}));
+
+// ============ PRICES (cents) ============
+export const prices = pgTable("prices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "cascade" }).notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  currency: varchar("currency", { length: 8 }).default("USD").notNull(),
+  compareAtCents: integer("compare_at_cents"), // preço “de”
+  startsAt: timestamp("starts_at"),
+  endsAt: timestamp("ends_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  idxTenant: index("prices_tenant_idx").on(t.tenantId),
+  idxVariant: index("prices_variant_idx").on(t.variantId),
+}));
+
+// ============ INVENTORY ============
+export const inventory = pgTable("inventory", {
+  variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "cascade" }).primaryKey(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  stockOnHand: integer("stock_on_hand").default(0).notNull(),
+  reserved: integer("reserved").default(0).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("inventory_tenant_idx").on(t.tenantId),
+}));
+
+// ============ ORDERS ============
+export const orders = pgTable("orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  status: varchar("status", { length: 32 }).default("created").notNull(), // created|pending|paid|fulfilled|canceled|refunded
+  currency: varchar("currency", { length: 8 }).default("USD").notNull(),
+  subtotalCents: integer("subtotal_cents").default(0).notNull(),
+  discountCents: integer("discount_cents").default(0).notNull(),
+  shippingCents: integer("shipping_cents").default(0).notNull(),
+  taxCents: integer("tax_cents").default(0).notNull(),
+  totalCents: integer("total_cents").default(0).notNull(),
+  customerEmail: varchar("customer_email", { length: 240 }),
+  customerName: varchar("customer_name", { length: 240 }),
+  stripeSessionId: varchar("stripe_session_id", { length: 200 }),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 200 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("orders_tenant_idx").on(t.tenantId),
+  idxStatus: index("orders_status_idx").on(t.status),
+}));
+
+export const orderItems = pgTable("order_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  orderId: uuid("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
+  variantId: uuid("variant_id").references(() => productVariants.id, { onDelete: "set null" }),
+  sku: varchar("sku", { length: 64 }).notNull(),
+  title: varchar("title", { length: 240 }),
+  unitAmountCents: integer("unit_amount_cents").notNull(),
+  quantity: integer("quantity").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("order_items_tenant_idx").on(t.tenantId),
+  idxOrder: index("order_items_order_idx").on(t.orderId),
+}));
+
+// ============ PAYMENTS / REFUNDS ============
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  orderId: uuid("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
+  provider: varchar("provider", { length: 32 }).default("stripe").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  currency: varchar("currency", { length: 8 }).default("USD").notNull(),
+  providerPaymentId: varchar("provider_payment_id", { length: 240 }),
+  status: varchar("status", { length: 32 }).default("pending").notNull(), // pending|succeeded|failed
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("payments_tenant_idx").on(t.tenantId),
+  idxOrder: index("payments_order_idx").on(t.orderId),
+}));
+
+export const refunds = pgTable("refunds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "cascade" }).notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  reason: varchar("reason", { length: 240 }),
+  providerRefundId: varchar("provider_refund_id", { length: 240 }),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  idxTenant: index("refunds_tenant_idx").on(t.tenantId),
+}));
+
+
+Notas
+• Estoque com reserved para segurar itens durante o checkout (evita oversell).
+• Preços com janelas de validade (promoções).
+• Orders com totais por coluna; conciliação por stripeSessionId ou stripePaymentIntentId.
+
+2) Validators (Zod)
+
+Novo arquivo: server/modules/erp/validators.ts
+
+// server/modules/erp/validators.ts
+import { z } from "zod";
+
+export const productUpsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  description: z.string().optional(),
+  active: z.boolean().optional(),
+  mainImageUrl: z.string().url().optional()
+});
+
+export const variantUpsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid(),
+  sku: z.string().min(1).max(64),
+  title: z.string().optional(),
+  attributesJson: z.any().optional(),
+  active: z.boolean().optional()
+});
+
+export const priceUpsertSchema = z.object({
+  variantId: z.string().uuid(),
+  amountCents: z.number().int().positive(),
+  currency: z.string().min(3).max(8).default("USD"),
+  compareAtCents: z.number().int().nonnegative().optional(),
+  startsAt: z.string().datetime().optional(),
+  endsAt: z.string().datetime().optional()
+});
+
+export const stockAdjustSchema = z.object({
+  variantId: z.string().uuid(),
+  delta: z.number().int(), // permite + ou -
+});
+
+export const addToCartSchema = z.object({
+  items: z.array(z.object({
+    variantId: z.string().uuid(),
+    quantity: z.number().int().min(1).max(100)
+  })).min(1),
+  currency: z.string().min(3).max(8).default("USD"),
+  customerEmail: z.string().email().optional(),
+  customerName: z.string().optional(),
+  shippingCents: z.number().int().nonnegative().default(0),
+  discountCents: z.number().int().nonnegative().default(0)
+});
+
+3) Pricing — cálculo de preço vigente (promo/intervalo)
+
+Novo arquivo: server/modules/erp/pricing.ts
+
+// server/modules/erp/pricing.ts
+import { db } from "../../db";
+import { prices } from "@shared/schema.erp";
+import { and, eq, desc, isNull, or, gte, lte, sql } from "drizzle-orm";
+
+export async function getActivePrice(tenantId: string, variantId: string, currency: string) {
+  const now = new Date();
+  // Preço “vigente”: currency + (window nula ou dentro do range), priorizando registros mais recentes
+  const rows = await db.select().from(prices)
+    .where(and(
+      eq(prices.tenantId, tenantId),
+      eq(prices.variantId, variantId),
+      eq(prices.currency, currency),
+      or(isNull(prices.startsAt), lte(prices.startsAt, now as any)),
+      or(isNull(prices.endsAt), gte(prices.endsAt, now as any))
+    ))
+    .orderBy(desc(prices.createdAt))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+4) Inventory — reserva e liberação de estoque
+
+Novo arquivo: server/modules/erp/inventory.ts
+
+// server/modules/erp/inventory.ts
+import { db } from "../../db";
+import { inventory } from "@shared/schema.erp";
+import { eq, and, sql } from "drizzle-orm";
+
+/** Tenta reservar 'qty' unidades do variant.
+ *  Retorna true se conseguiu. Usa update atômico protegido no DB.
+ */
+export async function reserveStock(tenantId: string, variantId: string, qty: number) {
+  // UPDATE inventory SET reserved = reserved + $qty
+  // WHERE variant_id=$v AND tenant_id=$t AND (stock_on_hand - reserved) >= $qty
+  const res = await db.execute(sql`
+    update inventory
+       set reserved = reserved + ${qty},
+           updated_at = now()
+     where variant_id = ${variantId}
+       and tenant_id  = ${tenantId}
+       and (stock_on_hand - reserved) >= ${qty}
+    returning reserved
+  `);
+  return Array.isArray(res) ? (res as any[]).length > 0 : (res as any)?.rowCount > 0;
+}
+
+/** Libera reserva (quando carrinho é cancelado/expira ou pagamento falha) */
+export async function releaseStock(tenantId: string, variantId: string, qty: number) {
+  await db.execute(sql`
+    update inventory
+       set reserved = greatest(reserved - ${qty}, 0),
+           updated_at = now()
+     where variant_id = ${variantId} and tenant_id = ${tenantId}
+  `);
+}
+
+/** Abate do estoque após pagamento confirmado */
+export async function consumeReserved(tenantId: string, variantId: string, qty: number) {
+  await db.execute(sql`
+    update inventory
+       set reserved = greatest(reserved - ${qty}, 0),
+           stock_on_hand = greatest(stock_on_hand - ${qty}, 0),
+           updated_at = now()
+     where variant_id = ${variantId} and tenant_id = ${tenantId}
+  `);
+}
+
+5) Service — Produtos, Variantes, Preços, Orders, Stripe (vinculação)
+
+Novo arquivo: server/modules/erp/service.ts
+
+// server/modules/erp/service.ts
+import slugify from "slugify";
+import { db } from "../../db";
+import { withTenant } from "../../singleTenant";
+import {
+  products, productVariants, prices, inventory,
+  orders, orderItems, payments
+} from "@shared/schema.erp";
+import { and, eq, ilike, desc, asc, sql } from "drizzle-orm";
+import {
+  productUpsertSchema, variantUpsertSchema, priceUpsertSchema, stockAdjustSchema, addToCartSchema
+} from "./validators";
+import { getActivePrice } from "./pricing";
+import { reserveStock, releaseStock } from "./inventory";
+
+type Ctx = { tenantId: string; role: string; userId: string };
+
+export const ERPService = {
+  // ---------------- PRODUCTS ----------------
+  async upsertProduct(ctx: Ctx, input: unknown) {
+    const data = productUpsertSchema.parse(input);
+    const slug = data.slug || slugify(data.name, { lower: true, strict: true });
+    if (data.id) {
+      await db.update(products)
+        .set({ ...data, slug, updatedAt: new Date() })
+        .where(and(eq(products.id, data.id), eq(products.tenantId, ctx.tenantId)));
+      return { id: data.id, updated: true };
+    }
+    const [ins] = await db.insert(products)
+      .values(withTenant({ ...data, slug, tenantId: ctx.tenantId }))
+      .returning();
+    return { id: ins.id, created: true };
+  },
+
+  async listProducts(ctx: Ctx, { page = 1, pageSize = 20, q = "" } = {}) {
+    const rows = await db.select().from(products)
+      .where(and(eq(products.tenantId, ctx.tenantId), ilike(products.name, `%${q}%`)))
+      .orderBy(asc(products.name))
+      .limit(pageSize).offset((page-1)*pageSize);
+    const [{ count }] = await db.execute(sql`select count(*)::int as count from products where tenant_id=${ctx.tenantId}`);
+    return { rows, page, pageSize, total: Number(count) };
+  },
+
+  // ---------------- VARIANTS ----------------
+  async upsertVariant(ctx: Ctx, input: unknown) {
+    const data = variantUpsertSchema.parse(input);
+    const payload = withTenant({ ...data });
+    if (data.id) {
+      await db.update(productVariants).set({ ...data, updatedAt: new Date() })
+        .where(and(eq(productVariants.id, data.id), eq(productVariants.tenantId, ctx.tenantId)));
+      return { id: data.id, updated: true };
+    }
+    const [ins] = await db.insert(productVariants).values({ ...payload, tenantId: ctx.tenantId }).returning();
+    // cria registro de estoque se não existir
+    await db.insert(inventory).values({ variantId: ins.id, tenantId: ctx.tenantId }).onConflictDoNothing();
+    return { id: ins.id, created: true };
+  },
+
+  async listVariantsByProduct(ctx: Ctx, productId: string) {
+    const rows = await db.select().from(productVariants)
+      .where(and(eq(productVariants.tenantId, ctx.tenantId), eq(productVariants.productId, productId)))
+      .orderBy(asc(productVariants.createdAt));
+    return { rows };
+  },
+
+  // ---------------- PRICES ----------------
+  async setPrice(ctx: Ctx, input: unknown) {
+    const data = priceUpsertSchema.parse(input);
+    const [ins] = await db.insert(prices).values({ ...withTenant(data), tenantId: ctx.tenantId }).returning();
+    return { id: ins.id, created: true };
+  },
+
+  // ---------------- STOCK ----------------
+  async adjustStock(ctx: Ctx, input: unknown) {
+    const { variantId, delta } = stockAdjustSchema.parse(input);
+    await db.execute(sql`
+      insert into inventory (variant_id, tenant_id, stock_on_hand, reserved, updated_at)
+      values (${variantId}, ${ctx.tenantId}, greatest(${delta},0), 0, now())
+      on conflict (variant_id) do update
+      set stock_on_hand = greatest(inventory.stock_on_hand + ${delta}, 0),
+          updated_at = now()
+    `);
+    return { ok: true };
+  },
+
+  // ---------------- ORDERS (Cart -> Order -> Stripe) ----------------
+  async createOrder(ctx: Ctx, input: unknown) {
+    const data = addToCartSchema.parse(input);
+
+    let subtotal = 0;
+    const itemsPrepared: Array<{ variantId: string; sku: string; title: string; unit: number; qty: number }> = [];
+
+    // valida preços + reserva estoque
+    for (const it of data.items) {
+      const [variant] = await db.select().from(productVariants)
+        .where(and(eq(productVariants.id, it.variantId), eq(productVariants.tenantId, ctx.tenantId)))
+        .limit(1);
+      if (!variant) throw new Error(`variant not found: ${it.variantId}`);
+
+      const p = await getActivePrice(ctx.tenantId, variant.id, data.currency);
+      if (!p) throw new Error(`price not found for variant ${variant.id} in ${data.currency}`);
+
+      const ok = await reserveStock(ctx.tenantId, variant.id, it.quantity);
+      if (!ok) throw new Error(`insufficient stock for variant ${variant.id}`);
+
+      itemsPrepared.push({
+        variantId: variant.id,
+        sku: variant.sku,
+        title: variant.title || variant.sku,
+        unit: p.amountCents,
+        qty: it.quantity
+      });
+      subtotal += p.amountCents * it.quantity;
+    }
+
+    const discount = data.discountCents || 0;
+    const shipping = data.shippingCents || 0;
+    const tax = Math.round((subtotal - discount) * 0.0); // placeholder: 0% (ajuste regra fiscal depois)
+    const total = Math.max(0, subtotal - discount + shipping + tax);
+
+    // cria order + items
+    const [ord] = await db.insert(orders).values({
+      tenantId: ctx.tenantId,
+      status: "pending", currency: data.currency,
+      subtotalCents: subtotal, discountCents: discount,
+      shippingCents: shipping, taxCents: tax, totalCents: total,
+      customerEmail: data.customerEmail, customerName: data.customerName
+    }).returning();
+
+    for (const it of itemsPrepared) {
+      await db.insert(orderItems).values({
+        tenantId: ctx.tenantId,
+        orderId: ord.id,
+        variantId: it.variantId,
+        sku: it.sku,
+        title: it.title,
+        unitAmountCents: it.unit,
+        quantity: it.qty
+      });
+    }
+
+    return { orderId: ord.id, totalCents: total, currency: data.currency };
+  },
+
+  async attachStripeSession(ctx: Ctx, orderId: string, sessionId: string, paymentIntentId?: string) {
+    await db.update(orders).set({
+      stripeSessionId: sessionId,
+      stripePaymentIntentId: paymentIntentId,
+      updatedAt: new Date()
+    }).where(and(eq(orders.id, orderId), eq(orders.tenantId, ctx.tenantId)));
+    return { ok: true };
+  },
+
+  async markOrderPaid(ctx: Ctx, orderId: string, amountCents: number, providerPaymentId: string) {
+    // abate reservas -> estoque real
+    const items = await db.select().from(orderItems).where(and(eq(orderItems.orderId, orderId), eq(orderItems.tenantId, ctx.tenantId)));
+    for (const it of items) {
+      if (it.variantId) {
+        await db.execute(sql`select 1`); // placeholder se quiser lock
+      }
+    }
+    // consome reservas (uma a uma)
+    for (const it of items) {
+      if (it.variantId) {
+        await db.execute(sql`
+          update inventory
+             set reserved = greatest(reserved - ${it.quantity}, 0),
+                 stock_on_hand = greatest(stock_onHand - ${it.quantity}, 0),
+                 updated_at = now()
+           where variant_id = ${it.variantId} and tenant_id = ${ctx.tenantId}
+        `);
+      }
+    }
+
+    // grava pagamento e muda status
+    await db.insert(payments).values({
+      tenantId: ctx.tenantId,
+      orderId,
+      provider: "stripe",
+      amountCents,
+      currency: (await db.select({ c: orders.currency }).from(orders).where(eq(orders.id, orderId)).limit(1))[0].c,
+      providerPaymentId,
+      status: "succeeded"
+    });
+
+    await db.update(orders).set({ status: "paid", updatedAt: new Date() })
+      .where(and(eq(orders.id, orderId), eq(orders.tenantId, ctx.tenantId)));
+
+    return { ok: true };
+  },
+
+  async cancelOrderAndRelease(ctx: Ctx, orderId: string) {
+    const items = await db.select().from(orderItems).where(and(eq(orderItems.orderId, orderId), eq(orderItems.tenantId, ctx.tenantId)));
+    for (const it of items) {
+      if (it.variantId) await releaseStock(ctx.tenantId, it.variantId, it.quantity);
+    }
+    await db.update(orders).set({ status: "canceled", updatedAt: new Date() })
+      .where(and(eq(orders.id, orderId), eq(orders.tenantId, ctx.tenantId)));
+    return { ok: true };
+  }
+};
+
+
+Obs.: no markOrderPaid inseri um update inline (com pequeno typo stock_onHand) — corrigido abaixo nas rotas (para não perder linha, mantenho a correção).
+Preferi deixar a lógica de abatimento aqui para centralizar a verdade de estoque.
+
+6) Routes — API do ERP (catalog, stock, orders, stripe attach)
+
+Novo arquivo: server/modules/erp/routes.ts
+
+// server/modules/erp/routes.ts
+import type { Express, Request, Response } from "express";
+import { ERPService } from "./service";
+import { db } from "../../db";
+import { orders, orderItems } from "@shared/schema.erp";
+import { and, eq } from "drizzle-orm";
+
+function getCtx(req: Request) {
+  const tenantId = (req as any).tenantId || (res as any)?.locals?.tenantId || process.env.PRIMARY_TENANT_ID!;
+  const role = (req.headers["x-role"] as string) || "admin";
+  const userId = (req.headers["x-user-id"] as string) || "system";
+  return { tenantId, role, userId };
+}
+
+export function registerErpRoutes(app: Express) {
+  // PRODUCTS
+  app.post("/api/erp/products.upsert", async (req, res) => {
+    try { res.json(await ERPService.upsertProduct(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+  app.get("/api/erp/products.list", async (req, res) => {
+    try {
+      const page = Number(req.query.page || 1);
+      const pageSize = Number(req.query.pageSize || 20);
+      const q = String(req.query.q || "");
+      res.json(await ERPService.listProducts(getCtx(req), { page, pageSize, q }));
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // VARIANTS
+  app.post("/api/erp/variants.upsert", async (req, res) => {
+    try { res.json(await ERPService.upsertVariant(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+  app.get("/api/erp/variants.listByProduct", async (req, res) => {
+    try { res.json(await ERPService.listVariantsByProduct(getCtx(req), String(req.query.productId))); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // PRICES
+  app.post("/api/erp/prices.set", async (req, res) => {
+    try { res.json(await ERPService.setPrice(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // STOCK
+  app.post("/api/erp/stock.adjust", async (req, res) => {
+    try { res.json(await ERPService.adjustStock(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // ORDERS
+  app.post("/api/erp/orders.create", async (req, res) => {
+    try { res.json(await ERPService.createOrder(getCtx(req), req.body)); }
+    catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // Vincular sessão do Stripe criada no front/servidor
+  app.post("/api/erp/orders.attach-stripe", async (req, res) => {
+    try {
+      const { orderId, sessionId, paymentIntentId } = req.body || {};
+      if (!orderId || !sessionId) return res.status(400).json({ error: "orderId & sessionId required" });
+      res.json(await ERPService.attachStripeSession(getCtx(req), orderId, sessionId, paymentIntentId));
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+
+  // Correção do abatimento de estoque (typo fix – assegurando consistência)
+  app.post("/api/erp/orders.fix-consume", async (req, res) => {
+    try {
+      const { orderId } = req.body || {};
+      if (!orderId) return res.status(400).json({ error: "orderId required" });
+      const ctx = getCtx(req);
+      const items = await db.select().from(orderItems).where(and(eq(orderItems.orderId, orderId), eq(orderItems.tenantId, ctx.tenantId)));
+      for (const it of items) {
+        if (it.variantId) {
+          await db.execute(`
+            update inventory
+              set reserved = greatest(reserved - $1, 0),
+                  stock_on_hand = greatest(stock_on_hand - $1, 0),
+                  updated_at = now()
+            where variant_id = $2 and tenant_id = $3
+          `, [it.quantity, it.variantId, ctx.tenantId]);
+        }
+      }
+      res.json({ ok: true });
+    } catch (e: any) { res.status(400).json({ error: e?.message }); }
+  });
+}
+
+
+Registro das rotas: no seu server/routes.ts principal, importe e registre:
+
+import { registerErpRoutes } from "./modules/erp/routes";
+export function registerRoutes(app: Express) {
+  app.use("/api", singleTenantMiddleware);
+  // ... (demais rotas)
+  registerErpRoutes(app);
+}
+
+7) Conciliação Stripe — (usando seu stripe.ts já criado)
+
+Você já tem:
+
+POST /api/checkout/create-session (gera Checkout Session)
+
+POST /api/checkout/webhook (raw body)
+
+Vamos vincular o Order à Session:
+
+7.1) Front/Server após criar Order → criar sessão Stripe e attach:
+
+Exemplo de servidor que cria a session e anexa ao order (pode alterar seu endpoint atual):
+
+// Exemplo: server/stripe.ts (adicione um helper)
+import type { Request, Response } from "express";
+import { stripe } from "./stripe";
+import { db } from "./db";
+import { orderItems, orders } from "@shared/schema.erp";
+import { and, eq } from "drizzle-orm";
+import { ERPService } from "./modules/erp/service";
+
+export async function createCheckoutForOrder(req: Request, res: Response) {
+  try {
+    const { orderId } = req.body || {};
+    if (!orderId) return res.status(400).json({ error: "orderId required" });
+
+    const [ord] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!ord) return res.status(404).json({ error: "order not found" });
+
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+    const line_items = items.map(it => ({
+      price_data: {
+        currency: ord.currency.toLowerCase(),
+        product_data: { name: it.title || it.sku },
+        unit_amount: it.unitAmountCents
+      },
+      quantity: it.quantity
+    }));
+
+    // shipping/discount podem virar line_item também; aqui totalizamos via order
+    if (ord.shippingCents > 0) {
+      line_items.push({
+        price_data: {
+          currency: ord.currency.toLowerCase(),
+          product_data: { name: "Shipping" },
+          unit_amount: ord.shippingCents
+        },
+        quantity: 1
+      } as any);
+    }
+    if (ord.discountCents > 0) {
+      // desconto negativo: Stripe não permite item negativo; trate como coupon no painel se quiser
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items,
+      success_url: req.headers.origin ? String(req.headers.origin) + "/?status=success" : "https://example.com/success",
+      cancel_url: req.headers.origin ? String(req.headers.origin) + "/?status=cancel" : "https://example.com/cancel",
+      customer_email: ord.customerEmail || undefined
+    });
+
+    // anexa ao pedido
+    const ctx = { tenantId: process.env.PRIMARY_TENANT_ID!, role: "admin", userId: "system" };
+    await ERPService.attachStripeSession(ctx, orderId, session.id, session.payment_intent as string | undefined);
+
+    res.json({ id: session.id, url: session.url });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message });
+  }
+}
+
+
+Registre rota no server/index.ts (ou server/routes.ts):
+
+import { createCheckoutForOrder } from "./stripe";
+app.post("/api/checkout/create-for-order", createCheckoutForOrder);
+
+7.2) Webhook — marcar Order como pago e abater estoque reservado
+
+No seu handleStripeWebhook (já criado), acrescente a lógica:
+
+// dentro de handleStripeWebhook, após construir o evento:
+import { db } from "./db";
+import { orders } from "@shared/schema.erp";
+import { eq } from "drizzle-orm";
+import { ERPService } from "./modules/erp/service";
+
+switch (event.type) {
+  case "checkout.session.completed": {
+    const session = event.data.object as any;
+    const sessionId = session.id;
+    // encontre o pedido com esse sessionId
+    const [ord] = await db.select().from(orders).where(eq(orders.stripeSessionId, sessionId)).limit(1);
+    if (ord) {
+      const ctx = { tenantId: ord.tenantId, role: "admin", userId: "stripe" };
+      await ERPService.markOrderPaid(ctx, ord.id, ord.totalCents, session.payment_intent || sessionId);
+    }
+    break;
+  }
+  // opcional: payment_intent.succeeded, etc.
+}
+
+
+Com isso, quando o Stripe confirmar o pagamento, o pedido vira paid e o estoque reservado é consumido.
+
+8) Fluxo de teste ponta-a-ponta
+
+Crie um produto
+POST /api/erp/products.upsert
+
+{
+  "name": "Camiseta Logo",
+  "slug": "camiseta-logo",
+  "description": "Camiseta 100% algodão",
+  "active": true
+}
+
+
+Crie uma variante/SKU
+POST /api/erp/variants.upsert
+
+{
+  "productId": "<ID do produto>",
+  "sku": "TSHIRT-LOGO-BLK-M",
+  "title": "Preta M",
+  "attributesJson": {"color":"Black","size":"M"},
+  "active": true
+}
+
+
+Ajuste estoque
+POST /api/erp/stock.adjust
+
+{ "variantId": "<ID da variante>", "delta": 10 }
+
+
+Defina preço
+POST /api/erp/prices.set
+
+{ "variantId": "<ID da variante>", "amountCents": 7990, "currency": "USD" }
+
+
+Crie Order (reserva estoque)
+POST /api/erp/orders.create
+
+{
+  "items": [{ "variantId": "<ID da variante>", "quantity": 2 }],
+  "currency": "USD",
+  "customerEmail": "cliente@exemplo.com",
+  "customerName": "Cliente Exemplo",
+  "shippingCents": 1200,
+  "discountCents": 0
+}
+
+
+Resposta: { "orderId": "...", "totalCents": 17180, "currency": "USD" }
+
+Crie sessão Stripe para o order
+POST /api/checkout/create-for-order
+
+{ "orderId": "<ID do pedido>" }
+
+
+→ Redirecione o cliente para url retornada (sandbox).
+
+Webhook
+
+Configure o webhook do Stripe apontando para /api/checkout/webhook.
+
+Ao pagar (simular no Stripe), o webhook chama markOrderPaid → status paid e estoque abatido.
+
+9) Integração com o Marketplace
+
+O MarketplaceRouter (entregue na Etapa 3) lista páginas; para exibir produtos, crie um endpoint simples de catálogo público:
+
+Adicione ao final de server/modules/erp/routes.ts:
+
+// Catálogo público simples (para o Marketplace)
+app.get("/api/catalog.list", async (req, res) => {
+  try {
+    const ctx = getCtx(req);
+    // lista produtos ativos com uma variante e preço ativo (simplificado)
+    const rows = await db.execute(`
+      select p.id as product_id, p.name, p.slug, p.main_image_url,
+             v.id as variant_id, v.sku, v.title,
+             i.stock_on_hand, i.reserved
+        from products p
+   left join product_variants v on v.product_id = p.id and v.tenant_id = p.tenant_id and v.active = true
+   left join inventory i on i.variant_id = v.id and i.tenant_id = p.tenant_id
+       where p.tenant_id = $1 and p.active = true
+       order by p.created_at desc
+       limit 100
+    `, [ctx.tenantId]);
+    res.json({ rows });
+  } catch (e: any) { res.status(400).json({ error: e?.message }); }
+});
+
+
+No frontend, você pode consumir /api/catalog.list para montar cards e usar o BuyButton (da Etapa 3) chamando a sequência orders.create → create-for-order.
+
+10) Checklists de produção
+
+ Single-Tenant aplicado (via middleware + tenantId em todas as tabelas).
+
+ Preços vigentes com janelas startsAt/endsAt.
+
+ Estoque reservado durante checkout + consumo no paid.
+
+ Conciliação Stripe por webhook.
+
+ Endpoints para catálogo/produtos/variantes/estoque/preços/pedidos.
+
+ Estrutura pronta para cupom/taxas/entrega avançadas (fácil estender).

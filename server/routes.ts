@@ -94,19 +94,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
 
   // ========================================
-  // CONDITIONAL BODY PARSERS (crítico para Stripe webhook)
+  // CONDITIONAL BODY PARSERS (crítico para Stripe + Meta webhooks)
   // ========================================
-  // Parse JSON for ALL routes EXCEPT Stripe webhook
-  // Stripe webhook gets express.raw() inline to preserve Buffer for signature validation
+  // Capture raw body for Meta webhook signature verification
+  app.use("/api/integrations/meta/webhook", express.json({
+    limit: "10mb",
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    }
+  }));
+  
+  // Parse JSON for ALL routes EXCEPT Stripe webhook (needs express.raw)
   app.use((req, res, next) => {
     // Skip JSON parsing for Stripe webhook
     if (req.path === "/api/stripe-webhook") {
+      return next();
+    }
+    // Skip if already parsed (Meta webhook)
+    if (req.path === "/api/integrations/meta/webhook") {
       return next();
     }
     // Parse JSON for all other routes
     express.json({ limit: "10mb" })(req, res, next);
   });
   
+  // Parse URL-encoded for all routes (Twilio uses body-parser with extended: false)
   app.use(express.urlencoded({ extended: false, limit: "10mb" }));
 
   // ========================================
@@ -126,11 +138,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Meta (Facebook/Instagram) webhooks
   app.get("/api/integrations/meta/webhook", metaWebhookVerify);
   app.post("/api/integrations/meta/webhook", metaWebhookReceive);
-
-  // ========================================
-  // CRM MODULE ROUTES
-  // ========================================
-  registerCrmRoutes(app);
 
   // ========================================
   // AUTHENTICATION
@@ -5693,6 +5700,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Erro ao deletar product bundle" });
     }
   });
+
+  // ========================================
+  // CRM MODULE ROUTES (requires authentication)
+  // ========================================
+  registerCrmRoutes(app, isAuthenticated);
 
   // ========================================
   // SERVE STATIC FILES FROM .storage/public

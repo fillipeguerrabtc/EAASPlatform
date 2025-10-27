@@ -1,4 +1,4 @@
-// server/modules/crm/segments.ts - Dynamic segment engine
+// server/modules/crm/segments.ts - Dynamic segment engine with field whitelisting
 import { and, or, eq, ilike, gte, lte, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { segments, contacts, companies, deals } from "@shared/schema.crm";
@@ -14,6 +14,47 @@ type SegmentQuery = {
   logic?: "AND" | "OR";
 };
 
+// ===============================================
+// FIELD WHITELIST (Security - prevent SQL injection via arbitrary field names)
+// ===============================================
+const ALLOWED_FIELDS = {
+  contacts: new Set([
+    "id",
+    "firstName",
+    "lastName",
+    "email",
+    "phone",
+    "companyId",
+    "title",
+    "source",
+    "isOptIn",
+    "createdAt",
+  ]),
+  companies: new Set([
+    "id",
+    "name",
+    "industry",
+    "size",
+    "website",
+    "createdAt",
+  ]),
+  deals: new Set([
+    "id",
+    "title",
+    "value",
+    "stageId",
+    "pipelineId",
+    "contactId",
+    "companyId",
+    "expectedCloseDate",
+    "createdAt",
+  ]),
+};
+
+function validateField(entity: "contacts" | "companies" | "deals", field: string): boolean {
+  return ALLOWED_FIELDS[entity].has(field);
+}
+
 function buildPredicate(
   entity: "contacts" | "companies" | "deals",
   tenantId: string,
@@ -25,6 +66,11 @@ function buildPredicate(
   const parts: any[] = [eq(table.tenantId, tenantId)];
 
   for (const rule of query.rules) {
+    // SECURITY: Validate field against whitelist
+    if (!validateField(entity, rule.field)) {
+      throw new Error(`Invalid field: ${rule.field} for entity: ${entity}`);
+    }
+
     const field = (table as any)[rule.field];
     if (!field) continue;
     parts.push(ruleToExpr(field, rule.op, rule.value));
@@ -75,6 +121,8 @@ export const SegmentsEngine = {
 
     const entity = segment.entity as "contacts" | "companies" | "deals";
     const query = JSON.parse(segment.queryJson) as SegmentQuery;
+    
+    // Validate query before execution
     const predicate = buildPredicate(entity, tenantId, query);
 
     let rows: any[] = [];

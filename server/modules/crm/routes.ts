@@ -1,5 +1,5 @@
-// server/modules/crm/routes.ts - CRM REST API routes
-import type { Express, Request, Response } from "express";
+// server/modules/crm/routes.ts - CRM REST API routes with RBAC
+import type { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -16,23 +16,62 @@ const storageDir = process.env.STORAGE_DIR || "./.storage";
 const uploadsDir = path.join(storageDir, "uploads");
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-const upload = multer({ dest: uploadsDir });
+const upload = multer({ 
+  dest: uploadsDir,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
+  },
+  fileFilter: (_req, file, cb) => {
+    // Only allow CSV files
+    if (file.mimetype === "text/csv" || file.originalname.endsWith(".csv")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only CSV files are allowed"));
+    }
+  },
+});
 
-// Helper to get user context from request
+// Helper to get user context from request (requires authentication)
 function getCtx(req: Request) {
+  const userId = (req as any).userId;
+  const role = (req as any).role;
+  
+  if (!userId) {
+    throw new Error("User not authenticated");
+  }
+
   return {
     tenantId: (req as any).tenantId || process.env.PRIMARY_TENANT_ID!,
-    userId: (req as any).userId || "system",
-    role: (req as any).role || "admin",
+    userId,
+    role: role || "agent", // Default to agent if role not set
   };
 }
 
-export function registerCrmRoutes(app: Express) {
+// RBAC middleware - only admin can access
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const ctx = getCtx(req);
+    if (ctx.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden - admin access required" });
+    }
+    next();
+  } catch (err: any) {
+    res.status(401).json({ error: err.message });
+  }
+}
+
+export function registerCrmRoutes(app: Express, isAuthenticated: any) {
+  // ============================================
+  // GLOBAL CRM AUTH MIDDLEWARE
+  // ============================================
+  // Protect ALL /api/crm/* routes with authentication
+  app.use("/api/crm/*", isAuthenticated);
+
   // ============================================
   // COMPANIES
   // ============================================
 
-  app.post("/api/crm/companies", async (req, res) => {
+  app.post("/api/crm/companies", requireAdmin, async (req, res) => {
     try {
       const result = await CRMService.upsertCompany(getCtx(req), req.body);
       res.json(result);
