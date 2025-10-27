@@ -2,9 +2,13 @@
 // ANN HNSW incremental index with automatic checkpointing
 // SECURITY: Tenant-isolated indexes, graceful shutdown, singleton cache
 
-import { HierarchicalNSW } from "hnswlib-node";
 import fs from "fs";
 import path from "path";
+import { createRequire } from "node:module";
+
+// Native addons (.node files) require require() in ESM - use createRequire()
+const require = createRequire(import.meta.url);
+const { HierarchicalNSW } = require("hnswlib-node");
 
 type Space = "cosine" | "l2";
 type Modality = "text" | "image";

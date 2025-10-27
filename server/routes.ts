@@ -69,6 +69,8 @@ import { registerERP2Routes } from "./modules/erp2/routes";
 import { registerMarketplaceRoutes } from "./modules/marketplace/routes";
 // Marketing Module
 import { registerMarketingRoutes } from "./modules/marketing/routes";
+// AI Module (IA Multimodal 2.0)
+import aiRoutes from "./ai/routes";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -5725,6 +5727,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MARKETING MODULE ROUTES (mixed auth - admin + public tracking)
   // ========================================
   registerMarketingRoutes(app, isAuthenticated);
+
+  // ========================================
+  // AI MODULE ROUTES (IA Multimodal 2.0 - requires authentication)
+  // ========================================
+  app.use("/api/ai", aiRoutes);
 
   // ========================================
   // MARKETPLACE MODULE ROUTES (PUBLIC - no auth required)
