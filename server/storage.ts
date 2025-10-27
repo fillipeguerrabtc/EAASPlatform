@@ -1983,7 +1983,7 @@ export class DbStorage implements IStorage {
         customerEmail: users.email,
         productName: products.name,
         productPrice: products.price,
-        productImage: products.imageUrl,
+        productImage: sql<string | null>`${products.images}[1]`,
       })
       .from(wishlistItems)
       .leftJoin(users, eq(wishlistItems.customerId, users.id))
@@ -2053,8 +2053,8 @@ export class DbStorage implements IStorage {
     let results = await db.select().from(knowledgeBase);
     
     results = results.filter(item => 
-      item.question.toLowerCase().includes(lowerQuery) ||
-      item.answer.toLowerCase().includes(lowerQuery) ||
+      item.title.toLowerCase().includes(lowerQuery) ||
+      item.content.toLowerCase().includes(lowerQuery) ||
       (item.tags && item.tags.some(tag => tag.toLowerCase().includes(lowerQuery)))
     );
     
@@ -2560,7 +2560,7 @@ export class DbStorage implements IStorage {
   ): Promise<ProductBundle> {
     // Validate all products exist before creating bundle
     const productIds = items.map(item => item.productId);
-    const uniqueProductIds = [...new Set(productIds)];
+    const uniqueProductIds = Array.from(new Set(productIds));
     
     const existingProducts = await db.select({ id: products.id })
       .from(products)
