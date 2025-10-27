@@ -3,6 +3,9 @@ import { drizzle } from 'drizzle-orm/neon-serverless';
 import ws from "ws";
 import * as coreSchema from "@shared/schema";
 import * as crmSchema from "@shared/schema.crm";
+import * as aiCoreSchema from "@shared/schema.ai.core";
+import * as aiGraphSchema from "@shared/schema.ai.graph";
+import * as aiEvalSchema from "@shared/schema.ai.eval";
 
 neonConfig.webSocketConstructor = ws;
 
@@ -13,4 +16,13 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema: { ...coreSchema, ...crmSchema } });
+export const db = drizzle({ 
+  client: pool, 
+  schema: { 
+    ...coreSchema, 
+    ...crmSchema, 
+    ...aiCoreSchema, 
+    ...aiGraphSchema, 
+    ...aiEvalSchema 
+  } 
+});
