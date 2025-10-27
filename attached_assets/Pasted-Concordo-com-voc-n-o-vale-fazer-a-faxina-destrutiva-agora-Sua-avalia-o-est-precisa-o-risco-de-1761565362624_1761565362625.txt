@@ -1,0 +1,115 @@
+Concordo com você: não vale fazer a faxina destrutiva agora. Sua avaliação está precisa — o risco de quebrar tudo é alto e o ganho imediato é baixo.
+
+Em vez disso, eu faria uma transição segura para Single-Tenant em 3 passos que não quebram nada e já “congelam” o tenant, deixando a limpeza pesada para depois.
+
+Plano sem quebra (Single-Tenant “congelado”)
+Passo 1 — “Single-Tenant Mode” por configuração
+
+No .env:
+
+SINGLE_TENANT=true
+TENANT_FIXED_ID=main
+
+Middleware compatível (server)
+
+Coloque uma vez antes das rotas. Se um código antigo pedir tenantId, ele recebe sempre o fixo:
+
+// server/singleTenant.ts
+import type { Request, Response, NextFunction } from "express";
+
+export function singleTenantGuard(req: Request, _res: Response, next: NextFunction) {
+  if (process.env.SINGLE_TENANT === "true") {
+    (req as any).tenantId = process.env.TENANT_FIXED_ID || "main";
+    // opcional: também injeta header para clientes antigos
+    req.headers["x-tenant-id"] = (req as any).tenantId;
+  }
+  next();
+}
+
+
+No server/routes.ts (logo após criar app):
+
+import { singleTenantGuard } from "./singleTenant";
+app.use(singleTenantGuard);
+
+
+Resultado: nenhuma rota precisa mudar agora. Tudo que ainda “espera tenant” continua funcionando, mas preso ao mesmo valor.
+
+Passo 2 — Segurança no banco (sem DROP agora)
+
+Sem remover coluna nenhuma, a gente congela o tenantId no banco para o valor fixo e evita divergência futura.
+
+Migração SQL segura (Postgres/Neon) — exemplo para 2 tabelas (repita nas demais)
+-- 1) Backfill para o tenant fixo
+UPDATE customers SET "tenantId" = COALESCE("tenantId",'main');
+UPDATE deals     SET "tenantId" = COALESCE("tenantId",'main');
+
+-- 2) Defaults e NOT NULL (padroniza)
+ALTER TABLE customers ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE customers ALTER COLUMN "tenantId" SET NOT NULL;
+
+ALTER TABLE deals ALTER COLUMN "tenantId" SET DEFAULT 'main';
+ALTER TABLE deals ALTER COLUMN "tenantId" SET NOT NULL;
+
+-- 3) Constraint que “congela” o valor (single-tenant de fato)
+ALTER TABLE customers
+  ADD CONSTRAINT customers_single_tenant_chk CHECK ("tenantId" = 'main');
+ALTER TABLE deals
+  ADD CONSTRAINT deals_single_tenant_chk CHECK ("tenantId" = 'main');
+
+-- 4) (Opcional) Recriar índices que tinham tenantId na composição
+--    Agora não faz sentido índice composto com tenant; crie por colunas úteis:
+-- ex.: email único global
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes WHERE indexname = 'ux_customers_email'
+  ) THEN
+    CREATE UNIQUE INDEX ux_customers_email ON customers (lower(email));
+  END IF;
+END $$;
+
+
+Por que é seguro?
+
+Não apaga coluna nem índice (sem “queda livre”).
+
+Garante que tudo entra/permanece com tenantId='main'.
+
+Você pode voltar atrás fácil (drop das CHECK constraints).
+
+Se quiser ir além (opcional): criar um trigger “before insert/update” que force tenantId='main' se alguém tentar outro valor. Com a CHECK já trava; o trigger só ajuda a “corrigir” antes de falhar.
+
+Passo 3 — Compat Layer no código (sem refatorar tudo já)
+
+Crie wrappers que ignoram o argumento tenantId sem mudar as assinaturas antigas (zero impacto no resto do app). Ex.:
+
+// server/storage.compat.ts
+import * as storage from "./storage";
+
+// Exemplo: onde antes era listCustomersByTenant(tenantId)
+export async function listCustomersByTenant(_tenantId: string) {
+  return storage.listCustomers(); // agora global
+}
+
+// idem para getByTenant, listDealsByTenant, etc.
+
+
+Em arquivos que ainda chamam listCustomersByTenant(tenantId), basta trocar o import para storage.compat. O corpo do app segue igual.
+
+Quando (e como) fazer a faxina de verdade
+
+Depois de estabilizar CRM, ERP, IA e Marketplace.
+
+Aí sim: uma PR dedicada para remover colunas/índices, trocar assinaturas, e simplificar tudo.
+
+Como a base já estará “congelada” em 'main', o DROP vira cosmético e com risco baixíssimo.
+
+Benefícios dessa abordagem agora
+
+✅ Zero downtime funcional
+
+✅ Sem perder dados nem quebrar UI
+
+✅ Já impede “fantasmas” multi-tenant de reaparecer
+
+✅ Prepara o terreno para a limpeza final com PR pequena e segura
