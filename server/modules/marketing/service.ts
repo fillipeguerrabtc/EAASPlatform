@@ -255,45 +255,14 @@ export const MarketingService = {
 
   /**
    * Schedule campaign execution
-   * SECURITY: Tenant isolation enforced, requires Redis
-   * GRACEFUL DEGRADATION: Returns disabled flag if Redis unavailable
+   * TODO: Re-implement using PostgreSQL job queue system
    */
   async scheduleCampaign(ctx: Ctx, input: unknown) {
-    if (!QUEUE_ENABLED || !CampaignQueue) {
-      return { 
-        scheduled: false, 
-        disabled: true,
-        error: "Campaign scheduling unavailable - Redis not configured. Please configure Redis to enable asynchronous campaign execution."
-      };
-    }
-
-    const data = campaignScheduleSchema.parse(input);
-    const when = data.at ? new Date(data.at) : new Date();
-
-    // SECURITY: Tenant filter in UPDATE
-    await db
-      .update(mkCampaigns)
-      .set({
-        status: "scheduled",
-        scheduledAt: when,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(mkCampaigns.id, data.campaignId),
-          eq(mkCampaigns.tenantId, ctx.tenantId)
-        )
-      );
-
-    // Add to queue with delay
-    const delay = Math.max(0, when.getTime() - Date.now());
-    await CampaignQueue.add(
-      "run-campaign",
-      { tenantId: ctx.tenantId, campaignId: data.campaignId },
-      { delay }
-    );
-
-    return { scheduled: true, at: when.toISOString(), disabled: false };
+    return { 
+      scheduled: false, 
+      disabled: true,
+      error: "Campaign scheduling is being migrated to PostgreSQL-based queue system. Coming soon!"
+    };
   },
 
   /**
@@ -517,11 +486,11 @@ async function checkCanSend(
   return true;
 }
 
-/**
- * Campaign Worker - Executes campaign sends with throttling and A/B testing
- * SECURITY: Full tenant isolation, error handling, opt-in/quiet hours check
- * GRACEFUL DEGRADATION: Only created if Redis is available
- */
+// ========================================
+// CAMPAIGN WORKER (DISABLED - MIGRATING TO POSTGRESQL QUEUE)
+// ========================================
+// TODO: Re-implement using PostgreSQL job queue system
+/*
 createWorker = () => {
   if (!connection || !QUEUE_ENABLED) {
     console.warn("⚠️  Marketing: Worker creation skipped - Redis unavailable");
@@ -894,9 +863,4 @@ createWorker = () => {
 
   console.log("✅ Marketing: Campaign Worker initialized");
 };
-
-// ========================================
-// EXPORTS
-// ========================================
-
-export { CampaignQueue, CampaignWorker };
+*/
