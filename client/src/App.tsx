@@ -55,6 +55,9 @@ import CrmWorkflowsPage from "@/pages/admin/crm-workflows";
 import HrLeaveRequestsPage from "@/pages/admin/hr-leave-requests";
 import HrPerformanceReviewsPage from "@/pages/admin/hr-performance-reviews";
 import AiKnowledgeBasePage from "@/pages/admin/ai-knowledge-base";
+import CalendarSchedulingPage from "@/pages/admin/calendar-scheduling";
+import InventoryTransfersPage from "@/pages/admin/inventory-transfers";
+import BudgetTrackingPage from "@/pages/admin/budget-tracking";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -151,6 +154,9 @@ function Router() {
             <Route path="/admin/hr" component={HRPage} />
             <Route path="/admin/hr/leave-requests" component={HrLeaveRequestsPage} />
             <Route path="/admin/hr/performance-reviews" component={HrPerformanceReviewsPage} />
+            <Route path="/admin/calendar/scheduling" component={CalendarSchedulingPage} />
+            <Route path="/admin/inventory/transfers" component={InventoryTransfersPage} />
+            <Route path="/admin/finance/budget" component={BudgetTrackingPage} />
             <Route path="/admin/user-approvals" component={UserApprovals} />
             <Route path="/admin/ai-governance" component={AiGovernance} />
             <Route path="/admin/ai/knowledge-base" component={AiKnowledgeBasePage} />

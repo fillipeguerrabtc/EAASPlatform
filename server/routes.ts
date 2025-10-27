@@ -4460,6 +4460,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // INVENTORY - STOCK TRANSFERS
   // ========================================
   
+  app.get("/api/inventory/transfers", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const result = await db.query.inventoryMovements.findMany({
+        where: eq(inventoryMovements.type, "transfer"),
+        orderBy: desc(inventoryMovements.createdAt),
+        limit: 1000,
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error listing transfers:", error);
+      res.status(500).json({ message: "Erro ao listar transferências" });
+    }
+  });
+  
   app.post("/api/inventory/transfers", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const schema = z.object({
