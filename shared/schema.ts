@@ -62,7 +62,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 // MULTI-TENANT CORE
 // ========================================
 
-// Tenants (Companies/Organizations)
+// Tenants (Companies/Organizations) - SINGLE-TENANT MODE
 export const tenants = pgTable("tenants", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
@@ -75,6 +75,9 @@ export const tenants = pgTable("tenants", {
   twilioWhatsappNumber: text("twilio_whatsapp_number"),
   status: text("status").default("active"),
   settings: jsonb("settings"),
+  
+  // SINGLE-TENANT ENFORCEMENT: Database-level guarantee
+  isPrimary: boolean("is_primary").default(true).notNull().unique(), // Only one tenant can have isPrimary = true
   
   // AI Governance (EAAS Whitepaper 02 - Chapter 9)
   aiPersona: text("ai_persona").default("professional"), // Tone: professional, friendly, casual, technical
