@@ -1462,3 +1462,9 @@ export interface ThemeTokens {
     color?: string;
   };
 }
+
+
+// ========================================
+// MARKETING MODULE
+// ========================================
+export * from "./schema.marketing";

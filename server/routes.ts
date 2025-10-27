@@ -67,6 +67,8 @@ import { twilioWhatsappWebhook, metaWebhookVerify, metaWebhookReceive } from "./
 import { registerERPRoutes } from "./modules/erp/routes";
 import { registerERP2Routes } from "./modules/erp2/routes";
 import { registerMarketplaceRoutes } from "./modules/marketplace/routes";
+// Marketing Module
+import { registerMarketingRoutes } from "./modules/marketing/routes";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -5718,6 +5720,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.use("/api/erp2", isAuthenticated);
   registerERP2Routes(app);
+
+  // ========================================
+  // MARKETING MODULE ROUTES (mixed auth - admin + public tracking)
+  // ========================================
+  registerMarketingRoutes(app, isAuthenticated);
 
   // ========================================
   // MARKETPLACE MODULE ROUTES (PUBLIC - no auth required)

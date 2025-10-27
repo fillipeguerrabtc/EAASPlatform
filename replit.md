@@ -38,13 +38,28 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **Brand Scanner 2.1 PRO - Diamond Edition:** Advanced brand identity system with extract mode (web crawling, color science, typography, design tokens, WCAG validation, logo detection), clone mode (static HTML snapshots, asset deduplication, CDN publishing), and dynamic theming (admin theme applier, BrandThemeProvider context, marketplace router).
 - **Brand Theming System:** Dynamically applies ThemeTokens as CSS variables via BrandThemeProvider context, supporting preview, activate, clear, and rollback operations.
 - **Authentication:** Multi-Provider OAuth (Google, Apple, GitHub, X) and a Dual-Track Authentication System for Employee Registration (admin approval) and Customer Registration (auto-approved, creates CRM record) with Bcrypt hashing and RBAC. Includes single-tenant architecture enforcement, Stripe webhook idempotency, transaction safety for critical operations (e.g., order processing), CRM data quality (deduplication on email/phone), API pagination, CRM pipeline drag-and-drop with transactional reordering, an SLA worker system, and a persistent cart system.
+- **Marketing Automation Module (NEW - Production-Ready):** Comprehensive multi-channel marketing campaign system with LGPD/GDPR compliance:
+  - **Database Tables (5):** `mk_templates` (Handlebars email/WhatsApp/social templates), `mk_campaigns` (campaigns with A/B testing), `mk_sends` (individual send records with crypto-secure tracking IDs), `mk_events` (tracking: opened/clicked/delivered/bounced), `contact_preferences` (LGPD opt-in per channel + quiet hours with composite PK)
+  - **Multi-Channel Support:** Email (SMTP/Nodemailer), WhatsApp (Twilio), Facebook/Instagram (Graph API stubs ready)
+  - **Template Engine:** Handlebars with server-side rendering, supports dynamic variables ({{firstName}}, {{coupon}}, etc.)
+  - **Campaign Features:** Audience segmentation (CRM segments integration + manual lists), A/B testing (split % per template), throttling (sends/minute), max sends limit, scheduling (BullMQ queue with delay), status lifecycle (draft→scheduled→running→finished/failed)
+  - **Tracking System:** Crypto-secure tracking IDs (crypto.randomUUID()), email tracking pixel (1x1 GIF), click tracking with redirect, event logging (delivered/opened/clicked)
+  - **LGPD/GDPR Compliance:** Per-contact opt-in preferences (email/WhatsApp/Facebook/Instagram), quiet hours enforcement (22h-8h configurable), pre-flight checks before send
+  - **Service Layer:** Full CRUD with tenant isolation, Drizzle ORM (no raw SQL), Redis graceful degradation (campaign queue disabled if Redis unavailable), error handling with structured logging
+  - **Providers:** Email (Nodemailer with SMTP config), WhatsApp (Twilio SDK), Facebook/Instagram (Graph API stubs), graceful degradation if providers not configured
+  - **Worker System:** BullMQ campaign worker with throttling, A/B split logic, opt-in/quiet hours validation, provider-specific error handling, campaign lifecycle management
+  - **REST API (20+ endpoints):** `/api/mkt/templates.*` (upsert/list/get/delete - protected), `/api/mkt/campaigns.*` (upsert/list/get/schedule/pause/metrics - protected), `/api/mkt/contact-prefs.*` (set/get - protected), `/api/marketing/t.gif` (tracking pixel - public), `/api/marketing/click` (click redirect - public)
+  - **Technologies:** Handlebars (templating), Nodemailer (email), Twilio (WhatsApp), BullMQ + IORedis (campaign queue), crypto.randomUUID() (secure tracking), Drizzle ORM + Zod validation
+  - **Security Hardening (Production-Ready - Architect Approved):** Complete tenant isolation on ALL operations (reads + writes), isAuthenticated middleware on admin routes, public tracking endpoints validate trackingId with tenant lookup via sendId, crypto-secure tracking IDs (no Math.random()), Drizzle ORM upserts (no SQL injection), foreign keys CASCADE (template→campaign→send→event), graceful provider degradation (SMTP/Twilio optional), Redis error handling (queue disabled if unavailable), structured error logging (no silent failures)
 
 ### External Dependencies
 - **Stripe:** Payment processing.
-- **Twilio WhatsApp:** WhatsApp integration.
-- **Meta (Facebook/Instagram):** Social media integration.
+- **Twilio WhatsApp:** WhatsApp integration (CRM + Marketing WhatsApp campaigns).
+- **Meta (Facebook/Instagram):** Social media integration (CRM webhooks + Marketing campaigns).
 - **OpenAI:** AI capabilities.
 - **PostgreSQL (Neon):** Primary database.
 - **Drizzle ORM:** Object-Relational Mapper.
 - **Puppeteer + Chromium:** Intelligent Brand Scanner.
-- **BullMQ + Redis:** CRM asynchronous job processing (CSV imports).
+- **BullMQ + Redis:** Asynchronous job processing (CRM CSV imports + Marketing campaign queue).
+- **Nodemailer:** SMTP email sending (Marketing campaigns).
+- **Handlebars:** Template engine (Marketing email/message templates).
