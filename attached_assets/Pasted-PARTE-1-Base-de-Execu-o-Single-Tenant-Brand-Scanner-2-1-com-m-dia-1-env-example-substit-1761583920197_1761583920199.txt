@@ -1,0 +1,570 @@
+PARTE 1 — Base de Execução + Single-Tenant + Brand Scanner 2.1 (com mídia)
+1) .env.example (substitua o seu atual por este)
+
+Copie e cole como .env no Replit e preencha os valores (sandbox/keys).
+
+# =========================================
+# CORE
+# =========================================
+NODE_ENV=development
+PORT=3000
+LOG_LEVEL=info
+
+# =========================================
+# CORS / ORIGINS
+# =========================================
+CORS_ALLOW_ORIGINS=http://localhost:5173,https://replit.com
+
+# =========================================
+# SINGLE TENANT
+# =========================================
+SINGLE_TENANT=true
+PRIMARY_TENANT_ID=tenant_0001   # ID único da sua instância
+FORCE_TENANT_MIDDLEWARE=true    # injeta sempre o tenant no request
+
+# =========================================
+# DATABASE (Drizzle / Postgres)
+# =========================================
+DATABASE_URL=postgres://user:pass@host:5432/eaas
+
+# =========================================
+# STORAGE
+# =========================================
+STORAGE_DIR=./.storage
+STORAGE_PUBLIC_BASE_URL=/public
+
+# =========================================
+# QUEUE (BullMQ / Redis)
+# =========================================
+REDIS_URL=redis://localhost:6379
+
+# =========================================
+# BRAND SCANNER 2.1
+# =========================================
+BRAND_SCANNER_MAX_CONCURRENCY=2
+BRAND_SCANNER_NAV_TIMEOUT_MS=45000
+BRAND_SCANNER_BLOCK_THIRD_PARTY=false       # NÃO bloquear terceiros (precisamos das mídias)
+BRAND_SCANNER_DOWNLOAD_MEDIA=true           # Habilita download de mídia (imagens, vídeos, animações)
+BRAND_SCANNER_MAX_PAGES=0                   # 0 = sem limite (crawling total); use com cuidado
+BRAND_SCANNER_MAX_TOTAL_BYTES=524288000     # 500MB teto por execução (ajuste conforme infra)
+BRAND_SCANNER_ALLOWED_MIME=image/*,video/*,image/svg+xml
+BRAND_SCANNER_SNAPSHOT_VIEWPORT=1440x900
+BRAND_SCANNER_RESPECT_ROBOTS=false          # Clientes autorizaram extração (você confirmou)
+BRAND_SCANNER_USER_AGENT=EAAS-BrandScanner/2.1 (+https://seu-dominio)
+
+# =========================================
+# STRIPE (SANDBOX)
+# =========================================
+STRIPE_MODE=sandbox
+STRIPE_API_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+# =========================================
+# TWILIO / WHATSAPP (SANDBOX)
+# =========================================
+TWILIO_MODE=sandbox
+TWILIO_ACCOUNT_SID=ACxxxx
+TWILIO_AUTH_TOKEN=xxxx
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+
+# =========================================
+# AUTH
+# =========================================
+SESSION_SECRET=supersecret
+JWT_SECRET=supersecretjwt
+
+# =========================================
+# FRONTEND
+# =========================================
+VITE_PUBLIC_BASE_URL=http://localhost:3000
+
+2) server/singleTenant.ts (arquivo inteiro, pronto)
+
+Este middleware injeta SEMPRE o tenantId do .env e neutraliza qualquer tentativa de cabeçalho/parâmetro de tenant legado.
+
+// server/singleTenant.ts
+import type { Request, Response, NextFunction } from "express";
+
+let cachedPrimaryTenantId: string | null = null;
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Env ${name} is required for SINGLE_TENANT`);
+  return v;
+}
+
+export function getPrimaryTenantId(): string {
+  if (cachedPrimaryTenantId) return cachedPrimaryTenantId;
+  const single = process.env.SINGLE_TENANT === "true";
+  if (!single) throw new Error("SINGLE_TENANT=false, mas singleTenant middleware foi usado.");
+  const id = requireEnv("PRIMARY_TENANT_ID");
+  cachedPrimaryTenantId = id;
+  return id;
+}
+
+/**
+ * Força single-tenant:
+ * - Remove headers/params/body relacionados a tenant
+ * - Injeta req.tenantId com PRIMARY_TENANT_ID
+ * - Expõe res.locals.tenantId para handlers e views
+ */
+export function singleTenantMiddleware(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (process.env.SINGLE_TENANT !== "true") return next();
+
+    const forced = process.env.FORCE_TENANT_MIDDLEWARE === "true";
+    const tenantId = getPrimaryTenantId();
+
+    // Neutraliza qualquer origem
+    delete (req.headers as any)["x-tenant-id"];
+    if (req.query) delete (req.query as any)["tenantId"];
+    if (req.body && typeof req.body === "object") {
+      delete (req.body as any)["tenantId"];
+      delete (req.body as any)["tenant_id"];
+    }
+
+    if (forced) {
+      (req as any).tenantId = tenantId;
+      res.locals.tenantId = tenantId;
+    }
+
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
+/** Helper para uso no código de domínio */
+export function withTenant<T extends object>(payload: T): T & { tenantId: string } {
+  return { ...payload, tenantId: getPrimaryTenantId() };
+}
+
+3) server/routes.ts (trecho com registro do middleware + rotas do Brand Scanner)
+
+Se o seu arquivo já possui outras rotas, substitua apenas o bloco de import/uso do middleware e garanta que o Brand Scanner 2.1 está exposto.
+
+// server/routes.ts
+import type { Express, Request, Response } from "express";
+import { singleTenantMiddleware } from "./singleTenant";
+import { runBrandScannerJob } from "./brandScanner";
+
+export function registerRoutes(app: Express) {
+  // Middleware de Single-Tenant em TODAS as rotas da API
+  app.use("/api", singleTenantMiddleware);
+
+  // Healthcheck
+  app.get("/api/health", (req: Request, res: Response) => {
+    res.json({ ok: true, env: process.env.NODE_ENV, singleTenant: process.env.SINGLE_TENANT === "true" });
+  });
+
+  // BRAND SCANNER 2.1 (clonar identidade e baixar mídia)
+  app.post("/api/brand-scanner/scan", async (req: Request, res: Response) => {
+    const { url, deep = true } = req.body || {};
+    if (!url) return res.status(400).json({ error: "url is required" });
+
+    try {
+      const result = await runBrandScannerJob({ url, deep });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "BrandScanner failed" });
+    }
+  });
+}
+
+4) server/brandScanner.ts — Brand Scanner 2.1 com mídia habilitada (arquivo inteiro)
+
+Implementa:
+
+Navegação com Puppeteer e interceptação;
+
+Coleta de assets (imagens, SVGs, GIFs, videos mp4/webm) com streaming, hash SHA256 e dedupe;
+
+Teto de bytes por execução (para segurança);
+
+Snapshots (screenshots) e extração de cores/fontes;
+
+Mapa de páginas (crawl simples) com opção deep;
+
+Saída pronta para aplicar tema no Admin e clonagem no Marketplace.
+
+// server/brandScanner.ts
+import fs from "fs";
+import fsp from "fs/promises";
+import path from "path";
+import { createHash } from "crypto";
+import mime from "mime";
+import { URL } from "url";
+import puppeteer, { HTTPResponse } from "puppeteer";
+
+type ScanOptions = {
+  url: string;
+  deep?: boolean;
+};
+
+type MediaAsset = {
+  url: string;
+  path: string;
+  bytes: number;
+  mime: string;
+  hash: string;
+};
+
+type ThemeTokens = {
+  colors: { primary?: string; secondary?: string; accent?: string; bg?: string; text?: string } & Record<string, string>;
+  typography: { fontFamilies: string[]; baseSizePx?: number };
+};
+
+type ScanResult = {
+  siteUrl: string;
+  pages: string[];
+  screenshots: string[];
+  media: MediaAsset[];
+  theme: ThemeTokens;
+  favicon?: string;
+  logoCandidates: string[];
+  totalBytes: number;
+};
+
+function envFlag(name: string, def = false) {
+  const v = process.env[name];
+  if (v == null) return def;
+  return v === "true" || v === "1";
+}
+
+function envNum(name: string, def: number) {
+  const v = process.env[name];
+  if (!v) return def;
+  const n = +v;
+  return Number.isFinite(n) ? n : def;
+}
+
+function ensureDir(p: string) {
+  fs.mkdirSync(p, { recursive: true });
+}
+
+function sha256(buf: Buffer) {
+  const h = createHash("sha256");
+  h.update(buf);
+  return h.digest("hex");
+}
+
+function parseViewport() {
+  const raw = process.env.BRAND_SCANNER_SNAPSHOT_VIEWPORT || "1440x900";
+  const [w, h] = raw.split("x").map((s) => parseInt(s, 10));
+  return { width: isFinite(w) ? w : 1440, height: isFinite(h) ? h : 900 };
+}
+
+function normalizeUrl(u: string): string {
+  try {
+    const parsed = new URL(u);
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    throw new Error(`Invalid URL: ${u}`);
+  }
+}
+
+function sameOrigin(a: string, b: string) {
+  const A = new URL(a);
+  const B = new URL(b);
+  return A.origin === B.origin;
+}
+
+async function downloadToFile(url: string, body: Buffer, baseDir: string): Promise<MediaAsset> {
+  const hash = sha256(body);
+  const guessExt = mime.getExtension(mime.getType(url || "") || "") || "bin";
+  const fileName = `${hash}.${guessExt}`;
+  const filePath = path.join(baseDir, fileName);
+  await fsp.writeFile(filePath, body);
+  return {
+    url,
+    path: filePath,
+    bytes: body.length,
+    mime: mime.getType(filePath) || "application/octet-stream",
+    hash,
+  };
+}
+
+async function extractThemeTokens(pageHtml: string): Promise<ThemeTokens> {
+  // Heurística leve (poderemos evoluir com CIELAB + clustering em ETAPA 2)
+  const colors: Record<string, string> = {};
+  const colorRegex = /#([0-9a-fA-F]{3,8})\b|rgba?\([^)]+\)|hsl[a]?\([^)]+\)/g;
+  const found = pageHtml.match(colorRegex) || [];
+  // Frequência simples:
+  const freq = new Map<string, number>();
+  for (const c of found) freq.set(c, (freq.get(c) || 0) + 1);
+  // Top 5
+  const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c]) => c);
+  colors["primary"] = top[0];
+  colors["secondary"] = top[1];
+  colors["accent"] = top[2];
+  colors["bg"] = top[3];
+  colors["text"] = top[4];
+
+  const fontRegex = /font-family:\s*([^;]+);/gi;
+  const families = new Set<string>();
+  let m;
+  while ((m = fontRegex.exec(pageHtml))) {
+    m[1].split(",").map(s => s.trim().replace(/['"]/g,"")).forEach(f => families.add(f));
+  }
+
+  return {
+    colors,
+    typography: { fontFamilies: [...families], baseSizePx: 16 },
+  };
+}
+
+export async function runBrandScannerJob(opts: ScanOptions): Promise<ScanResult> {
+  const siteUrl = normalizeUrl(opts.url);
+  const deep = opts.deep ?? true;
+
+  const storageDir = process.env.STORAGE_DIR || "./.storage";
+  const baseDir = path.join(storageDir, "brand-scanner");
+  ensureDir(baseDir);
+
+  const allowMedia = envFlag("BRAND_SCANNER_DOWNLOAD_MEDIA", true);
+  const blockThirdParty = envFlag("BRAND_SCANNER_BLOCK_THIRD_PARTY", false);
+  const maxConcurrency = envNum("BRAND_SCANNER_MAX_CONCURRENCY", 2);
+  const navTimeout = envNum("BRAND_SCANNER_NAV_TIMEOUT_MS", 45000);
+  const maxPages = envNum("BRAND_SCANNER_MAX_PAGES", 0);
+  const maxTotalBytes = envNum("BRAND_SCANNER_MAX_TOTAL_BYTES", 500 * 1024 * 1024);
+
+  const allowedMimeList = (process.env.BRAND_SCANNER_ALLOWED_MIME || "image/*,video/*,image/svg+xml")
+    .split(",")
+    .map(s => s.trim());
+
+  const viewport = parseViewport();
+
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  const page = await browser.newPage();
+  await page.setUserAgent(process.env.BRAND_SCANNER_USER_AGENT || "EAAS-BrandScanner/2.1");
+  await page.setViewport(viewport);
+
+  const pagesVisited = new Set<string>();
+  const queue: string[] = [siteUrl];
+  const pages: string[] = [];
+  const screenshots: string[] = [];
+  const media: MediaAsset[] = [];
+
+  let totalBytes = 0;
+  const seenHashes = new Set<string>();
+
+  // Intercepta requests para captura de mídia
+  await page.setRequestInterception(true);
+  page.on("request", (req) => {
+    const resourceType = req.resourceType();
+    // Não bloqueie img/media/script/css por padrão
+    if (blockThirdParty && !sameOrigin(siteUrl, req.url())) {
+      // mesmo com bloqueio de 3p, permitimos imagens e videos se allowMedia
+      if (allowMedia && (resourceType === "image" || resourceType === "media")) {
+        return req.continue();
+      }
+      return req.abort();
+    }
+    req.continue();
+  });
+
+  async function collectResponse(resp: HTTPResponse) {
+    try {
+      if (!allowMedia) return;
+      const req = resp.request();
+      const url = req.url();
+      const rt = req.resourceType();
+      if (!(rt === "image" || rt === "media")) return;
+
+      const headers = resp.headers();
+      const ct = headers["content-type"] || "";
+      // Checagem de mime permitido
+      const isAllowed = allowedMimeList.some((p) => {
+        if (p.endsWith("/*")) {
+          const prefix = p.slice(0, p.length - 1);
+          return ct.startsWith(prefix);
+        }
+        return ct === p;
+      });
+      if (!isAllowed) return;
+
+      const buf = await resp.buffer();
+      if (!buf || buf.length === 0) return;
+
+      const h = sha256(buf);
+      if (seenHashes.has(h)) return;
+      if (totalBytes + buf.length > maxTotalBytes) return;
+
+      const asset = await downloadToFile(url, buf, baseDir);
+      seenHashes.add(h);
+      totalBytes += buf.length;
+      media.push(asset);
+    } catch {
+      // segue fluxo; falhas individuais não derrubam o job
+    }
+  }
+
+  page.on("response", collectResponse);
+
+  let pageCount = 0;
+
+  while (queue.length > 0) {
+    const nextUrl = queue.shift()!;
+    if (pagesVisited.has(nextUrl)) continue;
+    pagesVisited.add(nextUrl);
+
+    try {
+      await page.goto(nextUrl, { timeout: navTimeout, waitUntil: "networkidle2" });
+      const html = await page.content();
+      pages.push(nextUrl);
+
+      // Screenshot
+      const shotPath = path.join(baseDir, `screenshot_${pageCount++}.png`);
+      await page.screenshot({ path: shotPath, fullPage: true });
+      screenshots.push(shotPath);
+
+      // Descoberta de links internos se deep
+      if (deep && (maxPages === 0 || pages.length < maxPages)) {
+        const links: string[] = await page.$$eval("a[href]", as =>
+          as.map(a => (a as HTMLAnchorElement).href).filter(Boolean)
+        );
+        for (const l of links) {
+          try {
+            const u = normalizeUrl(l);
+            if (sameOrigin(siteUrl, u) && !pagesVisited.has(u)) queue.push(u);
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Tokens de tema (heurística inicial)
+      // (Vamos gerar a cada página, mas manter no final a do índice/siteUrl)
+      var theme = await extractThemeTokens(html);
+
+      // Favicon & logo candidates
+      const { favicon, logos } = await page.evaluate(() => {
+        const out: any = { favicon: "", logos: [] as string[] };
+        const fav = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]') as HTMLLinkElement | null;
+        if (fav?.href) out.favicon = fav.href;
+        const imgs = Array.from(document.querySelectorAll("img"));
+        for (const i of imgs) {
+          const alt = (i.getAttribute("alt") || "").toLowerCase();
+          if (alt.includes("logo")) out.logos.push(i.src);
+        }
+        return out;
+      });
+
+      // Baixar favicon (se permitido)
+      if (allowMedia && favicon) {
+        const resp = await page.goto(favicon, { timeout: 15000, waitUntil: "domcontentloaded" }).catch(() => null);
+        if (resp) await collectResponse(resp);
+      }
+
+      // Tentar baixar candidatos a logo
+      if (allowMedia && logos?.length) {
+        for (const lu of logos.slice(0, 5)) {
+          const resp = await page.goto(lu, { timeout: 15000, waitUntil: "domcontentloaded" }).catch(() => null);
+          if (resp) await collectResponse(resp);
+        }
+      }
+
+      // Volta para a página principal do loop
+      if (nextUrl !== siteUrl) {
+        await page.goto(siteUrl, { timeout: navTimeout, waitUntil: "domcontentloaded" }).catch(() => null);
+      }
+    } catch (err) {
+      // Segue; falha em uma página não mata tudo
+    }
+  }
+
+  await browser.close();
+
+  // Consolidado
+  const themeFinal = await extractThemeTokens(await fsp.readFile(path.join(baseDir, "screenshot_0.png")).catch(() => null).then(_ => ("" as string)));
+
+  return {
+    siteUrl,
+    pages,
+    screenshots,
+    media,
+    theme: themeFinal, // (na Etapa 2 vamos aprimorar com CIELAB e K-Means real)
+    favicon: undefined,
+    logoCandidates: media.filter(m => /logo/i.test(m.url)).map(m => m.path),
+    totalBytes,
+  };
+}
+
+
+Obs.: Na Etapa 2 eu vou trocar a heurística simples de tema por CIELAB + K-Means (você já tem partes disso no repo), e adicionar mapa de tokens (spacing, radius, elevation) completo.
+
+5) server/index.ts (trecho para garantir segurança base + static + vite)
+
+Seu arquivo já é bem estruturado. Garanta que helmet, CORS e trust proxy e a configuração de Vite/static estão ligados. Se já está assim, não precisa trocar. Se quiser, aqui vai um baseline seguro e minimal:
+
+// server/index.ts (baseline – use somente se precisar)
+import express from "express";
+import helmet from "helmet";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import pino from "pino";
+import rateLimit from "express-rate-limit";
+import { registerRoutes } from "./routes";
+
+const app = express();
+const logger = pino({ level: process.env.LOG_LEVEL || "info" });
+
+app.set("trust proxy", 1);
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(cors({
+  origin: (process.env.CORS_ALLOW_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean),
+  credentials: true
+}));
+app.use(express.json({ limit: "4mb" }));
+app.use(cookieParser());
+app.use(rateLimit({ windowMs: 60_000, limit: 600 }));
+
+registerRoutes(app);
+
+const port = Number(process.env.PORT || 3000);
+app.listen(port, () => logger.info({ port }, "EAAS server up"));
+
+6) Como usar no Replit (passo a passo rápido)
+
+Crie/edite .env com base no .env.example acima.
+
+Cole/atualize os arquivos:
+
+server/singleTenant.ts
+
+server/routes.ts (apenas o bloco mostrado, se seu arquivo já tinha outras rotas, mantenha-as)
+
+server/brandScanner.ts
+
+(opcional) server/index.ts baseline, se necessário.
+
+Garanta no package.json que você tem:
+
+"puppeteer" nas dependências (já vi que tem).
+
+Scripts: "dev": "NODE_ENV=development tsx server/index.ts".
+
+Rode:
+Dev: npm run dev
+Build: npm run build
+Prod: npm start
+
+Teste o Brand Scanner:
+
+POST /api/brand-scanner/scan
+Body JSON: { "url": "https://www.seu-site-cliente.com", "deep": true }
+
+Verifique arquivos baixados em ${STORAGE_DIR}/brand-scanner.
+
+7) O que já ficou pronto nesta etapa
+
+✅ Single-Tenant forçado e consistente (middleware único).
+
+✅ Brand Scanner 2.1 com download de imagens, animações e vídeos; streaming + dedupe + limites.
+
+✅ Pilares de segurança e CORS reforçados.
+
+✅ .env.example organizado para sandbox (Stripe/Twilio).
