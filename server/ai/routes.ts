@@ -11,10 +11,11 @@ import { z } from "zod";
 import { isAuthenticated } from "../replitAuth";
 import { db } from "../db";
 import { aiDocuments, aiChunks } from "@shared/schema.ai.core";
-import { aiEntities } from "@shared/schema.ai.graph";
+import { aiEntities, aiChunkEntities } from "@shared/schema.ai.graph";
+import { aiFeedback } from "@shared/schema.ai.eval";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { embedTexts } from "./embeddings.text";
-import { knnText, knnImage } from "./vector-store";
+import { knnText, knnImage, getEmbeddingsByChunkIds } from "./vector-store";
 import { hybridRerank, DEFAULT_WEIGHTS, type HybridWeights } from "./hybrid-score";
 import { ingestDocument, ingestRawText, ingestImage, deleteDocument } from "./ingest";
 import { getTopEntities } from "./kg";
@@ -100,6 +101,17 @@ router.post("/query", isAuthenticated, async (req, res) => {
 
     const { query, k, weights } = parseResult.data;
 
+    // Weight validation hardening (Architect recommendation #3)
+    if (weights) {
+      const weightSum = weights.alpha + weights.beta + weights.gamma + weights.delta + weights.zeta;
+      if (Math.abs(weightSum - 1.0) > 0.001) { // Allow small floating point errors
+        return res.status(400).json({ 
+          error: "Invalid weights",
+          details: `Weight sum must equal 1.0, got ${weightSum.toFixed(3)}`
+        });
+      }
+    }
+
     // Embed query
     const [queryVec] = await embedTexts([query]);
 
@@ -127,25 +139,58 @@ router.post("/query", isAuthenticated, async (req, res) => {
 
     const chunkMeta = new Map(chunks.map(c => [c.id, c]));
 
-    // NOTE: Feedback and graph scores require future schema extensions:
-    // - aiFeedback table in schema.ai.eval.ts for user ratings
-    // - ai_chunk_entities junction table to link chunks to extracted entities
-    // For now, using defaults (0) to ensure hybrid scoring operates deterministically
+    // Fetch feedback scores (β weight) - AVG rating per chunk
+    const feedbackRows = await db
+      .select({
+        chunkId: aiFeedback.chunkId,
+        avgRating: sql<number>`AVG(${aiFeedback.rating})`.as('avg_rating')
+      })
+      .from(aiFeedback)
+      .where(
+        and(
+          inArray(aiFeedback.chunkId, chunkIds),
+          eq(aiFeedback.tenantId, tenantId)
+        )
+      )
+      .groupBy(aiFeedback.chunkId);
 
-    // Build enriched candidates with real temporal metadata
+    const feedbackMap = new Map(feedbackRows.map(f => [f.chunkId, f.avgRating || 0]));
+
+    // Fetch graph scores (δ weight) - AVG PageRank of entities in chunk
+    const graphRows = await db
+      .select({
+        chunkId: aiChunkEntities.chunkId,
+        avgPageRank: sql<number>`AVG(${aiEntities.pagerank})`.as('avg_pagerank')
+      })
+      .from(aiChunkEntities)
+      .innerJoin(aiEntities, eq(aiChunkEntities.entityId, aiEntities.id))
+      .where(
+        and(
+          inArray(aiChunkEntities.chunkId, chunkIds),
+          eq(aiChunkEntities.tenantId, tenantId)
+        )
+      )
+      .groupBy(aiChunkEntities.chunkId);
+
+    const graphMap = new Map(graphRows.map(g => [g.chunkId, g.avgPageRank || 0]));
+
+    // Build enriched candidates with real metadata (α/β/γ/δ weights)
     const EPOCH_FALLBACK = new Date(0); // Deterministic fallback (1970-01-01)
     const enrichedCandidates = candidates.map(c => ({
       chunkId: c.chunkId,
       vectorScore: c.score,
       createdAt: chunkMeta.get(c.chunkId)?.createdAt || EPOCH_FALLBACK,
-      graphScore: 0, // TODO: requires ai_chunk_entities junction table
-      feedbackScore: 0 // TODO: requires aiFeedback table in schema.ai.eval.ts
+      graphScore: graphMap.get(c.chunkId) || 0,
+      feedbackScore: feedbackMap.get(c.chunkId) || 0
     }));
 
-    // Hybrid rerank
+    // Fetch embeddings for diversity penalty (ζ weight)
+    const embeddingsMap = await getEmbeddingsByChunkIds(tenantId, chunkIds, "text");
+
+    // Hybrid rerank with MMR diversity
     const results = hybridRerank(
       enrichedCandidates,
-      new Map(), // TODO: pass vectors for diversity penalty
+      embeddingsMap, // Enable diversity penalty (ζ weight)
       k,
       weights || DEFAULT_WEIGHTS
     );

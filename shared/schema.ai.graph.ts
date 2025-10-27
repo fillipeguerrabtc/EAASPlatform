@@ -21,10 +21,12 @@ export const aiEntities = pgTable(
     tenantId: varchar("tenant_id", { length: 64 }).notNull(),
     type: varchar("type", { length: 32 }).notNull(), // PERSON|ORG|LOC|PRODUCT|DATE|MISC
     value: varchar("value", { length: 256 }).notNull(),
+    pagerank: real("pagerank").default(0).notNull(), // PageRank-like score for graph centrality
     createdAt: timestamp("created_at").defaultNow().notNull()
   },
   (t) => ({
-    idx: index("ai_ent_tenant_val_idx").on(t.tenantId, t.value)
+    idx: index("ai_ent_tenant_val_idx").on(t.tenantId, t.value),
+    idxPagerank: index("ai_ent_pagerank_idx").on(t.pagerank)
   })
 );
 

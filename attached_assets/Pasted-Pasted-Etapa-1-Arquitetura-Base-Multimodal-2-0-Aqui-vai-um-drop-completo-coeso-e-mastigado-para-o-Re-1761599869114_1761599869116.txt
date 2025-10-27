@@ -1,0 +1,145 @@
+Pasted-Etapa-1-Arquitetura-Base-Multimodal-2-0-Aqui-vai-um-drop-completo-coeso-e-mastigado-para-o-Rep-1761595468038_1761595468039.txt
+Etapa 1 – Arquitetura Base Multimodal 2.0.
+Aqui vai um drop completo, coeso e “mastigado” para o Replit — com código integral, matemática, arquivos prontos, nomenclatura padronizada, Single-Tenant, independência de IA externa, ANN HNSW incremental com checkpoint, e suporte multimodal (texto + imagem) já desde a fundação.
+
+Conteúdo desta etapa:
+
+Estrutura de pastas + .env
+
+Schemas Drizzle (texto + imagem + ANN + políticas + interações)
+
+Embeddings locais ONNX (texto + imagem) com tokenização WordPiece e pooling
+
+ANN HNSW incremental (add em tempo real) + checkpoint automático
+
+Vector Store unificado (texto + imagem)
+
+Scorer matemático híbrido base (foco em arquitetura; γ/δ/ζ ativaremos na Etapa 2 ao ligar grafo/parsers)
+
+Ingest multimodal (texto bruto, URL/arquivo, imagem)
+
+Rotas HTTP e bootstrap
+
+Passo a passo de verificação rápida
+
+0) Estrutura recomendada de pastas
+
+Coloque estes arquivos (copiar/colar):
+
+/shared/
+  schema.ai.core.ts
+/server/
+  db.ts                         # (o seu já existente)
+  ai/
+    embeddings.text.ts
+    embeddings.image.ts
+    ann.ts
+    vector-store.ts
+    hybrid-score.ts
+    ingest.ts
+    parser.ts                   # (HTML/PDF/DOCX/PPTX/CSV/OCR virá na Etapa 2; aqui deixo stub mínimo)
+    routes.ts
+  routes.ts                     # registra rotas
+/models/
+  minilm.onnx
+  vocab.txt
+  mobilenet.onnx               # (ou vit-small.onnx; escolha 1)
+  imagenet_labels.json         # labels da rede de visão
+/data/ann/                      # será criado em runtime (checkpoint ANN)
+
+
+.env (exemplo):
+
+PRIMARY_TENANT_ID=tenant-main
+AI_EMB_MODEL_PATH=./models/minilm.onnx
+AI_EMB_VOCAB_PATH=./models/vocab.txt
+AI_EMB_MAX_LEN=128
+AI_EMB_DIM=384
+
+AI_VISION_MODEL_PATH=./models/mobilenet.onnx
+AI_VISION_DIM=1024
+AI_VISION_LABELS=./models/imagenet_labels.json
+
+AI_ANN_M=16
+AI_ANN_EF_CONS=200
+AI_ANN_EF=64
+
+
+package.json (dependências necessárias nesta etapa):
+
+{
+  "dependencies": {
+    "onnxruntime-node": "^1.19.2",
+    "hnswlib-node": "^2.1.0",
+    "multer": "^1.4.5-lts.1"
+  }
+}
+
+1) Schemas Drizzle — /shared/schema.ai.core.ts
+
+Tabelas multimodais (texto e imagem), ANN meta (para auditoria/checkpoint), políticas, interações. Tudo Single-Tenant com tenantId.
+
+// shared/schema.ai.core.ts
+import {
+  pgTable, uuid, varchar, text, integer, boolean, timestamp, real,
+  primaryKey, index, jsonb
+} from "drizzle-orm/pg-core";
+
+/** Documentos e chunks (conteúdo canônico para RAG) */
+export const aiDocuments = pgTable("ai_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  source: varchar("source", { length: 64 }).notNull(), // "url"|"file"|"crm"|"erp"|"brand-scanner"|"manual"|"image"
+  uri: text("uri"),           // URL, caminho, id externo
+  title: text("title"),
+  metaJson: text("meta_json"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, t => ({
+  idxTenant: index("ai_documents_tenant_idx").on(t.tenantId),
+  idxUri: index("ai_documents_uri_idx").on(t.uri),
+}));
+
+export const aiChunks = pgTable("ai_chunks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  documentId: uuid("document_id").notNull(),
+  modality: varchar("modality", { length: 16 }).notNull(), // "text" | "image"
+  pos: integer("pos").notNull(),     // ordem no documento
+  text: text("text"),                // para "text" (opcionalmente legenda de imagem)
+  imageUri: text("image_uri"),       // para "image"
+  tokens: integer("tokens").default(0).notNull(),
+  metaJson: text("meta_json"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, t => ({
+  idxDoc: index("ai_chunks_doc_idx").on(t.documentId),
+  idxTenant: index("ai_chunks_tenant_idx").on(t.tenantId),
+  idxModality: index("ai_chunks_modality_idx").on(t.tenantId, t.modality),
+}));
+
+/** Embeddings por modalidade */
+export const aiEmbeddingsText = pgTable("ai_embeddings_text", {
+  chunkId: uuid("chunk_id").primaryKey().notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  vectorJson: text("vector_json").notNull(),
+  dim: integer("dim").notNull(),
+  model: varchar("model", { length: 64 }).notNull(), // ex "minilm-384-onnx"
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, t => ({
+  idxTenant: index("ai_emb_text_tenant_idx").on(t.tenantId),
+  idxModel: index("ai_emb_text_model_idx").on(t.model),
+}));
+
+export const aiEmbeddingsImage = pgTable("ai_embeddings_image", {
+  chunkId: uuid("chunk_id").primaryKey().notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  vectorJson: text("vector_json").notNull(),
+  dim: integer("dim").notNull(),
+  model: varchar("model", { length: 64 }).notNull(), // ex "mobilenet-onnx"
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, t => ({
+  idxTenant: index("ai_emb_img_tenant_idx").on(t.tenantId),
+  idxModel: index("ai_emb_img_model_idx").on(t.model),
+}));
+
+/** Metadados do índice ANN (audi...

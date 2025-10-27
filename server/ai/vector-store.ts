@@ -253,3 +253,49 @@ export async function getChunksByIds(tenantId: string, ids: string[]): Promise<a
 
   return rows as any[];
 }
+
+/**
+ * Get embeddings for multiple chunks (for MMR diversity)
+ * SECURITY: Tenant isolation enforced
+ * 
+ * @param tenantId - Tenant ID
+ * @param chunkIds - Array of chunk IDs
+ * @param modality - "text" or "image"
+ * @returns Map of chunkId -> embedding vector
+ */
+export async function getEmbeddingsByChunkIds(
+  tenantId: string,
+  chunkIds: string[],
+  modality: Modality = "text"
+): Promise<Map<string, number[]>> {
+  if (!chunkIds.length) return new Map();
+
+  const table = modality === "text" ? aiEmbeddingsText : aiEmbeddingsImage;
+
+  const rows = await db
+    .select({
+      chunkId: table.chunkId,
+      vectorJson: table.vectorJson
+    })
+    .from(table)
+    .where(
+      and(
+        eq(table.tenantId, tenantId),
+        inArray(table.chunkId, chunkIds)
+      )
+    );
+
+  const map = new Map<string, number[]>();
+  for (const row of rows) {
+    if (row.vectorJson) {
+      try {
+        const vector = JSON.parse(row.vectorJson) as number[];
+        map.set(row.chunkId, vector);
+      } catch (err) {
+        console.error(`Failed to parse vectorJson for chunk ${row.chunkId}:`, err);
+      }
+    }
+  }
+
+  return map;
+}

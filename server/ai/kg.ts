@@ -1,9 +1,9 @@
 // server/ai/kg.ts
-// Knowledge Graph - NER (Named Entity Recognition) + PageRank-like scoring
+// Knowledge Graph - NER (Named Entity Recognition) + PageRank-like scoring + Chunk-Entity associations
 // SECURITY: Full tenant isolation
 
 import { db } from "../db";
-import { aiEntities, aiEntityLinks } from "@shared/schema.ai.graph";
+import { aiEntities, aiEntityLinks, aiChunkEntities } from "@shared/schema.ai.graph";
 import { eq, and, sql } from "drizzle-orm";
 
 // ========================================
@@ -202,6 +202,86 @@ export async function upsertEntitiesWithLinks(
           }
         });
     }
+  }
+}
+
+/**
+ * Link chunk to extracted entities (populate ai_chunk_entities junction table)
+ * Enables graph-based scoring (δ weight) in hybrid RAG
+ * SECURITY: Full tenant isolation
+ * 
+ * @param tenantId - Tenant ID
+ * @param chunkId - Chunk ID
+ * @param entities - Extracted entities from chunk text
+ */
+export async function linkChunkToEntities(
+  tenantId: string,
+  chunkId: string,
+  entities: Entity[]
+): Promise<void> {
+  if (entities.length === 0) return;
+
+  // First, ensure entities exist (upsert)
+  const entityIds = new Map<string, string>();
+
+  for (const entity of entities) {
+    const existing = await db
+      .select()
+      .from(aiEntities)
+      .where(
+        and(
+          eq(aiEntities.tenantId, tenantId),
+          eq(aiEntities.value, entity.value)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      entityIds.set(entity.value, existing[0].id);
+    } else {
+      const [inserted] = await db
+        .insert(aiEntities)
+        .values({
+          tenantId,
+          type: entity.type,
+          value: entity.value
+        })
+        .returning();
+
+      entityIds.set(entity.value, inserted.id);
+    }
+  }
+
+  // Count entity frequency in chunk (simple: count occurrences)
+  const entityFreq = new Map<string, number>();
+  for (const entity of entities) {
+    entityFreq.set(entity.value, (entityFreq.get(entity.value) || 0) + 1);
+  }
+
+  // Upsert chunk-entity associations
+  for (const [entityValue, freq] of Array.from(entityFreq.entries())) {
+    const entityId = entityIds.get(entityValue);
+    if (!entityId) continue;
+
+    await db
+      .insert(aiChunkEntities)
+      .values({
+        tenantId,
+        chunkId,
+        entityId,
+        frequency: freq
+      })
+      .onConflictDoUpdate({
+        target: [
+          aiChunkEntities.tenantId,
+          aiChunkEntities.chunkId,
+          aiChunkEntities.entityId
+        ],
+        set: {
+          frequency: freq,
+          createdAt: new Date()
+        }
+      });
   }
 }
 

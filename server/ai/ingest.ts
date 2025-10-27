@@ -9,7 +9,7 @@ import { parseFile } from "./parser.full";
 import { embedTexts } from "./embeddings.text";
 import { embedImages, preprocessImageRGB } from "./embeddings.image";
 import { upsertTextEmbedding, upsertImageEmbedding } from "./vector-store";
-import { nerLight, upsertEntitiesWithLinks } from "./kg";
+import { nerLight, upsertEntitiesWithLinks, linkChunkToEntities } from "./kg";
 import { eq, and } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
@@ -101,6 +101,7 @@ export async function ingestDocument(
       const entities = nerLight(chunkText);
       if (entities.length > 0) {
         await upsertEntitiesWithLinks(tenantId, entities);
+        await linkChunkToEntities(tenantId, chunkId, entities);
       }
     }
   }
@@ -191,6 +192,7 @@ export async function ingestRawText(
     const entities = nerLight(chunkText);
     if (entities.length > 0) {
       await upsertEntitiesWithLinks(tenantId, entities);
+      await linkChunkToEntities(tenantId, chunkId, entities);
     }
   }
 
