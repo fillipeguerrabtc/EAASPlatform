@@ -413,7 +413,7 @@ export async function scanWebsiteBrandPro(
       const pageData = await page.evaluate(() => {
         const result: any = { colors: [], bgColors: [], fonts: {} };
 
-        function parseColor(colorStr: string): { r: number; g: number; b: number } | null {
+        const parseColor = (colorStr: string): { r: number; g: number; b: number } | null => {
           if (colorStr.startsWith('#')) {
             const match = colorStr.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
             if (!match) return null;
@@ -426,12 +426,12 @@ export async function scanWebsiteBrandPro(
           const match = colorStr.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
           if (!match) return null;
           return { r: parseInt(match[1]), g: parseInt(match[2]), b: parseInt(match[3]) };
-        }
+        };
 
-        function isUsableColor(rgb: any): boolean {
+        const isUsableColor = (rgb: any): boolean => {
           return !(rgb.r > 250 && rgb.g > 250 && rgb.b > 250) &&
                  !(rgb.r < 10 && rgb.g < 10 && rgb.b < 10);
-        }
+        };
 
         const allElements = Array.from(document.querySelectorAll('*'));
         allElements.forEach(el => {

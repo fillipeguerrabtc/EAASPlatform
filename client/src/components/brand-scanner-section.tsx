@@ -56,31 +56,32 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
 
   // Query: List jobs
   const { data: jobs = [], refetch: refetchJobs } = useQuery<BrandJob[]>({
-    queryKey: ['/api/brand/jobs', tenantId],
+    queryKey: [`/api/brand/jobs?tenantId=${tenantId}`],
     enabled: !!tenantId,
   });
 
   // Query: List theme bundles
   const { data: themes = [], refetch: refetchThemes } = useQuery<ThemeBundle[]>({
-    queryKey: ['/api/brand/themes', tenantId],
+    queryKey: [`/api/brand/themes?tenantId=${tenantId}`],
     enabled: !!tenantId,
   });
 
   // Query: List clone artifacts
   const { data: clones = [], refetch: refetchClones } = useQuery<CloneArtifact[]>({
-    queryKey: ['/api/brand/clones', tenantId],
+    queryKey: [`/api/brand/clones?tenantId=${tenantId}`],
     enabled: !!tenantId,
   });
 
   // Mutation: Create job
   const createJobMutation = useMutation({
     mutationFn: async (data: { url: string; mode: 'extract' | 'clone'; tenantId: string }) => {
-      return apiRequest('POST', '/api/brand/jobs', data) as unknown as { jobId: string; status: string };
+      const res = await apiRequest('POST', '/api/brand/jobs', data);
+      return await res.json() as { jobId: string; status: string };
     },
     onSuccess: (data) => {
       toast({
-        title: '✅ Job Criado',
-        description: `Job ${data.jobId} iniciado. Status: ${data.status}`,
+        title: 'Scan Iniciado',
+        description: `Job criado com sucesso! Processando...`,
       });
       setWebsiteUrl('');
       refetchJobs();
@@ -89,7 +90,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
         refetchJobs();
         refetchThemes();
         refetchClones();
-      }, 2000);
+      }, 3000);
       setTimeout(() => clearInterval(interval), 60000); // Stop after 60s
     },
     onError: (error: Error) => {
@@ -104,18 +105,19 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   // Mutation: Activate theme
   const activateThemeMutation = useMutation({
     mutationFn: async (themeId: string) => {
-      return apiRequest('POST', `/api/brand/themes/${themeId}/activate`, { tenantId });
+      const res = await apiRequest('POST', `/api/brand/themes/${themeId}/activate`, { tenantId });
+      return await res.json();
     },
     onSuccess: () => {
       toast({
-        title: '✅ Tema Ativado',
+        title: 'Tema Ativado',
         description: 'O tema foi aplicado com sucesso!',
       });
       refetchThemes();
     },
     onError: (error: Error) => {
       toast({
-        title: '❌ Erro',
+        title: 'Erro',
         description: error.message,
         variant: 'destructive',
       });
@@ -125,11 +127,12 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   // Mutation: Activate clone
   const activateCloneMutation = useMutation({
     mutationFn: async (cloneId: string) => {
-      return apiRequest('POST', `/api/brand/clones/${cloneId}/activate`, { tenantId });
+      const res = await apiRequest('POST', `/api/brand/clones/${cloneId}/activate`, { tenantId });
+      return await res.json();
     },
     onSuccess: () => {
       toast({
-        title: '✅ Clone Ativado',
+        title: 'Clone Ativado',
         description: 'O clone foi ativado e será exibido no /shop!',
       });
       refetchClones();
@@ -137,7 +140,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
     },
     onError: (error: Error) => {
       toast({
-        title: '❌ Erro',
+        title: 'Erro',
         description: error.message,
         variant: 'destructive',
       });
@@ -147,7 +150,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   const handleCreateJob = (mode: 'extract' | 'clone') => {
     if (!websiteUrl || !tenantId) {
       toast({
-        title: '⚠️ URL Obrigatória',
+        title: 'URL Obrigatória',
         description: 'Por favor, insira uma URL válida.',
         variant: 'destructive',
       });
@@ -164,7 +167,7 @@ export function BrandScannerSection({ tenantId }: BrandScannerSectionProps) {
   const handlePreviewTheme = (theme: ThemeBundle) => {
     applyTheme(theme.tokens);
     toast({
-      title: '👁️ Preview Ativado',
+      title: 'Preview Ativado',
       description: 'Visualize as mudanças. Clique em "Ativar" para salvar.',
     });
   };
