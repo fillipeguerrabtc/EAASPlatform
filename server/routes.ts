@@ -4003,6 +4003,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ========================================
+  // HR - PERFORMANCE REVIEWS
+  // ========================================
+
+  app.get("/api/performance-reviews", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const filters = {
+        employeeId: req.query.employeeId as string | undefined,
+        reviewerId: req.query.reviewerId as string | undefined,
+        status: req.query.status as string | undefined,
+        reviewCycle: req.query.reviewCycle as string | undefined,
+      };
+      const reviews = await storage.listPerformanceReviews(filters);
+      res.json(reviews);
+    } catch (error: any) {
+      console.error("Error listing performance reviews:", error);
+      res.status(500).json({ message: "Erro ao listar avaliações de desempenho" });
+    }
+  });
+
+  app.get("/api/performance-reviews/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const review = await storage.getPerformanceReview(req.params.id);
+      if (!review) {
+        return res.status(404).json({ message: "Avaliação não encontrada" });
+      }
+      res.json(review);
+    } catch (error: any) {
+      console.error("Error getting performance review:", error);
+      res.status(500).json({ message: "Erro ao buscar avaliação" });
+    }
+  });
+
+  app.post("/api/performance-reviews", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { insertPerformanceReviewSchema } = await import("@shared/schema");
+      const validatedData = insertPerformanceReviewSchema.parse({
+        ...req.body,
+        startDate: new Date(req.body.startDate),
+        dueDate: new Date(req.body.dueDate),
+        completedDate: req.body.completedDate ? new Date(req.body.completedDate) : undefined,
+      });
+
+      const review = await storage.createPerformanceReview(validatedData);
+      res.json(review);
+    } catch (error: any) {
+      console.error("Error creating performance review:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao criar avaliação" });
+    }
+  });
+
+  app.patch("/api/performance-reviews/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { insertPerformanceReviewSchema } = await import("@shared/schema");
+      const updateData = { ...req.body };
+      if (req.body.startDate) updateData.startDate = new Date(req.body.startDate);
+      if (req.body.dueDate) updateData.dueDate = new Date(req.body.dueDate);
+      if (req.body.completedDate) updateData.completedDate = new Date(req.body.completedDate);
+
+      const validatedData = insertPerformanceReviewSchema.partial().parse(updateData);
+      const review = await storage.updatePerformanceReview(req.params.id, validatedData);
+
+      if (!review) {
+        return res.status(404).json({ message: "Avaliação não encontrada" });
+      }
+
+      res.json(review);
+    } catch (error: any) {
+      console.error("Error updating performance review:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar avaliação" });
+    }
+  });
+
+  app.patch("/api/performance-reviews/:id/status", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { status, completedDate } = z.object({
+        status: z.string().min(1),
+        completedDate: z.string().optional(),
+      }).parse(req.body);
+
+      const completedDateObj = completedDate ? new Date(completedDate) : undefined;
+      const review = await storage.updatePerformanceReviewStatus(
+        req.params.id,
+        status,
+        completedDateObj
+      );
+
+      if (!review) {
+        return res.status(404).json({ message: "Avaliação não encontrada" });
+      }
+
+      res.json(review);
+    } catch (error: any) {
+      console.error("Error updating review status:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      res.status(500).json({ message: "Erro ao atualizar status" });
+    }
+  });
+
+  app.delete("/api/performance-reviews/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      await storage.deletePerformanceReview(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting performance review:", error);
+      res.status(500).json({ message: "Erro ao deletar avaliação" });
+    }
+  });
+
+  // ========================================
   // MARKETPLACE - WISHLIST
   // ========================================
   

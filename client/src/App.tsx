@@ -53,6 +53,8 @@ import UserApprovals from "@/pages/admin/user-approvals";
 import AiGovernance from "@/pages/admin/ai-governance";
 import CrmWorkflowsPage from "@/pages/admin/crm-workflows";
 import HrLeaveRequestsPage from "@/pages/admin/hr-leave-requests";
+import HrPerformanceReviewsPage from "@/pages/admin/hr-performance-reviews";
+import AiKnowledgeBasePage from "@/pages/admin/ai-knowledge-base";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -148,8 +150,10 @@ function Router() {
             <Route path="/admin/inventory" component={InventoryPage} />
             <Route path="/admin/hr" component={HRPage} />
             <Route path="/admin/hr/leave-requests" component={HrLeaveRequestsPage} />
+            <Route path="/admin/hr/performance-reviews" component={HrPerformanceReviewsPage} />
             <Route path="/admin/user-approvals" component={UserApprovals} />
             <Route path="/admin/ai-governance" component={AiGovernance} />
+            <Route path="/admin/ai/knowledge-base" component={AiKnowledgeBasePage} />
             <Route path="/" component={Shop} />
             <Route path="/shop" component={Shop} />
             <Route path="/cart" component={CartPage} />
