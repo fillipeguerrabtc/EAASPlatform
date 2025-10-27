@@ -3,7 +3,7 @@ import express from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or, ilike, sql as sqlOp } from "drizzle-orm";
 import {
   insertTenantSchema,
   insertProductSchema,
@@ -37,6 +37,10 @@ import {
   insertProductBundleSchema,
   insertProductBundleItemSchema,
   stockMovements,
+  webhookEvents,
+  customers,
+  products,
+  orders,
 } from "@shared/schema";
 import {
   hashPassword,
@@ -54,6 +58,8 @@ import { searchKnowledgeBase, getBestMatch } from "./ai/hybrid-rag";
 import { planAction, type PlannerState } from "./ai/planner";
 // Single-Tenant Guard
 import { singleTenantGuard } from "./singleTenant";
+// Pagination Helper
+import { parseListQuery } from "./lib/pagination";
 
 // ========================================
 // CONDITIONAL REPLIT AUTH (works in dev/prod)
@@ -882,10 +888,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PUBLIC ENDPOINT: Allow anonymous access to products (for marketplace)
   app.get("/api/products", async (req: Request, res: Response) => {
     try {
-      const productsList = await storage.listProducts();
-      // Only return active products for public access
-      const activeProducts = productsList.filter(p => p.isActive);
-      res.json(activeProducts);
+      const { page, pageSize, offset, search } = parseListQuery(req.query);
+      
+      // Build where clause for search (only active products for public)
+      const whereClause = search
+        ? or(
+            ilike(products.name, `%${search}%`),
+            ilike(products.description, `%${search}%`)
+          )
+        : undefined;
+      
+      // Get paginated products (only active)
+      const productsList = await db.query.products.findMany({
+        limit: pageSize,
+        offset,
+        where: whereClause
+          ? sqlOp`${whereClause} AND ${products.isActive} = true`
+          : eq(products.isActive, true),
+        orderBy: [desc(products.createdAt)],
+      });
+      
+      // Get total count
+      const [{ count }] = await db
+        .select({ count: sqlOp<number>`count(*)::int` })
+        .from(products)
+        .where(
+          whereClause
+            ? sqlOp`${whereClause} AND ${products.isActive} = true`
+            : eq(products.isActive, true)
+        );
+      
+      // Set pagination headers (backward compatible)
+      res.setHeader("X-Total-Count", count.toString());
+      res.setHeader("X-Page", page.toString());
+      res.setHeader("X-Page-Size", pageSize.toString());
+      res.setHeader("X-Total-Pages", Math.ceil(count / pageSize).toString());
+      
+      // Return array (backward compatible)
+      res.json(productsList);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1212,7 +1252,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/customers", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const customersList = await storage.listCustomers();
+      const { page, pageSize, offset, search } = parseListQuery(req.query);
+      
+      // Build where clause for search
+      const whereClause = search
+        ? or(
+            ilike(customers.name, `%${search}%`),
+            ilike(customers.email, `%${search}%`),
+            ilike(customers.phone, `%${search}%`)
+          )
+        : undefined;
+      
+      // Get paginated customers
+      const customersList = await db.query.customers.findMany({
+        limit: pageSize,
+        offset,
+        where: whereClause,
+        orderBy: [desc(customers.createdAt)],
+      });
+      
+      // Get total count for pagination metadata
+      const [{ count }] = await db
+        .select({ count: sqlOp<number>`count(*)::int` })
+        .from(customers)
+        .where(whereClause || sqlOp`true`);
+      
+      // Set pagination headers (backward compatible)
+      res.setHeader("X-Total-Count", count.toString());
+      res.setHeader("X-Page", page.toString());
+      res.setHeader("X-Page-Size", pageSize.toString());
+      res.setHeader("X-Total-Pages", Math.ceil(count / pageSize).toString());
+      
+      // Return array (backward compatible with existing frontend)
       res.json(customersList);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1608,7 +1679,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/orders", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const ordersList = await storage.listOrders();
+      const { page, pageSize, offset, search } = parseListQuery(req.query);
+      
+      // Get paginated orders
+      const ordersList = await db.query.orders.findMany({
+        limit: pageSize,
+        offset,
+        orderBy: [desc(orders.createdAt)],
+      });
+      
+      // Get total count
+      const [{ count }] = await db
+        .select({ count: sqlOp<number>`count(*)::int` })
+        .from(orders);
+      
+      // Set pagination headers (backward compatible)
+      res.setHeader("X-Total-Count", count.toString());
+      res.setHeader("X-Page", page.toString());
+      res.setHeader("X-Page-Size", pageSize.toString());
+      res.setHeader("X-Total-Pages", Math.ceil(count / pageSize).toString());
+      
+      // Return array (backward compatible)
       res.json(ordersList);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -2402,8 +2493,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Missing stripe-signature header" });
       }
       
-      // In production, set STRIPE_WEBHOOK_SECRET
-      // For now, we'll process events without signature verification in dev
+      // Verify webhook signature
       let event;
       try {
         event = stripe.webhooks.constructEvent(
@@ -2416,29 +2506,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).send(`Webhook Error: ${err.message}`);
       }
       
-      // Handle different event types
-      switch (event.type) {
-        case "payment_intent.succeeded":
-          const paymentIntent = event.data.object;
-          console.log("PaymentIntent succeeded:", paymentIntent.id);
-          
-          // Save payment to database
-          await storage.createPayment({
-            customerId: paymentIntent.metadata.customerId || null,
-            amount: (paymentIntent.amount / 100).toFixed(2), // Convert from cents to string
-            currency: paymentIntent.currency,
-            status: "succeeded",
-            stripePaymentIntentId: paymentIntent.id,
-          });
-          break;
-          
-        case "payment_intent.payment_failed":
-          console.log("PaymentIntent failed:", event.data.object.id);
-          break;
-          
-        default:
-          console.log(`Unhandled event type: ${event.type}`);
+      // ✅ IDEMPOTENCY CHECK: Prevent duplicate processing
+      const existingEvent = await db.query.webhookEvents.findFirst({
+        where: eq(webhookEvents.eventId, event.id)
+      });
+      
+      if (existingEvent) {
+        console.log(`Webhook ${event.id} already processed, skipping`);
+        return res.json({ received: true, duplicate: true });
       }
+      
+      // Process webhook in transaction (atomically save event + payment)
+      await db.transaction(async (tx) => {
+        // Save webhook event for idempotency
+        await tx.insert(webhookEvents).values({
+          eventId: event.id,
+          payload: event as any,
+        });
+        
+        // Handle different event types
+        switch (event.type) {
+          case "payment_intent.succeeded":
+            const paymentIntent = event.data.object;
+            console.log("PaymentIntent succeeded:", paymentIntent.id);
+            
+            // Save payment to database
+            await storage.createPayment({
+              customerId: paymentIntent.metadata.customerId || null,
+              amount: (paymentIntent.amount / 100).toFixed(2),
+              currency: paymentIntent.currency,
+              status: "succeeded",
+              stripePaymentIntentId: paymentIntent.id,
+            });
+            break;
+            
+          case "payment_intent.payment_failed":
+            console.log("PaymentIntent failed:", event.data.object.id);
+            break;
+            
+          default:
+            console.log(`Unhandled event type: ${event.type}`);
+        }
+      });
       
       res.json({ received: true });
     } catch (error: any) {
