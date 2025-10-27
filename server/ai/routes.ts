@@ -7,15 +7,35 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
+import { z } from "zod";
 import { isAuthenticated } from "../replitAuth";
 import { db } from "../db";
-import { aiDocuments } from "@shared/schema.ai.core";
-import { eq, and, desc } from "drizzle-orm";
+import { aiDocuments, aiChunks } from "@shared/schema.ai.core";
+import { aiEntities } from "@shared/schema.ai.graph";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { embedTexts } from "./embeddings.text";
 import { knnText, knnImage } from "./vector-store";
-import { hybridRerank, DEFAULT_WEIGHTS } from "./hybrid-score";
+import { hybridRerank, DEFAULT_WEIGHTS, type HybridWeights } from "./hybrid-score";
 import { ingestDocument, ingestRawText, ingestImage, deleteDocument } from "./ingest";
 import { getTopEntities } from "./kg";
+
+// Zod validation schemas for API inputs
+const querySchema = z.object({
+  query: z.string().min(1).max(10000),
+  k: z.number().int().positive().max(100).optional().default(10),
+  weights: z.object({
+    alpha: z.number().min(0).max(1),
+    beta: z.number().min(0).max(1),
+    gamma: z.number().min(0).max(1),
+    delta: z.number().min(0).max(1),
+    zeta: z.number().min(0).max(1)
+  }).optional()
+});
+
+const ingestTextSchema = z.object({
+  text: z.string().min(1).max(1000000),
+  source: z.string().optional().default("manual")
+});
 
 const router = Router();
 
@@ -69,11 +89,16 @@ router.post("/query", isAuthenticated, async (req, res) => {
     // For single-tenant, tenantId = userId (simplified)
     const tenantId = userId;
 
-    const { query, k = 10, weights } = req.body;
-
-    if (!query || typeof query !== "string") {
-      return res.status(400).json({ error: "Query text required" });
+    // Zod validation
+    const parseResult = querySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid request",
+        details: parseResult.error.errors
+      });
     }
+
+    const { query, k, weights } = parseResult.data;
 
     // Embed query
     const [queryVec] = await embedTexts([query]);
@@ -81,19 +106,45 @@ router.post("/query", isAuthenticated, async (req, res) => {
     // kNN search (retrieve 5x candidates for reranking)
     const candidates = await knnText(tenantId, queryVec, k * 5);
 
-    // TODO: Fetch chunk metadata (createdAt, feedbackScore, graphScore)
-    // For now, use simplified candidates
-    const simpleCandidates = candidates.map(c => ({
+    if (candidates.length === 0) {
+      return res.json({ results: [], query, k });
+    }
+
+    // Fetch chunk metadata (createdAt) from DB
+    const chunkIds = candidates.map(c => c.chunkId);
+    const chunks = await db
+      .select({
+        id: aiChunks.id,
+        createdAt: aiChunks.createdAt
+      })
+      .from(aiChunks)
+      .where(
+        and(
+          inArray(aiChunks.id, chunkIds),
+          eq(aiChunks.tenantId, tenantId)
+        )
+      );
+
+    const chunkMeta = new Map(chunks.map(c => [c.id, c]));
+
+    // NOTE: Feedback and graph scores require future schema extensions:
+    // - aiFeedback table in schema.ai.eval.ts for user ratings
+    // - ai_chunk_entities junction table to link chunks to extracted entities
+    // For now, using defaults (0) to ensure hybrid scoring operates deterministically
+
+    // Build enriched candidates with real temporal metadata
+    const EPOCH_FALLBACK = new Date(0); // Deterministic fallback (1970-01-01)
+    const enrichedCandidates = candidates.map(c => ({
       chunkId: c.chunkId,
       vectorScore: c.score,
-      createdAt: new Date(), // TODO: fetch from DB
-      graphScore: 0, // TODO: fetch from graph
-      feedbackScore: 0 // TODO: fetch from feedback
+      createdAt: chunkMeta.get(c.chunkId)?.createdAt || EPOCH_FALLBACK,
+      graphScore: 0, // TODO: requires ai_chunk_entities junction table
+      feedbackScore: 0 // TODO: requires aiFeedback table in schema.ai.eval.ts
     }));
 
     // Hybrid rerank
     const results = hybridRerank(
-      simpleCandidates,
+      enrichedCandidates,
       new Map(), // TODO: pass vectors for diversity penalty
       k,
       weights || DEFAULT_WEIGHTS
@@ -173,11 +224,17 @@ router.post("/ingest/text", isAuthenticated, async (req, res) => {
     }
 
     const tenantId = userId;
-    const { text, source = "manual" } = req.body;
 
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({ error: "Text required" });
+    // Zod validation
+    const parseResult = ingestTextSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ 
+        error: "Invalid request",
+        details: parseResult.error.errors
+      });
     }
+
+    const { text, source } = parseResult.data;
 
     const docId = await ingestRawText(
       tenantId,

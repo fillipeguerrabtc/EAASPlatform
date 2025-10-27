@@ -126,7 +126,11 @@ export async function ingestDocument(
       // Generate embedding (if image is local file)
       if (fs.existsSync(img.uri)) {
         const image: any = await Jimp.read(img.uri);
-        const tensor = preprocessImageRGB(image);
+        const tensor = preprocessImageRGB(
+          image.bitmap.data,
+          image.bitmap.width,
+          image.bitmap.height
+        );
         const embeddings = await embedImages([tensor]);
         await upsertImageEmbedding(tenantId, chunkId, embeddings[0], "mobilenet");
       }
@@ -232,7 +236,11 @@ export async function ingestImage(
   // Generate embedding
   if (fs.existsSync(imageUri)) {
     const image: any = await Jimp.read(imageUri);
-    const tensor = preprocessImageRGB(image);
+    const tensor = preprocessImageRGB(
+      image.bitmap.data,
+      image.bitmap.width,
+      image.bitmap.height
+    );
     const embeddings = await embedImages([tensor]);
     await upsertImageEmbedding(tenantId, chunkId, embeddings[0], "mobilenet");
   }
