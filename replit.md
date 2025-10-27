@@ -73,3 +73,37 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - **PostgreSQL (Neon):** Primary database.
 - **Drizzle ORM:** Object-Relational Mapper.
 - **Puppeteer + Chromium:** Intelligent Brand Scanner.
+
+### Recent Improvements (October 2025)
+
+**Single-Tenant Architecture Enforcement (Safe Migration):**
+- ✅ **Middleware Guard:** Created `singleTenantGuard` middleware that dynamically fetches primary tenant ID and injects it into all requests, neutralizing legacy multi-tenant params
+- ✅ **Database Constraints:** Non-destructive SQL migration applied:
+  - Backfilled all 8 tables (users, customers, ai_governance, ai_metrics, ai_traces, brand_jobs, theme_bundles, clone_artifacts) with primary tenant ID
+  - Added DEFAULT constraints and NOT NULL enforcement
+  - Created CHECK constraints to freeze tenant_id values and prevent multi-tenant data leakage
+  - Implemented BEFORE triggers to auto-correct tenant_id on insert/update
+- ✅ **Zero Downtime:** No DROP commands, all existing functionality preserved
+- ✅ **Future-Ready:** Architecture prepared for eventual column cleanup when ready
+
+**Stripe Webhook Idempotency (Financial Security):**
+- ✅ **Persistent Tracking:** Created `webhookEvents` table with UNIQUE constraint on event_id
+- ✅ **Duplicate Prevention:** Database-level guarantee prevents processing same Stripe event twice
+- ✅ **Audit Trail:** Full webhook payload stored for debugging and compliance
+
+**Transaction Safety (Data Integrity):**
+- ✅ **Atomic Operations:** Created transaction helper library (`server/db/transaction.ts`)
+- ✅ **Order Processing:** `createOrderWithItems()` ensures order creation + inventory decrement happens atomically
+- ✅ **Payment Handling:** `markOrderPaidTx()` atomically updates order status when Stripe confirms payment
+- ✅ **Refund Support:** `refundOrderTx()` atomically cancels order and restores inventory
+- ✅ **Overselling Prevention:** Atomic inventory checks prevent selling more than available stock
+
+**CRM Data Quality (Deduplication):**
+- ✅ **Email Uniqueness:** UNIQUE index on `LOWER(email)` prevents duplicate customers with same email
+- ✅ **Phone Uniqueness:** UNIQUE index on normalized phone (digits only) prevents duplicates with formatting variations
+- ✅ **Case-Insensitive:** Email deduplication works regardless of case (user@example.com = USER@EXAMPLE.COM)
+
+**Portability & Compatibility:**
+- ✅ **Brand Scanner:** Dynamic Puppeteer path resolution works in Replit, Docker, Ubuntu, Heroku, AWS
+- ✅ **Conditional Auth:** Replit Auth lazy-loads only when REPLIT_DOMAINS present, fallback no-op for dev/local
+- ✅ **TypeScript Imports:** Removed .js extensions for tsx compatibility across environments

@@ -43,35 +43,34 @@ async function getPrimaryTenantId(): Promise<string> {
   }
 }
 
-export function singleTenantGuard(req: Request, _res: Response, next: NextFunction) {
+export async function singleTenantGuard(req: Request, _res: Response, next: NextFunction) {
   if (process.env.SINGLE_TENANT === "true") {
-    // Get primary tenant ID asynchronously
-    getPrimaryTenantId()
-      .then((tenantId) => {
-        // 1) Inject into request for legacy internal layers
-        (req as any).tenantId = tenantId;
-        
-        // 2) Neutralize legacy headers
-        if ("x-tenant-id" in req.headers) {
-          req.headers["x-tenant-id"] = tenantId;
-        }
-        
-        // 3) Override body tenantId if present (prevents client override)
-        if (req.body && typeof req.body === "object") {
-          req.body.tenantId = tenantId;
-        }
-        
-        // 4) Override query tenantId if present
-        if (req.query && typeof req.query === "object") {
-          (req.query as any).tenantId = tenantId;
-        }
-        
-        next();
-      })
-      .catch((error) => {
-        console.error("Single-tenant guard failed:", error);
-        next(error);
-      });
+    try {
+      const tenantId = await getPrimaryTenantId();
+      
+      // 1) Inject into request for legacy internal layers
+      (req as any).tenantId = tenantId;
+      
+      // 2) Neutralize legacy headers
+      if ("x-tenant-id" in req.headers) {
+        req.headers["x-tenant-id"] = tenantId;
+      }
+      
+      // 3) Override body tenantId if present (prevents client override)
+      if (req.body && typeof req.body === "object") {
+        req.body.tenantId = tenantId;
+      }
+      
+      // 4) Override query tenantId if present
+      if (req.query && typeof req.query === "object") {
+        (req.query as any).tenantId = tenantId;
+      }
+      
+      next();
+    } catch (error) {
+      console.error("Single-tenant guard failed:", error);
+      next(error);
+    }
   } else {
     next();
   }
