@@ -19,7 +19,8 @@ import {
   UserCog,
   Brain,
   Palette,
-  Smile
+  Smile,
+  Sparkles
 } from "lucide-react";
 import {
   Sidebar,
@@ -58,6 +59,15 @@ export function AppSidebar() {
       url: "/admin/ai-persona",
       icon: Smile,
       testId: "ai-persona",
+    },
+  ];
+
+  const brandItems = [
+    {
+      title: "Brand Scanner PRO",
+      url: "/admin/tenant-settings",
+      icon: Sparkles,
+      testId: "brand-scanner",
     },
   ];
 
@@ -218,6 +228,30 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {aiItems.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.testId}>
+                    <SidebarMenuButton asChild isActive={isActive} data-testid={`link-${item.testId}`}>
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Brand & Identity Section */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-4">
+            Marca & Identidade
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {brandItems.map((item) => {
                 const isActive = location === item.url;
                 return (
                   <SidebarMenuItem key={item.testId}>
