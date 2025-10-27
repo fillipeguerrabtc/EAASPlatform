@@ -106,12 +106,18 @@ The design philosophy emphasizes "silent sophistication" with a timeless, precis
 - ✅ **Case-Insensitive:** Email deduplication works regardless of case (user@example.com = USER@EXAMPLE.COM)
 
 **API Pagination System (Performance & Scalability):**
-- ✅ **Standard Helper:** Created `parseListQuery()` helper with safe bounds (page 1-∞, pageSize 10-100, default 20)
+- ✅ **Backend Helper:** Created `parseListQuery()` helper with safe bounds (page 1-∞, pageSize 10-100, default 20)
 - ✅ **Backward Compatible:** List endpoints return array payload (preserves existing frontend)
 - ✅ **HTTP Headers:** Pagination metadata in headers (X-Total-Count, X-Page, X-Page-Size, X-Total-Pages)
 - ✅ **Applied Routes:** GET /api/customers, /api/products, /api/orders
 - ✅ **Search Support:** Case-insensitive search via `ilike` (customers: name/email/phone, products: name/description)
 - ✅ **Consistent Counts:** Count queries use same filters as data queries for accuracy
+- ✅ **Frontend Hook:** `usePaginatedQuery` reads HTTP headers, manages state (page/pageSize/search), auto-resets on search/pageSize changes
+- ✅ **Smart Clamping:** Auto-adjusts page when search returns fewer results (prevents "page 5 of 2" bugs)
+- ✅ **Empty State Handling:** Resets to page 1 when totalPages = 0 (prevents "81-100 of 0" display errors)
+- ✅ **Smooth Transitions:** Uses `placeholderData` to keep previous data visible during page loads
+- ✅ **UI Component:** `PaginationControls` with responsive layout, search input (optional), page size selector, navigation buttons
+- ✅ **Applied Pages:** CRM (with search), Orders (no search)
 
 **Portability & Compatibility:**
 - ✅ **Brand Scanner:** Dynamic Puppeteer path resolution works in Replit, Docker, Ubuntu, Heroku, AWS
