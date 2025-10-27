@@ -709,11 +709,11 @@ createWorker = () => {
         const delayMs = Math.floor(60000 / perMin);
 
         // Helper: Send one message
-        async function sendOne(
+        const sendOne = async (
           to: string,
           variant: "A" | "B",
           contactId?: string
-        ): Promise<void> {
+        ): Promise<void> => {
           const nowHour = new Date().getHours();
 
           // LGPD/Quiet hours check
