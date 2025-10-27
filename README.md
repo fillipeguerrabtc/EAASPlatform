@@ -80,19 +80,53 @@
 - **Supplier Management**: Supplier CRUD with payment tracking
 - **Purchase Orders**: Complete purchase order workflow
 
-### 🎨 Brand Scanner PRO
-- **Extract Mode**: 
-  - Web crawler with robots.txt compliance
-  - CIELAB K-Means color extraction
-  - WCAG contrast validation
-  - Perceptual hash (pHash) for logo detection
-  - Font fallback system
-- **Clone Mode**: 
-  - Static HTML snapshots
-  - Security-hardened script sanitization
-  - Downloadable artifacts
-- **Dynamic Theming**: Apply extracted brand colors as CSS variables via `BrandThemeProvider`
-- **Theme Operations**: Preview, activate, rollback, and clear themes
+### 🎨 Brand Scanner 2.1 PRO - Diamond Edition
+#### Extract Mode (Advanced Analysis)
+- **CIELAB Color Science**: 
+  - Accurate sRGB ↔ XYZ ↔ LAB color space conversions with gamma correction
+  - K-Means clustering for palette extraction (with clamping/rounding guards)
+  - ΔE (CIE76) color distance calculation for perceptual accuracy
+  - Optional @napi-rs/canvas integration for PNG analysis
+- **Typography Extraction**: 
+  - Automatic font-family detection from computed styles
+  - @font-face parsing from inline/external stylesheets
+  - Font weight enumeration with fallback chains
+- **Design Tokens Generation**: 
+  - Combines client-side DOM analysis + server-side image processing
+  - Generates complete ThemeTokens (colors, typography, spacing, border radius)
+  - HSL format for seamless CSS variable injection
+- **Security**: 
+  - SSRF protection with DNS cache bypass
+  - Private IP blocking (RFC 1918)
+  - Redirect chain validation
+  - robots.txt compliance
+
+#### Clone Mode (Marketplace Integration)
+- **Asset Management**: 
+  - SHA256-based asset deduplication
+  - CDN publishing to `.storage/public/marketplace/`
+  - Asset type classification (image, video, SVG, other)
+  - Byte-size tracking for storage optimization
+- **Layout Heuristics**: 
+  - Automatic page blueprint generation (hero, section, gallery, footer, nav)
+  - Route mapping with layout hints
+  - Manifest.json creation with publishedAt timestamps
+- **Security Hardening**: 
+  - Path traversal prevention using `path.relative()`
+  - Script sanitization in static snapshots
+  - Atomic file writes (temp file + rename)
+
+#### Dynamic Theming & Marketplace
+- **Admin Theme Applier**: 
+  - Injects tokens into `theme.json` + `generated.css`
+  - Transactional writes for data safety
+  - CSS variable generation with HSL format
+- **Marketplace Router**: 
+  - Lazy-loads `manifest.json` with TanStack Query memoization
+  - Dynamic page rendering based on layout hints
+  - 6 reusable components (Nav, Hero, Section, Gallery, Footer, BuyButton)
+  - Mobile-first responsive design
+- **Theme Operations**: Preview, activate, rollback, clear themes via `BrandThemeProvider`
 
 ### 🔐 Multi-Provider Authentication
 - **Replit Auth**: Google, Apple, GitHub, X OAuth integration
@@ -138,7 +172,10 @@
 - **Messaging**: Twilio WhatsApp Business API
 - **AI**: OpenAI (GPT models)
 - **Browser Automation**: Puppeteer + Chromium (Brand Scanner)
-- **Image Processing**: Jimp (color extraction, logo detection)
+- **Image Processing**: 
+  - Jimp (logo detection, pHash)
+  - @napi-rs/canvas (optional, CIELAB PNG analysis)
+  - culori (color space conversions)
 
 ### DevOps & Tools
 - **Build Tool**: Vite
