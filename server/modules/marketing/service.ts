@@ -32,6 +32,7 @@ import {
   addTrackingPixel,
   type SendResult
 } from "./providers";
+import { JobQueueService } from "../../queue/service";
 // ========================================
 // TYPES
 // ========================================
@@ -255,14 +256,40 @@ export const MarketingService = {
 
   /**
    * Schedule campaign execution
-   * TODO: Re-implement using PostgreSQL job queue system
+   * SECURITY: Tenant isolation enforced
+   * Uses PostgreSQL-based job queue (zero Redis dependency)
    */
   async scheduleCampaign(ctx: Ctx, input: unknown) {
-    return { 
-      scheduled: false, 
-      disabled: true,
-      error: "Campaign scheduling is being migrated to PostgreSQL-based queue system. Coming soon!"
-    };
+    const data = campaignScheduleSchema.parse(input);
+    const when = data.at ? new Date(data.at) : new Date();
+
+    // SECURITY: Tenant filter in UPDATE
+    await db
+      .update(mkCampaigns)
+      .set({
+        status: "scheduled",
+        scheduledAt: when,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(mkCampaigns.id, data.campaignId),
+          eq(mkCampaigns.tenantId, ctx.tenantId)
+        )
+      );
+
+    // Enqueue job in PostgreSQL queue
+    await JobQueueService.enqueue({
+      type: "marketing_campaign",
+      payload: { 
+        tenantId: ctx.tenantId, 
+        campaignId: data.campaignId 
+      },
+      scheduledFor: when,
+      priority: 5 // Medium priority
+    });
+
+    return { scheduled: true, at: when.toISOString() };
   },
 
   /**
