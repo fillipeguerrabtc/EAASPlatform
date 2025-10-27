@@ -10,7 +10,7 @@ import { db } from "../db";
 import { imports } from "@shared/schema.crm";
 import { CRMService } from "../modules/crm/service";
 import { logAudit } from "../modules/crm/audit";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { Job } from "@shared/schema";
 import pino from "pino";
 

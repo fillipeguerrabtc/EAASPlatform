@@ -279,15 +279,15 @@ export const MarketingService = {
       );
 
     // Enqueue job in PostgreSQL queue
-    await JobQueueService.enqueue({
-      type: "marketing_campaign",
-      payload: { 
-        tenantId: ctx.tenantId, 
-        campaignId: data.campaignId 
-      },
-      scheduledFor: when,
-      priority: 5 // Medium priority
-    });
+    await JobQueueService.enqueue(
+      ctx.tenantId,
+      "marketing_campaign",
+      { campaignId: data.campaignId },
+      {
+        scheduledFor: when,
+        priority: 5 // Medium priority
+      }
+    );
 
     return { scheduled: true, at: when.toISOString() };
   },

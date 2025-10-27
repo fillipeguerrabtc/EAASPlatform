@@ -69,6 +69,8 @@ import { registerERP2Routes } from "./modules/erp2/routes";
 import { registerMarketplaceRoutes } from "./modules/marketplace/routes";
 // Marketing Module
 import { registerMarketingRoutes } from "./modules/marketing/routes";
+// Queue Module
+import { registerQueueRoutes } from "./routes/queue";
 // AI Module (IA Multimodal 2.0)
 import aiRoutes from "./ai/routes";
 
@@ -5727,6 +5729,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MARKETING MODULE ROUTES (mixed auth - admin + public tracking)
   // ========================================
   registerMarketingRoutes(app, isAuthenticated);
+
+  // ========================================
+  // QUEUE MODULE ROUTES (admin monitoring - requires authentication)
+  // ========================================
+  registerQueueRoutes(app);
 
   // ========================================
   // AI MODULE ROUTES (IA Multimodal 2.0 - requires authentication)
