@@ -58,6 +58,8 @@ export default function Shop() {
     queryKey: ["/api/carts"],
   });
 
+  const [, setLocation] = useLocation();
+
   const addToCartMutation = useMutation({
     mutationFn: async ({ productId, variantId }: { productId: string; variantId?: string }) => {
       const currentItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
@@ -104,6 +106,49 @@ export default function Shop() {
     },
   });
 
+  // Buy Now mutation - adds to cart and redirects to checkout
+  const buyNowMutation = useMutation({
+    mutationFn: async ({ productId, variantId }: { productId: string; variantId?: string }) => {
+      const currentItems = Array.isArray(cart?.items) ? cart.items as any[] : [];
+      const existingItemIndex = currentItems.findIndex(
+        (item) => item.productId === productId && item.variantId === variantId
+      );
+      
+      let newItems;
+      if (existingItemIndex >= 0) {
+        newItems = currentItems.map((item, index) => 
+          index === existingItemIndex 
+            ? { productId: item.productId, variantId: item.variantId, quantity: item.quantity + 1 }
+            : { productId: item.productId, variantId: item.variantId, quantity: item.quantity }
+        );
+      } else {
+        newItems = [...currentItems, { 
+          productId, 
+          variantId,
+          quantity: 1
+        }];
+      }
+      
+      if (cart?.id) {
+        return apiRequest("PATCH", `/api/carts/${cart.id}`, { items: newItems });
+      } else {
+        return apiRequest("POST", "/api/carts", { items: newItems });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/carts"] });
+      // Redirect to checkout immediately
+      setLocation('/checkout');
+    },
+    onError: (error: any) => {
+      toast({
+        title: t('common.error'),
+        description: error.message || "Erro ao processar compra",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Filter only active products
   const activeProducts = products?.filter(p => p.isActive) || [];
 
@@ -142,7 +187,7 @@ export default function Shop() {
       queryFn: async () => {
         if (!options || options.length === 0) return {};
         
-        const valuesMap: Record<string, VariantValue[]> = {};
+        const valuesMap: Record<string, ProductVariantValue[]> = {};
         for (const option of options) {
           const response = await fetch(`/api/variant-options/${option.id}/values`);
           if (response.ok) {
@@ -172,6 +217,22 @@ export default function Shop() {
       }
 
       addToCartMutation.mutate({ productId: product.id, variantId: selectedVariantId });
+      setDialogOpen(false);
+      setSelectedOptions({});
+      setSelectedVariantId(undefined);
+    };
+
+    const handleBuyNow = () => {
+      if (!selectedVariantId && options && options.length > 0) {
+        toast({
+          title: "Selecione as opções",
+          description: "Por favor, selecione todas as opções do produto antes de comprar.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      buyNowMutation.mutate({ productId: product.id, variantId: selectedVariantId });
       setDialogOpen(false);
       setSelectedOptions({});
       setSelectedVariantId(undefined);
@@ -264,18 +325,34 @@ export default function Shop() {
               )}
             </div>
 
-            <Button 
-              className="w-full" 
-              onClick={handleAddToCart}
-              disabled={
-                addToCartMutation.isPending ||
-                (displayInventory !== null && displayInventory <= 0) ||
-                (hasVariants && !selectedVariantId)
-              }
-              data-testid="button-confirm-add-to-cart"
-            >
-              {addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart')}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                className="flex-1" 
+                onClick={handleAddToCart}
+                disabled={
+                  addToCartMutation.isPending ||
+                  (displayInventory !== null && displayInventory <= 0) ||
+                  (hasVariants && !selectedVariantId)
+                }
+                data-testid="button-confirm-add-to-cart"
+              >
+                <ShoppingCart className="mr-2 h-4 w-4" />
+                {addToCartMutation.isPending ? t('common.adding') : t('shop.addToCart')}
+              </Button>
+              <Button 
+                className="flex-1" 
+                onClick={handleBuyNow}
+                disabled={
+                  buyNowMutation.isPending ||
+                  (displayInventory !== null && displayInventory <= 0) ||
+                  (hasVariants && !selectedVariantId)
+                }
+                data-testid="button-buy-now"
+              >
+                {buyNowMutation.isPending ? t('common.processing') : 'Comprar Agora'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
