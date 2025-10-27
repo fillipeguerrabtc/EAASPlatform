@@ -144,6 +144,39 @@ export const products = pgTable("products", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Product Variant Options (defines option types like "Color", "Size", "Material")
+export const productVariantOptions = pgTable("product_variant_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(), // e.g., "Color", "Size", "Material"
+  displayOrder: integer("display_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Product Variant Values (defines values for each option like "Red", "Blue", "S", "M", "L")
+export const productVariantValues = pgTable("product_variant_values", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  optionId: varchar("option_id").references(() => productVariantOptions.id, { onDelete: "cascade" }).notNull(),
+  value: text("value").notNull(), // e.g., "Red", "Blue", "S", "M", "L"
+  displayOrder: integer("display_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Product Variants (specific SKU combinations with individual pricing, stock, images)
+export const productVariants = pgTable("product_variants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: varchar("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  sku: text("sku").notNull().unique(), // Unique SKU identifier
+  variantValues: jsonb("variant_values").notNull(), // { "Color": "Red", "Size": "M" }
+  price: decimal("price", { precision: 10, scale: 2 }), // Null = use base product price
+  inventory: integer("inventory").default(0).notNull(),
+  images: text("images").array(), // Variant-specific images
+  isActive: boolean("is_active").default(true).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Categories (for products/services organization)
 export const categories = pgTable("categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -558,6 +591,24 @@ export type User = typeof users.$inferSelect;
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
+
+// Product Variant Options
+export const insertProductVariantOptionSchema = createInsertSchema(productVariantOptions).omit({ id: true, createdAt: true });
+export type InsertProductVariantOption = z.infer<typeof insertProductVariantOptionSchema>;
+export type ProductVariantOption = typeof productVariantOptions.$inferSelect;
+
+// Product Variant Values
+export const insertProductVariantValueSchema = createInsertSchema(productVariantValues).omit({ id: true, createdAt: true });
+export type InsertProductVariantValue = z.infer<typeof insertProductVariantValueSchema>;
+export type ProductVariantValue = typeof productVariantValues.$inferSelect;
+
+// Product Variants
+export const insertProductVariantSchema = createInsertSchema(productVariants).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  sku: z.string().min(1, "SKU is required"),
+  inventory: z.number().int().min(0, "Inventory cannot be negative"),
+});
+export type InsertProductVariant = z.infer<typeof insertProductVariantSchema>;
+export type ProductVariant = typeof productVariants.$inferSelect;
 
 // Product Reviews
 export const insertProductReviewSchema = createInsertSchema(productReviews).omit({ id: true, createdAt: true, updatedAt: true }).extend({
