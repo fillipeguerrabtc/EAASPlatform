@@ -9,6 +9,8 @@ import { z } from "zod";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log as viteLog } from "./vite";
 import { startSLAWorker } from "./workers/sla-worker";
+import { globalWorker } from "./queue/worker";
+import { handleCRMImport, handleMarketingCampaign } from "./queue/handlers";
 
 // ========================================
 // 1) VALIDAÇÃO DE AMBIENTE (falha cedo e alto)
@@ -387,7 +389,10 @@ app.get("/healthz", async (_req, res) => {
       logger.info("ℹ️  SLA Worker disabled (set ENABLE_SLA_WORKER=true to enable)");
     }
     
-    // CRM Imports Worker (BullMQ) starts automatically if Redis is available
-    // See server/modules/crm/imports.ts for auto-initialization
+    // Start Job Queue Worker (PostgreSQL-based, replaces Redis/BullMQ)
+    globalWorker.register("crm_csv_import", handleCRMImport);
+    globalWorker.register("marketing_campaign", handleMarketingCampaign);
+    globalWorker.start();
+    logger.info("✅ Job Queue Worker started (PostgreSQL-based)")
   });
 })();
